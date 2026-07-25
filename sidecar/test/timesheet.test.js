@@ -29,20 +29,29 @@ test('estimate treats a zero-round file as one verification cycle', () => {
   assert.equal(a.verifyMin, b.verifyMin);
 });
 
-test('diffStats counts added test cases, not removed or context lines', () => {
+test('diffStats counts added JUnit test cases, not removed or context lines', () => {
   const diff = [
-    'diff --git a/test/a.test.ts b/test/a.test.ts',
-    '+++ b/test/a.test.ts',
-    "+  it('does a thing', () => {",
-    "+    expect(1).toBe(1);",
-    '+  });',
-    "+  test('another', async () => {});",
-    "-  it('removed', () => {});",
-    "   it('context', () => {});",
+    'diff --git a/src/test/java/com/example/core/ValidatorMacCovTest.java b/src/test/java/com/example/core/ValidatorMacCovTest.java',
+    '+++ b/src/test/java/com/example/core/ValidatorMacCovTest.java',
+    '+    @Test',
+    '+    void isValidUsername_nullReturnsFalse() {',
+    '+        assertFalse(Validator.isValidUsername(null));',
+    '+    }',
+    '+    @ParameterizedTest',
+    '+    @ValueSource(strings = {"ab", "a"})',
+    '+    void tooShort(String s) { assertFalse(Validator.isValidUsername(s)); }',
+    '-    @Test',
+    '-    void removed() {}',
+    '     @Test',
   ].join('\n');
   const s = diffStats(diff);
-  assert.equal(s.testCases, 2);
-  assert.equal(s.addedTestLines, 4);
+  assert.equal(s.testCases, 2, '@Test and @ParameterizedTest, not the removed or context ones');
+  assert.equal(s.addedTestLines, 7);
+});
+
+test('diffStats does not count JS-style test calls in a Java project', () => {
+  const s = diffStats("+  it('does a thing', () => {});");
+  assert.equal(s.testCases, 0);
 });
 
 test('diffStats on an empty diff yields zeroes', () => {

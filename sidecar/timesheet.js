@@ -30,9 +30,15 @@ function estimate({ sourceLines = 0, testCases = 0, addedTestLines = 0, mutantsK
   };
 }
 
-/** Count committed test cases / added lines from a unified diff. */
+/**
+ * Count committed test cases / added lines from a unified diff.
+ * A Java test case is an ADDED annotation — @Test, @ParameterizedTest, @RepeatedTest,
+ * @TestFactory (JUnit 4/5 and TestNG all spell the plain case `@Test`). Counting the
+ * JS way (`it(` / `test(`) reported zero for every Java file, which zeroed the
+ * "test writing" line of every timesheet.
+ */
 function diffStats(diff) {
-  const testCases = (diff.match(/^\+[^+].*\b(?:it|test)\s*\(/gm) || []).length;
+  const testCases = (diff.match(/^\+\s*@(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b/gm) || []).length;
   const addedTestLines = (diff.match(/^\+[^+]/gm) || []).length;
   return { testCases, addedTestLines };
 }
