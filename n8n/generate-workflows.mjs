@@ -217,14 +217,15 @@ if (nothingToCover) return [{ json: { skip: true, reason: 'class fully covered',
 const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
 const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
 const RULES = ${JSON.stringify(COMMON_TEST_RULES)};
-const system = 'You are an expert Java test engineer writing ' + (gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5') + ' tests to INCREASE LINE COVERAGE of one class. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}. Create a NEW test class only — never modify existing files. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES
+const system = 'You are an expert Java test engineer writing ' + (gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5') + ' tests to INCREASE LINE COVERAGE of ONE METHOD' + (gaps.method ? ' (' + gaps.method + '())' : '') + ' of one class. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}. Create a NEW test class only — never modify existing files. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
 const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ', JDK ' + gaps.jdk + ')\\n'
+  + (gaps.method ? 'TARGET METHOD: ' + gaps.method + '()' + (gaps.methodLine ? ' (declared around line ' + gaps.methodLine + ')' : '') + ' — the tests must exercise THIS method; coverage and mutation score are measured on it alone.\\n' : '')
   + String(gaps.source || '').slice(0, 14000)
   + '\\n\\nUNCOVERED: ' + (fullyUncovered ? 'THE ENTIRE CLASS (no test executes it at all)' : 'source lines ' + JSON.stringify((u.lines || []).slice(0, 140)))
   + '\\n\\nEXISTING TEST (style reference — imports, assertion library, conventions; do NOT rewrite it):\\n'
   + String(gaps.existingTest || '(none)').slice(0, 6000)
-  + '\\n\\nWrite one test class that executes the uncovered lines and asserts real behaviour. JSON only.';
+  + '\\n\\nWrite one test class that executes the uncovered lines OF THE TARGET METHOD and asserts real behaviour. JSON only.';
 return [{ json: { system, prompt, json: true, maxTokens: 7000, temperature: 0.3, stage: 'improving_coverage', stageDetail: 'writing tests for uncovered code', targetPath, projectTestPath: gaps.projectTestPath } }];`,
   'Coverage Gaps');
 
@@ -247,7 +248,7 @@ const system = 'You are an expert Java test engineer writing ' + (gaps.testFrame
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
 const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ')\\n'
   + String(gaps.source || '').slice(0, 12000)
-  + (gaps.targetMethod ? '\\n\\nFOCUS: this round targets the method ' + gaps.targetMethod + '() — every mutant below is inside it, so concentrate the new tests there.' : '')
+  + (gaps.method ? '\\n\\nFOCUS: this unit of work IS the method ' + gaps.method + '() — every mutant below is inside it, and the score is measured on it alone.' : '')
   + '\\n\\nSURVIVING MUTANTS TO KILL (status SURVIVED = line runs but nothing asserts on it; NO_COVERAGE = line never runs):\\n' + mutantsTxt
   + '\\n\\nEXISTING TEST (style reference — do NOT rewrite it):\\n'
   + String(gaps.existingTest || '(none)').slice(0, 4000)

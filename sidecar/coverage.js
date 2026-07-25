@@ -73,12 +73,22 @@ async function runCoverage() {
   const totalPct = merged.missed + merged.covered > 0
     ? round2((merged.covered * 100) / (merged.covered + merged.missed)) : 0;
 
-  // map class coverage onto the scope files we track
+  // map class coverage onto the units we track (a unit is one METHOD)
   const byPath = {};
   for (const [rel, f] of Object.entries(state.files)) {
-    const fq = f.fqcn || repo.fqcnOf(rel);
+    const fq = f.fqcn || repo.fqcnOf(f.path || rel);
     const c = merged.classes[fq];
-    if (c) {
+    if (c && f.method) {
+      // a method unit takes its own counters
+      const m = c.methods?.[f.method];
+      const executable = m ? m.missed + m.covered : 0;
+      const pct = executable > 0 ? round2((m.covered * 100) / executable) : 0;
+      byPath[rel] = pct;
+      upsertFile(rel, {
+        coverage: pct, coveredLines: m?.covered ?? 0, missedLines: m?.missed ?? 0,
+        executableLines: executable, methodLine: m?.line ?? null,
+      });
+    } else if (c) {
       const executable = c.missed + c.covered;
       const pct = executable > 0 ? round2((c.covered * 100) / executable) : 0;
       byPath[rel] = pct;
@@ -94,7 +104,7 @@ async function runCoverage() {
     }
   }
   event('coverage', `total line coverage ${totalPct}% over ${reports.length} JaCoCo report(s) (build exit ${r.code})`);
-  return { totalPct, files: byPath, exitCode: r.code, reports: reports.length };
+  return { totalPct, files: byPath, exitCode: r.code, reports: reports.length, classes: merged.classes };
 }
 
 /** Every jacoco XML report under the repo (one per module). */
@@ -140,18 +150,35 @@ function mergeReport(acc, xml) {
       const name = part.match(/^name="([^"]+)"/)?.[1];
       if (!name) continue;
       const end = part.indexOf('</class>');
-      const line = end === -1 ? null : lineCounter(part.slice(0, end));
-      if (!line) continue;                       // self-closing / counterless → nothing to add
+      if (end === -1) continue;                  // self-closing → no counters to read
+      const frag = part.slice(0, end);
+      const line = lineCounter(frag);
+      if (!line) continue;
       const fq = name.split('/').join('.').split('$')[0];   // fold inner classes into the outer one
-      const e = (acc.classes[fq] ||= { missed: 0, covered: 0, lines: {} });
+      const e = (acc.classes[fq] ||= { missed: 0, covered: 0, lines: {}, methods: {} });
       e.missed += line.missed; e.covered += line.covered;
+      // Per-METHOD counters, which JaCoCo already reports. They cost nothing extra and
+      // are what makes the method the pipeline's unit of work: every method's line
+      // coverage is known before a single mutation run.
+      for (const mpart of frag.split(/<method\s+/).slice(1)) {
+        const mname = mpart.match(/^name="([^"]+)"/)?.[1];
+        if (!mname) continue;
+        const mline = parseInt(mpart.match(/\sline="(\d+)"/)?.[1] || '0', 10);
+        const mend = mpart.indexOf('</method>');
+        const mc = lineCounter(mend === -1 ? mpart : mpart.slice(0, mend));
+        if (!mc) continue;
+        const key = mname;
+        const me = (e.methods[key] ||= { missed: 0, covered: 0, line: mline });
+        me.missed += mc.missed; me.covered += mc.covered;
+        if (mline && (!me.line || mline < me.line)) me.line = mline;
+      }
     }
     // <sourcefile name="Foo.java"> <line nr="7" mi="0" ci="2" .../> …
     const srcRe = /<sourcefile\s+name="([^"]+)"\s*>([\s\S]*?)<\/sourcefile>/g;
     let sm;
     while ((sm = srcRe.exec(body))) {
       const fq = pkg ? `${pkg}.${sm[1].replace(/\.java$/, '')}` : sm[1].replace(/\.java$/, '');
-      const e = (acc.classes[fq] ||= { missed: 0, covered: 0, lines: {} });
+      const e = (acc.classes[fq] ||= { missed: 0, covered: 0, lines: {}, methods: {} });
       const lineRe = /<line\s+nr="(\d+)"\s+mi="(\d+)"\s+ci="(\d+)"/g;
       let lm;
       while ((lm = lineRe.exec(sm[2]))) {
@@ -185,7 +212,9 @@ function lineCounter(fragment) {
 /** Uncovered lines of one source file, for the coverage-improvement prompt. */
 function uncoveredLines(rel) {
   const dir = repo.repoDir();
-  const fq = state.files[rel]?.fqcn || repo.fqcnOf(rel);
+  const unit = state.files[rel] || {};
+  const srcPath = unit.path || String(rel).split('::')[0];
+  const fq = unit.fqcn || repo.fqcnOf(srcPath);
   const acc = { classes: {}, missed: 0, covered: 0 };
   for (const rep of findReports(dir)) {
     try { mergeReport(acc, fs.readFileSync(rep, 'utf8')); } catch { }

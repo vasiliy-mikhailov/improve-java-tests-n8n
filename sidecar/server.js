@@ -37,6 +37,17 @@ function readBody(req) {
     req.on('error', reject);
   });
 }
+
+/** A unit key is `<path>::<method>`; everything git-facing needs the path alone. */
+function unitPath(key) { return state.files[key]?.path || String(key).split('::')[0]; }
+function unitMethod(key) { return state.files[key]?.method || String(key).split('::')[1] || null; }
+/** Human label for events and PR titles: `Class#method`. */
+function unitLabel(key) {
+  const f = state.files[key] || {};
+  const cls = (f.fqcn || unitPath(key)).split(/[./]/).pop().replace(/\.java$/, '');
+  return f.method ? `${cls}#${f.method}()` : cls;
+}
+
 function needRun() { if (!state.run) throw new Error('no active run — POST /api/run/start first'); }
 function ledger() {
   const slug = slugify(state.run.config.repoUrl);
@@ -138,7 +149,9 @@ function metricsPayload() {
     // pipeline has touched always win a slot; untouched candidates fill the rest.
     files: [...files.filter((f) => f.status !== 'candidate'),
       ...files.filter((f) => f.status === 'candidate')].slice(0, 250).map((f) => ({
-      path: f.path, status: f.status, attempts: f.attempts, rounds: f.rounds || 0,
+      path: f.method ? `${f.path}::${f.method}` : f.path,
+      sourcePath: f.path, method: f.method || null,
+      status: f.status, attempts: f.attempts, rounds: f.rounds || 0,
       coverage: f.coverage, mutation: f.mutation, mac: f.mac,
       coverageBefore: f.coverageBefore, mutationBefore: f.mutationBefore, macBefore: f.macBefore,
       coverageAfter: f.coverageAfter, mutationAfter: f.mutationAfter, macAfter: f.macAfter,
@@ -156,6 +169,51 @@ function metricsPayload() {
     decisions: state.decisions,
     events: state.events.slice(-60),
   };
+}
+
+
+/**
+ * Turn the scanned FILES into the pipeline's real unit of work: one entry per METHOD.
+ *
+ * A class is the wrong granularity for this job. PIT costs (mutants x suite time), so a
+ * class-wide run is slow and mostly wasted — the weakness is almost always concentrated
+ * in a few methods, and the tests that fix it are method-shaped. JaCoCo already reports
+ * per-method counters, so the whole method list, with its line coverage, comes free from
+ * the baseline run — no extra measurement to enumerate them.
+ *
+ * Key: `<path>::<method>`. The workflow passes that string around opaquely, so a "file"
+ * everywhere downstream is really a method unit; `f.path` is still the source file it
+ * lives in, which is what git, the diff and the PR care about.
+ */
+function expandFilesIntoMethodUnits(classes) {
+  const files = Object.values(state.files).filter((f) => !f.method);
+  let units = 0, skipped = 0;
+  for (const f of files) {
+    const fq = f.fqcn || repo.fqcnOf(f.path);
+    const c = classes[fq];
+    delete state.files[f.path];
+    if (!c || !c.methods || !Object.keys(c.methods).length) { skipped += 1; continue; }
+    for (const [name, m] of Object.entries(c.methods)) {
+      const executable = m.missed + m.covered;
+      if (executable <= 0) continue;                 // nothing to test in there
+      const key = `${f.path}::${name}`;
+      state.files[key] = {
+        path: f.path, method: name, fqcn: fq, module: f.module, lines: f.lines,
+        key, methodLine: m.line || null,
+        coverage: executable > 0 ? round2((m.covered * 100) / executable) : 0,
+        coveredLines: m.covered, missedLines: m.missed, executableLines: executable,
+        mutation: null, mac: null, macBefore: null, macAfter: null,
+        status: 'candidate', attempts: 0, branch: null, prUrl: null, prPatch: null,
+        updatedAt: Math.floor(Date.now() / 1000),
+      };
+      units += 1;
+    }
+  }
+  if (units) {
+    S.event('measuring_baseline', `unit of work is the METHOD: ${files.length} class(es) → ${units} method(s)`
+      + (skipped ? `; ${skipped} class(es) had no executable method` : ''));
+  }
+  S.save();
 }
 
 function candidates() {
@@ -281,7 +339,8 @@ const routes = {
     const r = await coverage.runCoverage();
     if (body.phase === 'baseline') {
       state.run.baseline.coveragePct = r.totalPct;
-      // per-file mac recompute
+      expandFilesIntoMethodUnits(r.classes || {});
+      // per-unit mac recompute
       for (const f of Object.values(state.files)) f.mac = mac(f.coverage, f.mutation);
     }
     state.run.result.coveragePct = r.totalPct;
@@ -326,7 +385,9 @@ const routes = {
     }
     state.run.iteration += 1;
     const template = state.decisions.pre_pick?.result?.branchTemplate || 'tests/improve-{file}';
-    const branch = template.replace('{file}', fileSlug(file));
+    // branch (and therefore the PR) is per SOURCE FILE — the brief asks for a PR per
+    // file — while the unit of work below it is the method
+    const branch = template.replace('{file}', fileSlug(unitPath(file)));
     S.setStage('picking_file', `iteration ${state.run.iteration}: picked ${file}`);
     await repo.createBranch(branch);
     S.upsertFile(file, {
@@ -342,7 +403,7 @@ const routes = {
     needRun();
     const file = body.file;
     if (!file) throw new Error('file required');
-    S.setStage(body.stage || 'improving_mutation', `mutation testing ${file}`);
+    S.setStage(body.stage || 'improving_mutation', `mutation testing ${unitLabel(file)}`);
     let r;
     try {
       r = await pit.runPit(file);
@@ -382,30 +443,16 @@ const routes = {
       S.upsertFile(file, { status: 'no_mutants', coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac });
       recordMeasurement(file, { coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac, noMutants: true });
       ledger()[file] = { state: 'no_mutants', ts: Date.now(), metrics: { spentSec, totalMutants: r.totalMutants ?? 0 } };
-      S.event('improving_mutation', `${file}: ${r.totalMutants ?? 0} mutants (min ${minMutants}) — `
-        + 'no meaningful mutation surface, skipping to the next class');
+      S.event('improving_mutation', `${unitLabel(file)}: ${r.totalMutants ?? 0} mutants (min ${minMutants}) — `
+        + 'no meaningful mutation surface, skipping to the next method');
       S.save();
       return { ok: true, ...r, skip: true, reason: 'too few mutants to improve' };
     }
     if (body.phase === 'baseline') {
-      // Rounds work METHOD BY METHOD: a class-wide PIT run costs (all mutants x suite
-      // time) and repeating it every round dominates wall-clock. The queue is the
-      // class's methods ordered by surviving mutants, richest first.
-      const byMethod = r.byMethod || {};
-      const methodQueue = Object.entries(byMethod)
-        .filter(([, v]) => v.survived > 0)
-        .sort((a, b) => b[1].survived - a[1].survived)
-        .map(([m]) => m);
       S.upsertFile(file, {
         macBefore: fileMac, coverageBefore: f.coverage, mutationBefore: r.score,
-        methodStats: { classTotal: r.totalMutants, classKilled: r.killed, byMethod },
-        methodQueue, targetMethod: methodQueue[0] || null,
       });
-      if (methodQueue.length) {
-        S.event('improving_mutation', `${file}: ${methodQueue.length} method(s) with surviving mutants — `
-          + `starting with ${methodQueue[0]}() (${byMethod[methodQueue[0]].survived} survivors)`);
-      }
-      // survives batches even if this file is never improved
+      // survives batches even if this unit is never improved
       recordMeasurement(file, { coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac });
       refreshTotals();
       S.save();
@@ -418,12 +465,13 @@ const routes = {
     const p = q.get('path');
     if (!p) throw new Error('path required');
     S.setStage('improving_coverage', `analysing coverage gaps in ${p}`);
-    const source = repo.readFileSafe(p, 24000);
+    const srcPath = unitPath(p);
+    const source = repo.readFileSafe(srcPath, 24000);
     const f = state.files[p] || {};
     const round = (f.rounds || 0) + 1;
     // each round writes its OWN test classes — Java forbids two public classes of the
     // same name, and append-only additions keep earlier rounds' commits intact
-    const guess = repo.guessTestPath(p, round);
+    const guess = repo.guessTestPath(srcPath, round);
     let existingTest = guess.exists ? repo.readFileSafe(guess.path, 12000) : null;
     if (!existingTest) {
       // no test for this class yet → hand the LLM a sibling test to imitate
@@ -431,17 +479,20 @@ const routes = {
       const ref = repo.findStyleReference(p);
       if (ref) existingTest = `// STYLE REFERENCE — an existing test from this repo (${ref.path}).\n// Imitate its imports, assertion style and conventions. Do not modify it.\n${ref.content}`;
     }
-    const fqcn = f.fqcn || repo.fqcnOf(p);
+    const fqcn = f.fqcn || repo.fqcnOf(srcPath);
     return {
-      ok: true, path: p, source, sourceLines: source ? source.split('\n').length : 0,
+      ok: true, path: srcPath, unit: p, source, sourceLines: source ? source.split('\n').length : 0,
       uncovered: coverage.uncoveredLines(p),
+      // the method this unit is about: the tests must concentrate here
+      method: f.method || null,
+      methodLine: f.methodLine || null,
       rounds: f.rounds || 0,
       survived: f.lastSurvived || [],
       targetMethod: f.targetMethod || null,
       fqcn,
       package: fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '',
       className: fqcn.slice(fqcn.lastIndexOf('.') + 1),
-      module: f.module || repo.moduleOf(p),
+      module: f.module || repo.moduleOf(srcPath),
       // both generated class names for THIS round, already Surefire/Gradle-includable
       covTestPath: guess.covPath,
       mutTestPath: guess.mutPath,
@@ -586,36 +637,11 @@ const routes = {
         return { ok: true, improved: false, testsGreen: false, reason: 'full suite red', summary: suite.summary, file };
       }
       const cov = await coverage.runCoverage();
-      // Method-scoped re-measurement: mutate only the method this round targeted, then
-      // PROJECT the class score from it. A class-wide run per round is the single most
-      // expensive thing the pipeline does; mutants outside the targeted method are
-      // unaffected by the new tests (if anything the projection under-counts, since a
-      // new test may incidentally kill mutants elsewhere — it is never optimistic).
-      // The class is re-measured for real once, when the rounds end (/api/round/drop).
-      const target = state.files[file].targetMethod;
-      const ms = state.files[file].methodStats;
-      const scoped = !!(target && ms && state.run.config.pitScope !== 'class');
-      S.setStage('improving_mac', scoped
-        ? `re-measuring mutation score of ${target}() in ${file}`
-        : `re-measuring mutation score for ${file}`);
-      const st = await pit.runPit(file, { onlyMethod: scoped ? target : null });
-      if (scoped) {
-        const before = ms.byMethod[target] || { total: 0, killed: 0, survived: 0 };
-        const projectedKilled = Math.max(0, ms.classKilled - before.killed + st.killed);
-        const newByMethod = { ...ms.byMethod, [target]: { total: st.totalMutants, killed: st.killed, survived: st.survived.length } };
-        S.upsertFile(file, {
-          methodStats: { classTotal: ms.classTotal, classKilled: projectedKilled, byMethod: newByMethod },
-        });
-        st.score = ms.classTotal ? round2((projectedKilled * 100) / ms.classTotal) : st.score;
-        S.event('improving_mac', `${target}(): ${before.killed}/${before.total} → ${st.killed}/${st.totalMutants} killed `
-          + `⇒ class projected ${projectedKilled}/${ms.classTotal} = ${st.score}%`);
-        // move to the next method once this one is exhausted
-        if (!st.survived.length) {
-          const q = (state.files[file].methodQueue || []).filter((m) => m !== target);
-          S.upsertFile(file, { methodQueue: q, targetMethod: q[0] || null });
-          if (q[0]) S.event('improving_mac', `${target}() has no survivors left — next: ${q[0]}()`);
-        }
-      }
+      // The unit IS a method, so PIT measures exactly it: the score needs no projection
+      // and no class-wide reconciliation. MAC for the unit = method coverage x method
+      // mutation score, both measured on the same method.
+      S.setStage('improving_mac', `re-measuring mutation score of ${unitLabel(file)}`);
+      const st = await pit.runPit(file);
       const coverageAfter = state.files[file].coverage;
       const macAfter = mac(coverageAfter, st.score);
       S.upsertFile(file, {
@@ -700,26 +726,6 @@ const routes = {
     // drop the last (stale/degraded) round: uncommitted changes only
     await repo.discardUncommitted();
     let rb = f.roundBase || { coverage: f.coverageBefore, mutation: f.mutationBefore, mac: f.macBefore };
-    // Rounds measured one method at a time and PROJECTED the class score. Now that the
-    // kept commits are the final state, measure the whole class once for real, so the
-    // number in the PR and on the dashboard is measured rather than inferred.
-    if ((f.rounds || 0) > 0 && f.methodStats && state.run.config.pitScope !== 'class') {
-      try {
-        S.setStage('improving_mac', `final class-wide mutation measurement for ${file}`);
-        const full = await pit.runPit(file);
-        const trueMac = mac(rb.coverage, full.score);
-        if (full.score !== rb.mutation) {
-          S.event('improving_mac', `final class measurement: projected ${rb.mutation}% → measured ${full.score}% `
-            + `(MAC ${rb.mac} → ${trueMac})`);
-        }
-        rb = { ...rb, mutation: full.score, mac: trueMac };
-        S.upsertFile(file, {
-          methodStats: { classTotal: full.totalMutants, classKilled: full.killed, byMethod: full.byMethod },
-        });
-      } catch (e) {
-        S.event('improving_mac', 'final class measurement failed, keeping the projected score: ' + e.message.slice(0, 160));
-      }
-    }
     const keptRounds = (f.rounds || 0) > 0;
     S.upsertFile(file, keptRounds
       ? { coverage: rb.coverage, mutation: rb.mutation, mac: rb.mac,
@@ -755,7 +761,7 @@ const routes = {
     try {
       const diffText = await pr.diffAgainstBase();
       const stats = timesheet.diffStats(diffText);
-      const src = repo.readFileSafe(file, 500000);
+      const src = repo.readFileSafe(unitPath(file), 500000);
       const mutantsKilled = (f.totalMutants && f.mutationAfter != null && f.mutationBefore != null)
         ? Math.max(0, Math.round((f.mutationAfter - f.mutationBefore) * f.totalMutants / 100))
         : Math.ceil(stats.testCases / 2);

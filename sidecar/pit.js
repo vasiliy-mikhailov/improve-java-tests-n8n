@@ -150,8 +150,11 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
   const dir = repo.repoDir();
   if (!state.runner?.tool) throw new Error('build not detected — call /api/repo/prepare first');
   const f = state.files[fileRel] || {};
-  const fqcn = f.fqcn || repo.fqcnOf(fileRel);
-  const moduleRel = f.module || repo.moduleOf(fileRel);
+  const srcPath = f.path || String(fileRel).split('::')[0];
+  const fqcn = f.fqcn || repo.fqcnOf(srcPath);
+  const moduleRel = f.module || repo.moduleOf(srcPath);
+  // the unit IS a method: mutate only it unless explicitly asked for the whole class
+  if (onlyMethod === undefined || onlyMethod === null) onlyMethod = f.method || null;
   const pkg = fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '';
   const cls = fqcn.slice(fqcn.lastIndexOf('.') + 1);
   // the class's own tests, ours, and anything else named after it
@@ -163,9 +166,14 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
   // option, but it has excludedMethods — so mutating one method means excluding all the
   // others. The method list comes from the class's own baseline report (bytecode truth,
   // including constructors as <init>), not from parsing source.
-  const excluded = onlyMethod && f.methodStats?.byMethod
-    ? Object.keys(f.methodStats.byMethod).filter((m) => m !== onlyMethod)
-    : [];
+  // Everything except the target method. The method list comes from the class's sibling
+  // units (JaCoCo enumerated every method at baseline) or, failing that, from a previous
+  // PIT report — never from parsing source.
+  const siblings = Object.values(state.files)
+    .filter((u) => u.path === srcPath && u.method)
+    .map((u) => u.method);
+  const known = siblings.length ? siblings : Object.keys(f.methodStats?.byMethod || {});
+  const excluded = onlyMethod ? [...new Set(known)].filter((m) => m !== onlyMethod) : [];
 
   let r;
   if (state.runner.tool === 'maven') {
