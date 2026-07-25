@@ -27,6 +27,10 @@ function envConfig() {
     // a class with fewer mutants than this has no mutation surface worth a run
     // (annotations, marker interfaces, constants holders)
     minMutantsPerClass: parseInt(e.MIN_MUTANTS_PER_CLASS || '3', 10),
+    // 'method' (default): rounds mutate one method at a time and project the class
+    // score, with one class-wide measurement at the end. 'class': mutate everything
+    // every round — honest but far slower.
+    pitScope: e.PIT_SCOPE || 'method',
     prMode: e.PR_MODE || 'github', // github | local
     prBase: e.PR_BASE || '',       // defaults to repoBranch
     setupScript: e.SETUP_SCRIPT || '', // extra build goal/task to run after compile (e.g. 'shade')
@@ -47,7 +51,7 @@ function freshRun(overrides = {}) {
   const o = overrides && typeof overrides === 'object' ? overrides : {};
   for (const k of ['repoUrl', 'repoBranch', 'scopeGlob', 'scopeLimit', 'maxIterations',
     'maxMutantsPerFile', 'maxRoundsPerFile', 'maxAttemptsPerFile', 'minRoundGapFrac',
-    'minRoundGain', 'minMutantsPerClass', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
+    'minRoundGain', 'minMutantsPerClass', 'pitScope', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
     if (o[k] !== undefined && o[k] !== null && o[k] !== '') cfg[k] = o[k];
   }
   if (o.rules && typeof o.rules === 'object') {

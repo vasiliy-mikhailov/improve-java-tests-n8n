@@ -383,9 +383,23 @@ const routes = {
       return { ok: true, ...r, skip: true, reason: 'too few mutants to improve' };
     }
     if (body.phase === 'baseline') {
+      // Rounds work METHOD BY METHOD: a class-wide PIT run costs (all mutants x suite
+      // time) and repeating it every round dominates wall-clock. The queue is the
+      // class's methods ordered by surviving mutants, richest first.
+      const byMethod = r.byMethod || {};
+      const methodQueue = Object.entries(byMethod)
+        .filter(([, v]) => v.survived > 0)
+        .sort((a, b) => b[1].survived - a[1].survived)
+        .map(([m]) => m);
       S.upsertFile(file, {
         macBefore: fileMac, coverageBefore: f.coverage, mutationBefore: r.score,
+        methodStats: { classTotal: r.totalMutants, classKilled: r.killed, byMethod },
+        methodQueue, targetMethod: methodQueue[0] || null,
       });
+      if (methodQueue.length) {
+        S.event('improving_mutation', `${file}: ${methodQueue.length} method(s) with surviving mutants — `
+          + `starting with ${methodQueue[0]}() (${byMethod[methodQueue[0]].survived} survivors)`);
+      }
       // survives batches even if this file is never improved
       recordMeasurement(file, { coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac });
       refreshTotals();
@@ -418,6 +432,7 @@ const routes = {
       uncovered: coverage.uncoveredLines(p),
       rounds: f.rounds || 0,
       survived: f.lastSurvived || [],
+      targetMethod: f.targetMethod || null,
       fqcn,
       package: fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '',
       className: fqcn.slice(fqcn.lastIndexOf('.') + 1),
@@ -566,8 +581,36 @@ const routes = {
         return { ok: true, improved: false, testsGreen: false, reason: 'full suite red', summary: suite.summary, file };
       }
       const cov = await coverage.runCoverage();
-      S.setStage('improving_mac', `re-measuring mutation score for ${file}`);
-      const st = await pit.runPit(file);
+      // Method-scoped re-measurement: mutate only the method this round targeted, then
+      // PROJECT the class score from it. A class-wide run per round is the single most
+      // expensive thing the pipeline does; mutants outside the targeted method are
+      // unaffected by the new tests (if anything the projection under-counts, since a
+      // new test may incidentally kill mutants elsewhere — it is never optimistic).
+      // The class is re-measured for real once, when the rounds end (/api/round/drop).
+      const target = state.files[file].targetMethod;
+      const ms = state.files[file].methodStats;
+      const scoped = !!(target && ms && state.run.config.pitScope !== 'class');
+      S.setStage('improving_mac', scoped
+        ? `re-measuring mutation score of ${target}() in ${file}`
+        : `re-measuring mutation score for ${file}`);
+      const st = await pit.runPit(file, { onlyMethod: scoped ? target : null });
+      if (scoped) {
+        const before = ms.byMethod[target] || { total: 0, killed: 0, survived: 0 };
+        const projectedKilled = Math.max(0, ms.classKilled - before.killed + st.killed);
+        const newByMethod = { ...ms.byMethod, [target]: { total: st.totalMutants, killed: st.killed, survived: st.survived.length } };
+        S.upsertFile(file, {
+          methodStats: { classTotal: ms.classTotal, classKilled: projectedKilled, byMethod: newByMethod },
+        });
+        st.score = ms.classTotal ? round2((projectedKilled * 100) / ms.classTotal) : st.score;
+        S.event('improving_mac', `${target}(): ${before.killed}/${before.total} → ${st.killed}/${st.totalMutants} killed `
+          + `⇒ class projected ${projectedKilled}/${ms.classTotal} = ${st.score}%`);
+        // move to the next method once this one is exhausted
+        if (!st.survived.length) {
+          const q = (state.files[file].methodQueue || []).filter((m) => m !== target);
+          S.upsertFile(file, { methodQueue: q, targetMethod: q[0] || null });
+          if (q[0]) S.event('improving_mac', `${target}() has no survivors left — next: ${q[0]}()`);
+        }
+      }
       const coverageAfter = state.files[file].coverage;
       const macAfter = mac(coverageAfter, st.score);
       S.upsertFile(file, {
@@ -651,7 +694,27 @@ const routes = {
     S.setStage('improving_mac', `finalizing ${file} after ${f.rounds || 0} accepted round(s)`);
     // drop the last (stale/degraded) round: uncommitted changes only
     await repo.discardUncommitted();
-    const rb = f.roundBase || { coverage: f.coverageBefore, mutation: f.mutationBefore, mac: f.macBefore };
+    let rb = f.roundBase || { coverage: f.coverageBefore, mutation: f.mutationBefore, mac: f.macBefore };
+    // Rounds measured one method at a time and PROJECTED the class score. Now that the
+    // kept commits are the final state, measure the whole class once for real, so the
+    // number in the PR and on the dashboard is measured rather than inferred.
+    if ((f.rounds || 0) > 0 && f.methodStats && state.run.config.pitScope !== 'class') {
+      try {
+        S.setStage('improving_mac', `final class-wide mutation measurement for ${file}`);
+        const full = await pit.runPit(file);
+        const trueMac = mac(rb.coverage, full.score);
+        if (full.score !== rb.mutation) {
+          S.event('improving_mac', `final class measurement: projected ${rb.mutation}% → measured ${full.score}% `
+            + `(MAC ${rb.mac} → ${trueMac})`);
+        }
+        rb = { ...rb, mutation: full.score, mac: trueMac };
+        S.upsertFile(file, {
+          methodStats: { classTotal: full.totalMutants, classKilled: full.killed, byMethod: full.byMethod },
+        });
+      } catch (e) {
+        S.event('improving_mac', 'final class measurement failed, keeping the projected score: ' + e.message.slice(0, 160));
+      }
+    }
     const keptRounds = (f.rounds || 0) > 0;
     S.upsertFile(file, keptRounds
       ? { coverage: rb.coverage, mutation: rb.mutation, mac: rb.mac,

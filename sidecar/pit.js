@@ -94,7 +94,7 @@ function ensureMavenWiring(moduleRel) {
   return 'injected';
 }
 
-function gradleInitScript(targetClasses, targetTests) {
+function gradleInitScript(targetClasses, targetTests, excluded = []) {
   return `// injected by improve-java-tests-n8n — applies gradle-pitest-plugin without touching the repo
 initscript {
   // allowInsecureProtocol: the on-host Nexus is plain http, and Gradle 7+ refuses
@@ -115,6 +115,7 @@ allprojects { p ->
       targetClasses = ['${targetClasses}']
       ${targetTests ? `targetTests = ['${targetTests}']` : ''}
       mutators = ['${MUTATORS}']
+      ${excluded.length ? `excludedMethods = [${excluded.map((m) => `'${m}'`).join(', ')}]` : ''}
       outputFormats = ['XML']
       timestampedReports = false
       failWhenNoMutations = false
@@ -131,16 +132,26 @@ allprojects { p ->
  * `targetTests` scopes which tests PIT runs — the class's own tests plus ours — so an
  * unrelated broken test elsewhere in the module cannot sink the measurement.
  */
-async function runPit(fileRel) {
+async function runPit(fileRel, { onlyMethod = null } = {}) {
   const dir = repo.repoDir();
   if (!state.runner?.tool) throw new Error('build not detected — call /api/repo/prepare first');
-  const fqcn = state.files[fileRel]?.fqcn || repo.fqcnOf(fileRel);
-  const moduleRel = state.files[fileRel]?.module || repo.moduleOf(fileRel);
+  const f = state.files[fileRel] || {};
+  const fqcn = f.fqcn || repo.fqcnOf(fileRel);
+  const moduleRel = f.module || repo.moduleOf(fileRel);
   const pkg = fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '';
   const cls = fqcn.slice(fqcn.lastIndexOf('.') + 1);
   // the class's own tests, ours, and anything else named after it
   const targetTests = pkg ? `${pkg}.${cls}*Test*` : `${cls}*Test*`;
   const targetClasses = `${fqcn}*`;   // includes inner classes
+
+  // Method scoping. PIT's cost is (mutants × suite time) and a class-wide run re-mutates
+  // everything on every round, which dominates wall-clock. PIT has no "target method"
+  // option, but it has excludedMethods — so mutating one method means excluding all the
+  // others. The method list comes from the class's own baseline report (bytecode truth,
+  // including constructors as <init>), not from parsing source.
+  const excluded = onlyMethod && f.methodStats?.byMethod
+    ? Object.keys(f.methodStats.byMethod).filter((m) => m !== onlyMethod)
+    : [];
 
   let r;
   if (state.runner.tool === 'maven') {
@@ -158,12 +169,13 @@ async function runPit(fileRel) {
       `-DtargetClasses=${targetClasses}`, `-DtargetTests=${targetTests}`,
       `-Dmutators=${MUTATORS}`, '-DoutputFormats=XML', '-DtimestampedReports=false',
       '-DfailWhenNoMutations=false', '-DtimeoutConstant=8000'];
+    if (excluded.length) argv.push(`-DexcludedMethods=${excluded.join(',')}`);
     // no -am here: dependencies are built by the compile step above, and -DskipTests
     // (which -am would need) makes PIT skip its own run
     if (moduleRel && moduleRel !== '.') argv.push('-pl', moduleRel);
     r = await run(argv, { cwd: dir, timeoutMs: 3600000, label: 'pit', env: repo.buildEnv() });
   } else {
-    fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript(targetClasses, targetTests));
+    fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript(targetClasses, targetTests, excluded));
     const task = moduleRel && moduleRel !== '.' ? `:${moduleRel.split('/').join(':')}:pitest` : 'pitest';
     r = await run([state.runner.wrapper, '--no-daemon', '-I', INIT_SCRIPT, task],
       { cwd: dir, timeoutMs: 3600000, label: 'pit', env: repo.buildEnv() });
@@ -190,7 +202,9 @@ async function runPit(fileRel) {
     throw new Error(`PIT produced no report (exit ${r.code}): ` + out.slice(-800));
   }
   const parsed = parseReport(reportAbs, fileRel, fqcn);
-  event('pit', `${fileRel}: ${parsed.totalMutants} mutants, ${parsed.killed} killed, `
+  parsed.scope = onlyMethod || 'class';
+  event('pit', `${fileRel}${onlyMethod ? ' [method ' + onlyMethod + '()]' : ''}: `
+    + `${parsed.totalMutants} mutants, ${parsed.killed} killed, `
     + `${parsed.survived.length} survived+nocov, score ${parsed.score}%`);
   return parsed;
 }
@@ -251,10 +265,18 @@ function parseReport(reportAbs, fileRel, fqcn) {
   const killed = scored.filter((x) => x.detected).length;
   const total = scored.length;
   const score = total ? round2((killed * 100) / total) : 0;
+  // per-method breakdown: the unit of work for rounds, and the list of method names
+  // (bytecode truth) that method scoping excludes against
+  const byMethod = {};
+  for (const m of scored) {
+    const e = (byMethod[m.method || '?'] ||= { total: 0, killed: 0, survived: 0 });
+    e.total += 1;
+    if (m.detected) e.killed += 1; else e.survived += 1;
+  }
   const survived = scored.filter((x) => !x.detected)
     // NO_COVERAGE first: the cheapest kills — the line is never even executed
     .sort((a, b) => (a.status === 'NO_COVERAGE' ? 0 : 1) - (b.status === 'NO_COVERAGE' ? 0 : 1));
-  return { file: fileRel, fqcn, totalMutants: total, killed, score, survived, report: path.basename(reportAbs) };
+  return { file: fileRel, fqcn, totalMutants: total, killed, score, survived, byMethod, report: path.basename(reportAbs) };
 }
 
 module.exports = { runPit, ensureMavenWiring, parseReport, PIT_VERSION, MUTATORS };

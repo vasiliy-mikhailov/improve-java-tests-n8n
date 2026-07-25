@@ -247,6 +247,7 @@ const system = 'You are an expert Java test engineer writing ' + (gaps.testFrame
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
 const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ')\\n'
   + String(gaps.source || '').slice(0, 12000)
+  + (gaps.targetMethod ? '\\n\\nFOCUS: this round targets the method ' + gaps.targetMethod + '() — every mutant below is inside it, so concentrate the new tests there.' : '')
   + '\\n\\nSURVIVING MUTANTS TO KILL (status SURVIVED = line runs but nothing asserts on it; NO_COVERAGE = line never runs):\\n' + mutantsTxt
   + '\\n\\nEXISTING TEST (style reference — do NOT rewrite it):\\n'
   + String(gaps.existingTest || '(none)').slice(0, 4000)
