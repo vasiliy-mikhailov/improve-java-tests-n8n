@@ -119,12 +119,28 @@ function detectJdk() {
   }
   const declared = versions.length ? Math.max(...versions) : null;
   const installed = availableJdks();
-  // build with the declared JDK when we have it; otherwise the closest higher one
-  // (newer javac still compiles older `--release`), else the newest we have.
-  let chosen = declared && installed.includes(declared) ? declared
-    : declared ? (installed.filter((v) => v >= declared).sort((a, b) => a - b)[0] ?? installed[installed.length - 1])
-      : (installed.includes(17) ? 17 : installed[installed.length - 1]);
-  return { declared, chosen, javaHome: javaHomeFor(chosen), installed };
+  const order = jdkPreference(declared, installed);
+  return { declared, chosen: order[0], order, javaHome: javaHomeFor(order[0]), installed };
+}
+
+/**
+ * JDKs to TRY, best first. The declared bytecode target is a floor, not an answer:
+ * Apache Commons and friends declare `maven.compiler.source=1.8` while their plugin
+ * stack (japicmp, animal-sniffer, modern Surefire) refuses to run on JDK 8. Building
+ * those under the declared 8 is what killed half the first eval sweep. So prefer a
+ * modern JDK that can still emit the declared target, and fall back downwards only if
+ * the build actually fails (install() walks this list).
+ */
+function jdkPreference(declared, installed) {
+  const d = declared || 8;
+  let wish;
+  if (d <= 8) wish = [17, 11, 21, 8];
+  else if (d <= 11) wish = [17, 11, 21];
+  else if (d <= 17) wish = [17, 21];
+  else wish = [d, 21];
+  const order = wish.filter((v) => installed.includes(v) && v >= d);
+  // never return empty: fall back to anything installed that can build the target
+  return order.length ? order : installed.filter((v) => v >= d).concat(installed).slice(0, 2);
 }
 
 function availableJdks() {
@@ -236,16 +252,27 @@ async function install() {
   const jdk = detectJdk();
   if (!jdk.javaHome) throw new Error('no JDK available in the image');
   state.runner = { ...build, jdk, testFramework: null };
-  event('installing', `build=${build.tool} (${build.wrapper}), JDK ${jdk.chosen}`
-    + (jdk.declared ? ` (declared ${jdk.declared})` : '') + `, available ${jdk.installed.join('/')}`);
+  event('installing', `build=${build.tool} (${build.wrapper}), declared JDK ${jdk.declared ?? '?'}, `
+    + `trying ${jdk.order.join(' → ')} (available ${jdk.installed.join('/')})`);
 
-  // compile main + test sources: warms the Nexus-mirrored dependency cache and
-  // fails fast on repos we cannot build at all
+  // Compile main + test sources under each candidate JDK until one works: this both
+  // warms the Nexus-mirrored dependency cache and DISCOVERS the JDK the project really
+  // needs, which is the only reliable way to know it.
   const argv = build.tool === 'maven'
     ? [build.wrapper, '-B', '-ntp', '-DskipTests', 'test-compile']
     : [build.wrapper, '--no-daemon', '-q', 'testClasses'];
-  const r = await run(argv, { cwd: dir, timeoutMs: 2400000, label: 'compile', env: buildEnv() });
-  if (r.code !== 0) throw new Error('project build failed: ' + (r.stderr || r.stdout).slice(-700));
+  let r = null, lastErr = '';
+  for (const major of jdk.order) {
+    state.runner.jdk = { ...jdk, chosen: major, javaHome: javaHomeFor(major) };
+    r = await run(argv, { cwd: dir, timeoutMs: 2400000, label: `compile (JDK ${major})`, env: buildEnv() });
+    if (r.code === 0) {
+      if (major !== jdk.order[0]) event('installing', `JDK ${jdk.order[0]} could not build this project — JDK ${major} can`);
+      break;
+    }
+    lastErr = (r.stderr || r.stdout).slice(-700);
+    event('installing', `build failed under JDK ${major}${major === jdk.order[jdk.order.length - 1] ? '' : ' — trying the next JDK'}`);
+  }
+  if (!r || r.code !== 0) throw new Error(`project build failed under every candidate JDK (${jdk.order.join('/')}): ` + lastErr);
 
   const tf = detectTestFramework();
   state.runner = { ...state.runner, testFramework: tf.framework, testFrameworkVersion: tf.version };

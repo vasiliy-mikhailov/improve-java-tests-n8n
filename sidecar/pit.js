@@ -97,7 +97,13 @@ function ensureMavenWiring(moduleRel) {
 function gradleInitScript(targetClasses, targetTests) {
   return `// injected by improve-java-tests-n8n — applies gradle-pitest-plugin without touching the repo
 initscript {
-  repositories { maven { url = uri('${process.env.MAVEN_MIRROR_URL || 'https://plugins.gradle.org/m2'}') }; mavenCentral() }
+  // allowInsecureProtocol: the on-host Nexus is plain http, and Gradle 7+ refuses
+  // http repositories without it — that rejection killed the Gradle PIT path.
+  repositories {
+    maven { url = uri('${process.env.MAVEN_MIRROR_URL || 'https://plugins.gradle.org/m2'}'); allowInsecureProtocol = true }
+    gradlePluginPortal()
+    mavenCentral()
+  }
   dependencies { classpath 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:1.15.0' }
 }
 allprojects { p ->
