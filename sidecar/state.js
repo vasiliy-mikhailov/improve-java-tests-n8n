@@ -24,6 +24,9 @@ function envConfig() {
     // machine time if the last one closed a real share of the remaining MAC gap
     minRoundGapFrac: parseFloat(e.MIN_ROUND_GAP_FRAC || '0.05'),
     minRoundGain: parseFloat(e.MIN_ROUND_GAIN || '0.5'),
+    // a class with fewer mutants than this has no mutation surface worth a run
+    // (annotations, marker interfaces, constants holders)
+    minMutantsPerClass: parseInt(e.MIN_MUTANTS_PER_CLASS || '3', 10),
     prMode: e.PR_MODE || 'github', // github | local
     prBase: e.PR_BASE || '',       // defaults to repoBranch
     setupScript: e.SETUP_SCRIPT || '', // extra build goal/task to run after compile (e.g. 'shade')
@@ -44,7 +47,7 @@ function freshRun(overrides = {}) {
   const o = overrides && typeof overrides === 'object' ? overrides : {};
   for (const k of ['repoUrl', 'repoBranch', 'scopeGlob', 'scopeLimit', 'maxIterations',
     'maxMutantsPerFile', 'maxRoundsPerFile', 'maxAttemptsPerFile', 'minRoundGapFrac',
-    'minRoundGain', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
+    'minRoundGain', 'minMutantsPerClass', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
     if (o[k] !== undefined && o[k] !== null && o[k] !== '') cfg[k] = o[k];
   }
   if (o.rules && typeof o.rules === 'object') {
@@ -57,6 +60,7 @@ function freshRun(overrides = {}) {
   cfg.maxAttemptsPerFile = parseInt(cfg.maxAttemptsPerFile, 10) || 3;
   cfg.minRoundGapFrac = Math.max(0, parseFloat(cfg.minRoundGapFrac) || 0);
   cfg.minRoundGain = Math.max(0, parseFloat(cfg.minRoundGain) || 0);
+  cfg.minMutantsPerClass = Math.max(0, parseInt(cfg.minMutantsPerClass, 10) || 0);
   if (!cfg.prBase) cfg.prBase = cfg.repoBranch;
   return {
     id: 'run-' + Date.now(),

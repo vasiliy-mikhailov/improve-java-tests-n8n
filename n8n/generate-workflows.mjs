@@ -108,6 +108,9 @@ IfNum('File Picked?', `={{ $json.result && $json.result.file ? 1 : 0 }}`, 'equal
 IfNum('Pick Retryable?', `={{ ($json.result && $json.result.retry) ? 1 : 0 }}`, 'equal', 1);
 Http('Start Iteration', { path: '/api/iteration/start', body: `={{ { file: $('Rules: pick file').first().json.result.file } }}` });
 Http('Baseline Mutation', { path: '/api/pit/run', body: `={{ { file: $('Start Iteration').first().json.file, phase: 'baseline', stage: 'improving_mutation' } }}`, timeout: 3600000 });
+// a class PIT finds (almost) nothing to mutate in — annotation, marker interface,
+// constants holder — cannot be improved, so skip it without spending the round budget
+IfNum('Has Mutants?', `={{ $json.skip ? 0 : 1 }}`, 'equal', 1);
 Http('Coverage Gaps', { method: 'GET', urlExpr: `=${API}/api/files/gaps?path={{ encodeURIComponent($('Start Iteration').first().json.file) }}` });
 
 chain('Start (manual)', 'Start Run');
@@ -117,7 +120,9 @@ chain('Start Run', 'Clone Repo', 'Rules: post-clone', 'Build & Detect', 'Baselin
 link('More Work?', 'Rules: pick file', 0);
 link('Rules: pick file', 'File Picked?');
 link('File Picked?', 'Start Iteration', 0);
-chain('Start Iteration', 'Baseline Mutation', 'Coverage Gaps');
+chain('Start Iteration', 'Baseline Mutation', 'Has Mutants?');
+link('Has Mutants?', 'Coverage Gaps', 0);
+link('Has Mutants?', 'Next Iteration', 1);   // nothing to mutate → pick another class
 
 // =============================================================================
 // IMPROVEMENT PHASE (generic: coverage / mutation)

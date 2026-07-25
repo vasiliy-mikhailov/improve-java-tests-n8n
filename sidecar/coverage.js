@@ -79,12 +79,17 @@ async function runCoverage() {
     const fq = f.fqcn || repo.fqcnOf(rel);
     const c = merged.classes[fq];
     if (c) {
-      const pct = c.missed + c.covered > 0 ? round2((c.covered * 100) / (c.covered + c.missed)) : 0;
+      const executable = c.missed + c.covered;
+      const pct = executable > 0 ? round2((c.covered * 100) / executable) : 0;
       byPath[rel] = pct;
-      upsertFile(rel, { coverage: pct, coveredLines: c.covered, missedLines: c.missed });
+      upsertFile(rel, { coverage: pct, coveredLines: c.covered, missedLines: c.missed, executableLines: executable });
     } else if (f.coverage == null) {
-      // class never loaded by any test → nothing covered
-      upsertFile(rel, { coverage: 0 });
+      // Absent from the report entirely. JaCoCo lists every class it saw on the
+      // classpath, so absence means there is no executable code at all — an
+      // annotation (@interface), a marker interface, a constants holder. Those read
+      // as "0 % covered" and used to sort straight to the top of the pick list, where
+      // they consumed a whole run each and could never improve.
+      upsertFile(rel, { coverage: 0, executableLines: 0 });
       byPath[rel] = 0;
     }
   }

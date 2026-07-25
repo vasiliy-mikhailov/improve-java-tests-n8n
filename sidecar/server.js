@@ -167,12 +167,17 @@ function candidates() {
   const processed = all.filter((f) => ['improved', 'no_improvement', 'failed'].includes(f.status) && !f.fromLedger).length;
   const list = all
     .filter((f) => f.status === 'candidate' && f.attempts < maxAttempts)
+    // a class JaCoCo reports no executable lines for cannot be tested or mutated
+    .filter((f) => f.executableLines == null || f.executableLines > 0)
     .map((f) => ({
       path: f.path, coverage: f.coverage, mutation: f.mutation, mac: f.mac,
       attempts: f.attempts, lines: f.lines ?? null, mutants: f.totalMutants ?? null,
+      executableLines: f.executableLines ?? null,
     }))
+    // weakest first, and among equally weak classes the one with the MOST executable
+    // code: that is where the mutants — and therefore the achievable gain — are
     .sort((a, b) => (a.mac ?? (a.coverage ?? 0) / 2) - (b.mac ?? (b.coverage ?? 0) / 2)
-      || (a.lines ?? 0) - (b.lines ?? 0));
+      || (b.executableLines ?? b.lines ?? 0) - (a.executableLines ?? a.lines ?? 0));
   let done = false, reason = '';
   if (cfg.maxIterations > 0 && state.run.iteration >= cfg.maxIterations) { done = true; reason = `max iterations (${cfg.maxIterations}) reached`; }
   else if (cfg.scopeLimit > 0 && processed >= cfg.scopeLimit) { done = true; reason = `scope limit (${cfg.scopeLimit} files) reached`; }
@@ -361,6 +366,22 @@ const routes = {
     const f = state.files[file] || S.upsertFile(file, {});
     const fileMac = mac(f.coverage, r.score);
     S.upsertFile(file, { mutation: r.score, mac: fileMac, totalMutants: r.totalMutants, lastSurvived: (r.survived || []).slice(0, 10) });
+    // Nothing to mutate → nothing to improve, and MAC is pinned at 0 for ever. Constants
+    // holders, marker interfaces and annotations land here. Settle the file immediately
+    // WITHOUT charging it to the batch's file quota, and let the workflow pick another:
+    // spending a whole run on such a class is how the first real-repo sweep produced
+    // zero PRs across ten repositories.
+    const minMutants = state.run.config.minMutantsPerClass ?? 3;
+    if (body.phase === 'baseline' && (r.totalMutants ?? 0) < minMutants) {
+      const spentSec = accrueSpent(file);
+      S.upsertFile(file, { status: 'no_mutants', coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac });
+      recordMeasurement(file, { coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac, noMutants: true });
+      ledger()[file] = { state: 'no_mutants', ts: Date.now(), metrics: { spentSec, totalMutants: r.totalMutants ?? 0 } };
+      S.event('improving_mutation', `${file}: ${r.totalMutants ?? 0} mutants (min ${minMutants}) — `
+        + 'no meaningful mutation surface, skipping to the next class');
+      S.save();
+      return { ok: true, ...r, skip: true, reason: 'too few mutants to improve' };
+    }
     if (body.phase === 'baseline') {
       S.upsertFile(file, {
         macBefore: fileMac, coverageBefore: f.coverage, mutationBefore: r.score,
