@@ -182,7 +182,7 @@ function candidates() {
 
 // ── route table ────────────────────────────────────────────────────────────
 const routes = {
-  'GET /api/health': async () => ({ ok: true, service: 'ijst-sidecar', stage: state.stage.name, ts: Date.now() }),
+  'GET /api/health': async () => ({ ok: true, service: 'ijt-sidecar', stage: state.stage.name, ts: Date.now() }),
   'GET /api/state': async () => state,
   'GET /api/metrics': async () => metricsPayload(),
   'GET /api/rules': async () => ({ rules: state.run?.config?.rules || S.envConfig().rules, decisions: state.decisions }),

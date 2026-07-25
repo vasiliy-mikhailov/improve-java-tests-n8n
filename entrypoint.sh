@@ -53,12 +53,15 @@ node /app/sidecar/server.js &
     sleep 2
     curl -sf http://127.0.0.1:5678/healthz >/dev/null && break
   done
-  # create owner if instance is fresh (ignored with 4xx if already set up)
-  curl -sS -X POST http://127.0.0.1:5678/rest/owner/setup \
-    -H 'Content-Type: application/json' \
-    -d "{\"email\":\"$OWNER_EMAIL\",\"firstName\":\"IJST\",\"lastName\":\"Bot\",\"password\":\"$OWNER_PASSWORD\"}" >/dev/null 2>&1
-  # login → n8n-auth cookie (valid N8N_USER_MANAGEMENT_JWT_DURATION_HOURS = 10 years)
-  for i in $(seq 1 10); do
+  # login → n8n-auth cookie (valid N8N_USER_MANAGEMENT_JWT_DURATION_HOURS = 10 years).
+  # Owner setup is retried INSIDE the loop: /healthz turns green before /rest is ready
+  # to serve it, and a setup request that lands too early leaves every later login
+  # 401-ing with no owner ever created.
+  for i in $(seq 1 20); do
+    # create owner if the instance is fresh (4xx once it already exists — ignored)
+    curl -sS -X POST http://127.0.0.1:5678/rest/owner/setup \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"$OWNER_EMAIL\",\"firstName\":\"IJT\",\"lastName\":\"Bot\",\"password\":\"$OWNER_PASSWORD\"}" >/dev/null 2>&1
     COOKIE=$(curl -sS -D - -o /dev/null -X POST http://127.0.0.1:5678/rest/login \
       -H 'Content-Type: application/json' \
       -d "{\"emailOrLdapLoginId\":\"$OWNER_EMAIL\",\"password\":\"$OWNER_PASSWORD\"}" \

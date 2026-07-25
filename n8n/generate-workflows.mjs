@@ -212,7 +212,8 @@ const targetPath = gaps.testPath.replace(/\\.java$/, 'Cov.java');
 if (nothingToCover) return [{ json: { skip: true, reason: 'class fully covered', targetPath, projectTestPath: gaps.projectTestPath } }];
 const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
 const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
-const system = 'You are an expert Java test engineer writing ' + (gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5') + ' tests to INCREASE LINE COVERAGE of one class. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}. Create a NEW test class only — never modify existing files. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:${COMMON_TEST_RULES.replace(/\n/g, '\\n')}'
+const RULES = ${JSON.stringify(COMMON_TEST_RULES)};
+const system = 'You are an expert Java test engineer writing ' + (gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5') + ' tests to INCREASE LINE COVERAGE of one class. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}. Create a NEW test class only — never modify existing files. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
 const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ', JDK ' + gaps.jdk + ')\\n'
   + String(gaps.source || '').slice(0, 14000)
@@ -237,7 +238,9 @@ const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
 const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
 const mutantsTxt = survived.map((m, i) =>
   '#' + (i + 1) + ' [' + m.status + '] ' + m.mutator + ' at line ' + m.line + ' in method ' + (m.method || '?') + '() — ' + (m.description || '')).join('\\n');
-const system = 'You are an expert Java test engineer writing ' + (gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5') + ' tests that KILL surviving PIT mutants of one class. A mutant is killed when at least one test FAILS on the mutated code while PASSING on the real code — so each test must assert something that DISTINGUISHES the two. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}. Create a NEW test class only. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:${COMMON_TEST_RULES.replace(/\n/g, '\\n')}${MUTATOR_PLAYBOOK.replace(/\n/g, '\\n')}'
+const RULES = ${JSON.stringify(COMMON_TEST_RULES)};
+const PLAYBOOK = ${JSON.stringify(MUTATOR_PLAYBOOK)};
+const system = 'You are an expert Java test engineer writing ' + (gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5') + ' tests that KILL surviving PIT mutants of one class. A mutant is killed when at least one test FAILS on the mutated code while PASSING on the real code — so each test must assert something that DISTINGUISHES the two. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}. Create a NEW test class only. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES + PLAYBOOK
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
 const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ')\\n'
   + String(gaps.source || '').slice(0, 12000)
@@ -305,6 +308,21 @@ const out = {
 };
 writeFileSync(join(OUT, 'Improve-Java-Tests.json'), JSON.stringify(out, null, 2));
 console.log(`✓ ${w.name}: ${w.nodes.length} nodes`);
+
+// Every Code node must PARSE. A prompt fragment carrying an apostrophe used to
+// terminate the single-quoted string it was interpolated into, and the workflow
+// only failed hours later, mid-run, inside n8n. Fragments are injected as JSON
+// now — this check is what keeps it that way.
+const broken = [];
+for (const n of w.nodes.filter((x) => x.type === 'n8n-nodes-base.code')) {
+  try { new Function(n.parameters.jsCode); }
+  catch (e) { broken.push(`${n.name}: ${e.message}`); }
+}
+if (broken.length) {
+  console.error('CODE NODE SYNTAX ERRORS:\n  ' + broken.join('\n  '));
+  process.exit(1);
+}
+console.log(`✓ all ${w.nodes.filter((x) => x.type === 'n8n-nodes-base.code').length} Code nodes parse`);
 
 // static safety scan: forbid non-native/system node types
 const allowed = ['n8n-nodes-base.manualTrigger', 'n8n-nodes-base.webhook', 'n8n-nodes-base.httpRequest',
