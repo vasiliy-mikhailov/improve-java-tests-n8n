@@ -59,6 +59,24 @@ test('per-line hits are collected for the uncovered-lines prompt', () => {
   assert.deepEqual(lines['55'], { mi: 0, ci: 4 });
 });
 
+test('a self-closing <class/> does not swallow the classes after it', () => {
+  // JaCoCo emits self-closing tags for synthetic classes with no methods. A paired
+  // <class>…</class> regex reads such a tag as an opening tag and consumes the NEXT
+  // class's body, so everything after it reported 0 % coverage.
+  const xml = `<report name="d"><package name="a/b">
+    <class name="a/b/Outer$1" sourcefilename="Outer.java"/>
+    <class name="a/b/Victim" sourcefilename="Victim.java">
+      <method name="m" desc="()V" line="9"><counter type="LINE" missed="0" covered="7"/></method>
+      <counter type="LINE" missed="0" covered="7"/>
+    </class>
+  </package></report>`;
+  const acc = { classes: {}, missed: 0, covered: 0 };
+  mergeReport(acc, xml);
+  assert.ok(acc.classes['a.b.Victim'], 'the class after a self-closing sibling must still be seen');
+  assert.equal(acc.classes['a.b.Victim'].covered, 7);
+  assert.equal(acc.classes['a.b.Outer']?.covered ?? 0, 0, 'the synthetic class contributes nothing');
+});
+
 test('inner classes fold into their outer class', () => {
   const xml = `<report name="d"><package name="a/b">
     <class name="a/b/Outer" sourcefilename="Outer.java"><counter type="LINE" missed="1" covered="4"/></class>

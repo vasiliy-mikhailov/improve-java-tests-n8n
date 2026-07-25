@@ -123,14 +123,21 @@ function mergeReport(acc, xml) {
   while ((pm = pkgRe.exec(xml))) {
     const pkg = pm[1].split('/').join('.');
     const body = pm[2];
-    // <class name="com/x/Foo" sourcefilename="Foo.java"> … <counter type="LINE" missed covered/>
-    const clsRe = /<class\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/class>/g;
-    let cm;
-    while ((cm = clsRe.exec(body))) {
-      const raw = cm[1].split('/').join('.');
-      const fq = raw.split('$')[0];   // fold inner classes into their outer class
-      const line = lineCounter(cm[2]);
-      if (!line) continue;
+    // <class name="com/x/Foo" sourcefilename="Foo.java"> … <counter type="LINE" …/></class>
+    //
+    // Split on class BOUNDARIES instead of matching <class>…</class> pairs. JaCoCo emits
+    // SELF-CLOSING <class …/> for synthetic classes with no methods (`Foo$1`), and a
+    // paired regex treats such a tag as an opening tag: `[\s\S]*?</class>` then runs on
+    // and swallows the following classes, stealing their counters. Every class after a
+    // self-closing sibling silently reported 0 % coverage. Splitting bounds each
+    // fragment at the next class, so a self-closing tag simply carries no counter.
+    for (const part of body.split(/<class\s+/).slice(1)) {
+      const name = part.match(/^name="([^"]+)"/)?.[1];
+      if (!name) continue;
+      const end = part.indexOf('</class>');
+      const line = end === -1 ? null : lineCounter(part.slice(0, end));
+      if (!line) continue;                       // self-closing / counterless → nothing to add
+      const fq = name.split('/').join('.').split('$')[0];   // fold inner classes into the outer one
       const e = (acc.classes[fq] ||= { missed: 0, covered: 0, lines: {} });
       e.missed += line.missed; e.covered += line.covered;
     }
