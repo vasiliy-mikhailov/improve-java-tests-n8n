@@ -381,9 +381,9 @@ const routes = {
     const source = repo.readFileSafe(p, 24000);
     const f = state.files[p] || {};
     const round = (f.rounds || 0) + 1;
-    // each round writes its OWN test class — Java forbids two public classes of the same
-    // name, and append-only additions keep earlier rounds' commits intact
-    const guess = repo.guessTestPath(p, round > 1 ? `MacTest${round}` : 'MacTest');
+    // each round writes its OWN test classes — Java forbids two public classes of the
+    // same name, and append-only additions keep earlier rounds' commits intact
+    const guess = repo.guessTestPath(p, round);
     let existingTest = guess.exists ? repo.readFileSafe(guess.path, 12000) : null;
     if (!existingTest) {
       // no test for this class yet → hand the LLM a sibling test to imitate
@@ -401,9 +401,12 @@ const routes = {
       package: fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '',
       className: fqcn.slice(fqcn.lastIndexOf('.') + 1),
       module: f.module || repo.moduleOf(p),
-      testPath: guess.generated || guess.path,
+      // both generated class names for THIS round, already Surefire/Gradle-includable
+      covTestPath: guess.covPath,
+      mutTestPath: guess.mutPath,
       projectTestPath: guess.exists ? guess.path : null,
       testExists: guess.exists,
+      round,
       existingTest,
       buildTool: state.runner?.tool,
       testFramework: state.runner?.testFramework,

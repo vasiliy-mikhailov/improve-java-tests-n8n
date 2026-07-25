@@ -343,19 +343,40 @@ function deleteTestFile(rel) {
 }
 
 /**
- * Where the generated test for `srcRel` goes: same module, same package, under
- * src/test/java, named so Surefire/Gradle include it (`*Test.java`).
- * `existing` is the project's own test for the class, if any — the style reference.
+ * Where the generated tests for `srcRel` go: same module, same package, under
+ * src/test/java — and named so the BUILD actually runs them.
+ *
+ * That last part is not cosmetic. Surefire's default includes are `Test*.java`,
+ * `*Test.java`, `*Tests.java`, `*TestCase.java` (Gradle's are equivalent), so a class
+ * called `PricingMacTestCov` is compiled and then never executed: `mvn test` stays
+ * green and JaCoCo reports nothing, while PIT — which selects tests by its own glob —
+ * happily runs it and reports a mutation score. That mismatch produced a file measured
+ * at coverage 0 % / mutation 100 %. Every generated name therefore ENDS with `Test`.
+ *
+ * @returns {{path:string, exists:boolean, covPath:string, mutPath:string}}
+ *   `path`/`exists` describe the project's OWN test for the class (the style
+ *   reference); covPath/mutPath are this round's generated classes.
  */
-function guessTestPath(srcRel, suffix = 'MacTest') {
+function guessTestPath(srcRel, round = 1) {
+  const dir = repoDir();
   const cls = path.basename(srcRel, '.java');
   const testRoot = srcRel.replace(/src\/main\/java\//, 'src/test/java/');
-  const existing = testRoot.replace(/\.java$/, 'Test.java');
-  const dir = repoDir();
-  if (fs.existsSync(path.join(dir, existing))) return { path: existing, exists: true, generated: testRoot.replace(/\.java$/, suffix + '.java') };
-  const alt = testRoot.replace(new RegExp(`${cls}\\.java$`), `${cls}Tests.java`);
-  if (fs.existsSync(path.join(dir, alt))) return { path: alt, exists: true, generated: testRoot.replace(/\.java$/, suffix + '.java') };
-  return { path: testRoot.replace(/\.java$/, suffix + '.java'), exists: false, generated: testRoot.replace(/\.java$/, suffix + '.java') };
+  const testDir = path.dirname(testRoot);
+  const suffix = round > 1 ? `R${round}Test.java` : 'Test.java';
+  const generated = (phase) => `${testDir}/${cls}Mac${phase}${suffix}`;
+  const candidates = [
+    testRoot.replace(/\.java$/, 'Test.java'),
+    testRoot.replace(/\.java$/, 'Tests.java'),
+    `${testDir}/Test${cls}.java`,
+    testRoot.replace(/\.java$/, 'TestCase.java'),
+  ];
+  const own = candidates.find((c) => fs.existsSync(path.join(dir, c)));
+  return {
+    path: own || candidates[0],
+    exists: !!own,
+    covPath: generated('Cov'),
+    mutPath: generated('Mut'),
+  };
 }
 
 /**

@@ -207,8 +207,7 @@ const gaps = $json; // response of Coverage Gaps
 const u = gaps.uncovered || {};
 const fullyUncovered = u.lines === 'all';
 const nothingToCover = !fullyUncovered && (!u.lines || !u.lines.length);
-const round = (gaps.rounds || 0) + 1;
-const targetPath = gaps.testPath.replace(/\\.java$/, 'Cov.java');
+const targetPath = gaps.covTestPath;
 if (nothingToCover) return [{ json: { skip: true, reason: 'class fully covered', targetPath, projectTestPath: gaps.projectTestPath } }];
 const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
 const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
@@ -228,8 +227,7 @@ return [{ json: { system, prompt, json: true, maxTokens: 7000, temperature: 0.3,
 const mutDone = phase('Mut', `
 const gaps = $('Coverage Gaps').first().json;
 const cfg = $('Start Run').first().json.run.config;
-const round = (gaps.rounds || 0) + 1;
-const targetPath = gaps.testPath.replace(/\\.java$/, 'Mut.java');
+const targetPath = gaps.mutTestPath;
 // freshest survivors: the sidecar tracks the last PIT run of this class (any round)
 const allSurvived = (gaps.survived && gaps.survived.length) ? gaps.survived : ($('Baseline Mutation').first().json.survived || []);
 const survived = allSurvived.slice(0, cfg.maxMutantsPerFile || 8);
