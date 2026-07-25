@@ -26,7 +26,7 @@
       "repoBranch": "master",
       "scopeGlob": "src/main/java/**/*.java",
       "scopeLimit": 1,
-      "maxIterations": 2,
+      "maxIterations": 8,
       "prMode": "local",
       "timeoutMin": 60,
       "note": "Maven, JUnit 4, small \u2014 the fastest end-to-end smoke of the real path"
@@ -37,7 +37,7 @@
       "repoBranch": "master",
       "scopeGlob": "src/main/java/**/*.java",
       "scopeLimit": 1,
-      "maxIterations": 2,
+      "maxIterations": 8,
       "prMode": "local",
       "timeoutMin": 60,
       "note": "Maven, JUnit 5, tiny test suite"
@@ -48,7 +48,7 @@
       "repoBranch": "master",
       "scopeGlob": "src/main/java/**/*.java",
       "scopeLimit": 1,
-      "maxIterations": 2,
+      "maxIterations": 8,
       "prMode": "local",
       "timeoutMin": 60,
       "note": "Maven, JUnit 5, parser logic \u2014 mutation-rich"
@@ -59,7 +59,7 @@
       "repoBranch": "master",
       "scopeGlob": "src/main/java/org/apache/commons/codec/binary/**/*.java",
       "scopeLimit": 1,
-      "maxIterations": 2,
+      "maxIterations": 8,
       "prMode": "local",
       "timeoutMin": 75,
       "note": "Maven, JUnit 5; scoped to one package to bound the run"
@@ -70,7 +70,7 @@
       "repoBranch": "master",
       "scopeGlob": "src/main/java/org/apache/commons/text/similarity/**/*.java",
       "scopeLimit": 1,
-      "maxIterations": 2,
+      "maxIterations": 8,
       "prMode": "local",
       "timeoutMin": 75,
       "note": "Maven, JUnit 5; similarity algorithms are arithmetic-dense"
@@ -81,7 +81,7 @@
       "repoBranch": "master",
       "scopeGlob": "src/main/java/org/jsoup/helper/**/*.java,src/main/java/org/jsoup/internal/**/*.java",
       "scopeLimit": 1,
-      "maxIterations": 2,
+      "maxIterations": 8,
       "prMode": "local",
       "timeoutMin": 75,
       "note": "Maven, JUnit 5"
@@ -92,7 +92,7 @@
       "repoBranch": "master",
       "scopeGlob": "json-path/src/main/java/**/*.java",
       "scopeLimit": 1,
-      "maxIterations": 2,
+      "maxIterations": 8,
       "prMode": "local",
       "timeoutMin": 75,
       "note": "Maven multi-module \u2014 exercises module-scoped PIT (-pl)"
@@ -103,7 +103,7 @@
       "repoBranch": "2.x",
       "scopeGlob": "src/main/java/com/fasterxml/jackson/core/io/**/*.java",
       "scopeLimit": 1,
-      "maxIterations": 2,
+      "maxIterations": 8,
       "prMode": "local",
       "timeoutMin": 90,
       "note": "Maven, JUnit 5, large suite; scoped to one package"
@@ -114,7 +114,7 @@
       "repoBranch": "main",
       "scopeGlob": "concurrency-limits-core/src/main/java/**/*.java",
       "scopeLimit": 1,
-      "maxIterations": 2,
+      "maxIterations": 8,
       "prMode": "local",
       "timeoutMin": 90,
       "note": "GRADLE multi-project, JUnit 4 \u2014 the Gradle path (D9)"
@@ -125,7 +125,7 @@
       "repoBranch": "master",
       "scopeGlob": "src/main/java/**/*.java",
       "scopeLimit": 1,
-      "maxIterations": 2,
+      "maxIterations": 8,
       "prMode": "local",
       "timeoutMin": 90,
       "note": "GRADLE, JUnit 5, pure Java \u2014 replaces moshi, whose sources are Kotlin so no Java candidate ever matched"

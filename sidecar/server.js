@@ -374,6 +374,11 @@ const routes = {
     const minMutants = state.run.config.minMutantsPerClass ?? 3;
     if (body.phase === 'baseline' && (r.totalMutants ?? 0) < minMutants) {
       const spentSec = accrueSpent(file);
+      // Skipping is FREE in both budgets. /api/iteration/start already charged an
+      // iteration for this pick; give it back, or a couple of duds in a row end the run
+      // before a single improvable class is ever attempted (which is exactly what
+      // happened to jackson-core, json-path and concurrency-limits: two skips, done).
+      state.run.iteration = Math.max(0, state.run.iteration - 1);
       S.upsertFile(file, { status: 'no_mutants', coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac });
       recordMeasurement(file, { coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac, noMutants: true });
       ledger()[file] = { state: 'no_mutants', ts: Date.now(), metrics: { spentSec, totalMutants: r.totalMutants ?? 0 } };
