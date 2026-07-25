@@ -75,10 +75,11 @@ async function applyPickFile(ruleText, { candidates = [] }) {
   const fallback = { file: scored[0].path, reason: 'lowest MAC (mechanical pick)' };
   if (!ruleText) return fallback;
   const table = candidates.slice(0, 80).map((c) =>
-    `${c.path} | coverage=${c.coverage ?? '?'}% mutation=${c.mutation ?? '?'}% mac=${c.mac ?? '?'} `
-    + `lines=${c.lines ?? '?'} attempts=${c.attempts}`).join('\n');
+    `${c.path} | ${c.method ? 'method=' + c.method + '() ' : ''}coverage=${c.coverage ?? '?'}% `
+    + `mutation=${c.mutation ?? '?'}% mac=${c.mac ?? '?'} lines=${c.executableLines ?? c.lines ?? '?'} `
+    + `attempts=${c.attempts}`).join('\n');
   const r = await chat({
-    system: 'You pick ONE source file for automated test improvement (coverage AND mutation testing). Honor the team rule strictly (e.g. exclusions). Prefer files with the lowest MAC (weakest tests). IMPORTANT: "mutation=?" or "mac=?" means the mutation score has NOT been measured yet — even a 100%-coverage file may have weak assertions and surviving mutants, so such files are VALID candidates; high coverage is NOT a reason to skip a file. Prefer files whose mutants tests can actually kill: modules with behavior (branches, computation, transformation, component rendering). AVOID very large declaration-only files (hundreds of lines of schema/route/constant/type literals, usually the biggest "lines=" values) — their mutants are numerous and mostly unkillable, so a run spends hours there for a fraction of a point; pick a smaller behavioral file instead. Reply ONLY with JSON: {"file": "<path exactly as listed>", "reason": "one line"}. Reply {"file": null, "reason": "..."} ONLY if the team rule excludes every candidate.',
+    system: 'You pick ONE UNIT OF WORK for automated Java test improvement. A unit is ONE METHOD, identified by the exact string "<source file>::<method>" as listed — reply with that whole string, never just the file. Honor the team rule strictly (e.g. exclusions). Prefer the weakest unit: lowest MAC (coverage x mutation score). IMPORTANT: "mutation=?" means the mutation score has NOT been measured yet — a method at 100% coverage may still assert nothing and lose every mutant, so those are PRIME candidates; high coverage is NOT a reason to skip. Prefer methods with real behaviour to kill mutants in (branches, arithmetic, parsing, state changes) over trivial getters, setters and toString. Reply ONLY with JSON: {"file": "<the unit string exactly as listed, including ::method>", "reason": "one line"}. Reply {"file": null, "reason": "..."} ONLY if the team rule excludes every candidate.',
     prompt: `TEAM RULE (how to pick a file): ${ruleText}\n\nCANDIDATES (path | metrics):\n${table}`,
     json: true, maxTokens: 800,
   });
@@ -91,6 +92,17 @@ async function applyPickFile(ruleText, { candidates = [] }) {
   if (j?.file && candidates.some((c) => c.path === j.file)) {
     state.pickFailures = 0;
     return { file: j.file, reason: j.reason || 'LLM pick' };
+  }
+  // The model answered with a bare source file instead of a unit. That is a reasonable
+  // thing to say and used to kill the whole run ("unknown file"), so resolve it to that
+  // file's weakest method rather than throwing the pick away.
+  if (j?.file && !j.file.includes('::')) {
+    const inFile = scored.filter((c) => c.file === j.file);
+    if (inFile.length) {
+      state.pickFailures = 0;
+      event('picking_file', `pick named the file ${j.file}; resolved to its weakest method ${inFile[0].method}()`);
+      return { file: inFile[0].path, reason: (j.reason || 'LLM pick') + ` (resolved to ${inFile[0].method}())` };
+    }
   }
   // A team rule exists but the LLM pick is unusable: refuse a blind mechanical
   // pick (it could select a file the rule excludes, e.g. "don't touch ui").

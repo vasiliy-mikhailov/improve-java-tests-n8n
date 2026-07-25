@@ -227,8 +227,12 @@ function candidates() {
     .filter((f) => f.status === 'candidate' && f.attempts < maxAttempts)
     // a class JaCoCo reports no executable lines for cannot be tested or mutated
     .filter((f) => f.executableLines == null || f.executableLines > 0)
+    // `path` here is the UNIT KEY (`<file>::<method>`) — it is what every downstream
+    // endpoint expects back from the pick. The source file and method are carried
+    // alongside so the pick prompt can show something a human (or an LLM) can reason about.
     .map((f) => ({
-      path: f.path, coverage: f.coverage, mutation: f.mutation, mac: f.mac,
+      path: f.key || f.path, file: f.path, method: f.method || null,
+      coverage: f.coverage, mutation: f.mutation, mac: f.mac,
       attempts: f.attempts, lines: f.lines ?? null, mutants: f.totalMutants ?? null,
       executableLines: f.executableLines ?? null,
     }))
