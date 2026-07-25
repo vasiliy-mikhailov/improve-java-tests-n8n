@@ -139,12 +139,22 @@ async function runPit(fileRel) {
   let r;
   if (state.runner.tool === 'maven') {
     ensureMavenWiring(moduleRel);
+    // Compile FIRST. `mvn <plugin>:<goal>` runs the goal alone — no lifecycle phase, no
+    // javac — and branch creation wipes target/ with `git clean -fd`, so a bare PIT
+    // invocation finds no classes and reports "no mutations exercised", i.e. score 0.
+    // That silently made every file's BASELINE 0 and flattered every improvement.
+    const compileArgv = [state.runner.wrapper, '-B', '-ntp', 'test-compile'];
+    if (moduleRel && moduleRel !== '.') compileArgv.push('-pl', moduleRel, '-am');
+    const c = await run(compileArgv, { cwd: dir, timeoutMs: 1800000, label: 'compile', env: repo.buildEnv() });
+    if (c.code !== 0) throw new Error('test-compile before PIT failed: ' + (c.stderr || c.stdout).slice(-600));
     const argv = [state.runner.wrapper, '-B', '-ntp',
       `org.pitest:pitest-maven:${PIT_VERSION}:mutationCoverage`,
       `-DtargetClasses=${targetClasses}`, `-DtargetTests=${targetTests}`,
       `-Dmutators=${MUTATORS}`, '-DoutputFormats=XML', '-DtimestampedReports=false',
-      '-DfailWhenNoMutations=false', '-DskipTests=false', '-DtimeoutConstant=8000'];
-    if (moduleRel && moduleRel !== '.') argv.push('-pl', moduleRel, '-am', '-DskipTests');
+      '-DfailWhenNoMutations=false', '-DtimeoutConstant=8000'];
+    // no -am here: dependencies are built by the compile step above, and -DskipTests
+    // (which -am would need) makes PIT skip its own run
+    if (moduleRel && moduleRel !== '.') argv.push('-pl', moduleRel);
     r = await run(argv, { cwd: dir, timeoutMs: 3600000, label: 'pit', env: repo.buildEnv() });
   } else {
     fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript(targetClasses, targetTests));
@@ -157,6 +167,17 @@ async function runPit(fileRel) {
   if (!reportAbs) {
     const out = r.stderr + r.stdout;
     if (/No mutations found|no tests to run|0 tests/i.test(out)) {
+      // Sanity check on our own measurement: a class the suite demonstrably executes
+      // cannot legitimately have "no mutations exercised". When those two disagree the
+      // measurement is broken (missing classes, a test-name glob that matches nothing),
+      // not the project — say so instead of quietly recording a 0 baseline.
+      const cov = state.files[fileRel]?.coverage;
+      if (cov > 0) {
+        event('pit', `${fileRel}: PIT found no tests to run although JaCoCo measured ${cov}% line `
+          + `coverage — treating the mutation score as UNMEASURED, not 0 (targetTests glob or `
+          + `compiled classes are wrong)`);
+        return { file: fileRel, fqcn, totalMutants: null, killed: 0, score: null, survived: [], noTests: true, unmeasured: true };
+      }
       event('pit', `${fileRel}: no mutations exercised — mutation score 0 (nothing kills mutants yet)`);
       return { file: fileRel, fqcn, totalMutants: null, killed: 0, score: 0, survived: [], noTests: true };
     }
