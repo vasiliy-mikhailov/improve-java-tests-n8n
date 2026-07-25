@@ -18,23 +18,37 @@ const { state, event } = require('./state');
 const repo = require('./repo');
 const { round2 } = require('./util');
 
-const PIT_VERSION = process.env.PIT_VERSION || '1.15.2';
-const PIT_JUNIT5_VERSION = process.env.PIT_JUNIT5_VERSION || '1.2.1';
+// PIT must be CURRENT: its JUnit bridge has to understand the project's junit-platform,
+// and an old PIT against a modern JUnit fails with the unhelpful "Please check you have
+// correctly installed the pitest plugin for your project's test library".
+const PIT_VERSION = process.env.PIT_VERSION || '1.25.8';
+const PIT_JUNIT5_VERSION = process.env.PIT_JUNIT5_VERSION || '1.2.3';
 const PIT_TESTNG_VERSION = process.env.PIT_TESTNG_VERSION || '1.0.0';
 const MUTATORS = process.env.PIT_MUTATORS || 'DEFAULTS';
 const INIT_SCRIPT = '.ijt-pitest.init.gradle';
 
 // ── Maven wiring ───────────────────────────────────────────────────────────
 
+/** junit-platform version matching a jupiter version: 5.11.3 → 1.11.3, 6.1.0 → 6.1.0. */
+function platformVersionFor(jupiterVersion) {
+  const m = String(jupiterVersion || '').match(/^(\d+)\.(\d+)(?:\.(\d+))?/);
+  if (!m) return null;
+  const major = parseInt(m[1], 10);
+  if (major >= 6) return jupiterVersion;
+  if (major === 5) return `1.${m[2]}${m[3] ? '.' + m[3] : ''}`;
+  return null;
+}
+
 function pitPluginXml(framework, frameworkVersion) {
   const deps = [];
   if (framework === 'junit5') {
     deps.push(`      <dependency><groupId>org.pitest</groupId><artifactId>pitest-junit5-plugin</artifactId><version>${PIT_JUNIT5_VERSION}</version></dependency>`);
-    // JUnit 6 unified versioning: platform shares the jupiter version, and PIT's bundled
-    // launcher would mismatch the engine unless we pin it to the project's version.
-    const major = parseInt(String(frameworkVersion || '').split('.')[0], 10);
-    if (major >= 6) {
-      deps.push(`      <dependency><groupId>org.junit.platform</groupId><artifactId>junit-platform-launcher</artifactId><version>${frameworkVersion}</version></dependency>`);
+    // Pin junit-platform-launcher to the platform the project's engine belongs to, or
+    // PIT's bundled launcher mismatches it and finds no tests at all. Jupiter 5.x rides
+    // platform 1.x; JUnit 6 unified the two onto one version.
+    const platform = platformVersionFor(frameworkVersion);
+    if (platform) {
+      deps.push(`      <dependency><groupId>org.junit.platform</groupId><artifactId>junit-platform-launcher</artifactId><version>${platform}</version></dependency>`);
     }
   } else if (framework === 'testng') {
     deps.push(`      <dependency><groupId>org.pitest</groupId><artifactId>pitest-testng-plugin</artifactId><version>${PIT_TESTNG_VERSION}</version></dependency>`);
@@ -279,4 +293,4 @@ function parseReport(reportAbs, fileRel, fqcn) {
   return { file: fileRel, fqcn, totalMutants: total, killed, score, survived, byMethod, report: path.basename(reportAbs) };
 }
 
-module.exports = { runPit, ensureMavenWiring, parseReport, PIT_VERSION, MUTATORS };
+module.exports = { runPit, ensureMavenWiring, parseReport, platformVersionFor, PIT_VERSION, MUTATORS };
