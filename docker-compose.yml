@@ -1,0 +1,24 @@
+services:
+  improve-java-tests-n8n:
+    build: .
+    image: improve-java-tests-n8n:latest
+    container_name: ijtn8n
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ijt_data:/data
+    networks:
+      - proxy-net
+      - mvn-cache
+    # no host ports: Caddy (inference-caddy, same proxy-net) fronts everything at
+    # https://improve-java-tests-n8n.mikhailov.tech (n8n) and /dashboard (sidecar)
+
+volumes:
+  ijt_data:
+
+networks:
+  proxy-net:
+    external: true
+  # the host's Nexus group repo lives here — Maven/Gradle resolve through it
+  mvn-cache:
+    external: true

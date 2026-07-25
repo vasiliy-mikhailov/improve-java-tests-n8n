@@ -1,0 +1,12 @@
+{
+  "name": "improve-javascript-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "n8n pipeline in Docker that raises coverage, Stryker mutation score and MAC of any JS/TS repo",
+  "scripts": {
+    "test": "node --test sidecar/test/*.test.js",
+    "workflow": "node n8n/generate-workflows.mjs",
+    "check": "node --test sidecar/test/*.test.js && node n8n/generate-workflows.mjs"
+  },
+  "license": "MIT"
+}

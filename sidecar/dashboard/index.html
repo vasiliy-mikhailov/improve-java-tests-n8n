@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>improve-java-tests-n8n — live</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>improve-java-tests-n8n</h1>
+    <div id="repo" class="muted"></div>
+  </header>
+
+  <section id="stage-banner" class="stage idle">
+    <div class="stage-label">STAGE</div>
+    <div id="stage-name">idle</div>
+    <div id="stage-detail" class="muted"></div>
+    <div id="stage-progress" class="progress"></div>
+  </section>
+
+  <section class="cards">
+    <div class="card"><div class="k">Line coverage</div><div class="v" id="c-cov">–</div><div class="d" id="c-cov-d"></div></div>
+    <div class="card"><div class="k">Mutation score</div><div class="v" id="c-mut">–</div><div class="d" id="c-mut-d"></div></div>
+    <div class="card"><div class="k">MAC</div><div class="v" id="c-mac">–</div><div class="d" id="c-mac-d"></div></div>
+    <div class="card"><div class="k">Iteration</div><div class="v" id="c-iter">–</div><div class="d" id="c-iter-d"></div></div>
+    <div class="card"><div class="k">PRs</div><div class="v" id="c-prs">0</div><div class="d" id="c-prs-d"></div></div>
+  </section>
+
+  <section class="cards">
+    <div class="card wide"><div class="k">Run progress</div>
+      <div class="v" id="c-prog">–</div>
+      <div class="progressbar"><div id="c-prog-bar"></div></div>
+      <div class="d" id="c-prog-d"></div></div>
+    <div class="card"><div class="k">Human-equivalent work</div><div class="v" id="c-human">–</div><div class="d">itemized timesheets, improved files</div></div>
+    <div class="card"><div class="k">Machine time</div><div class="v" id="c-machine">–</div><div class="d">wall-clock spent on files</div></div>
+    <div class="card"><div class="k">Human FTE equivalent</div><div class="v" id="c-fte">–</div><div class="d">human-eq hours ÷ machine hours</div></div>
+    <div class="card"><div class="k">ETA</div><div class="v" id="c-eta">–</div><div class="d" id="c-eta-d"></div></div>
+  </section>
+
+  <section>
+    <h2>Files <span class="muted" id="files-count"></span></h2>
+    <div class="tablewrap"><table id="files">
+      <thead><tr><th>file</th><th>cov before</th><th>mut before</th><th>MAC before</th><th>cov after</th><th>mut after</th><th>MAC after</th><th>human-eq</th><th>status</th><th>PR</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Pull requests</h2>
+    <ul id="prs" class="prs"></ul>
+  </section>
+
+  <section>
+    <h2>Rule decisions</h2>
+    <div id="decisions" class="decisions"></div>
+  </section>
+
+  <section>
+    <h2>Activity</h2>
+    <div id="events" class="events"></div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

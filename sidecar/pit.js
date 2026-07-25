@@ -1,0 +1,233 @@
+'use strict';
+// PIT mutation testing, scoped to ONE class per run (whole-repo mutation is far too slow).
+//
+// Wiring is the hard part and it depends on the test framework (RESEARCH.md §1):
+//   JUnit 4  — works with a bare `pitest-maven` invocation.
+//   JUnit 5+ — needs `pitest-junit5-plugin` as a plugin DEPENDENCY, which a `-D` cannot add,
+//              so the plugin block is injected into the module's pom (main <build>, never a
+//              <profile>: a plugin inside an inactive profile is silently ignored).
+//   JUnit 6  — additionally needs junit-platform-launcher pinned to the project's platform
+//              version, or PIT's bundled launcher mismatches the engine.
+//   TestNG   — needs `pitest-testng-plugin`.
+// Injected build config is never committed (pr.js commits test sources only) and is
+// re-applied before every run, since round bookkeeping discards uncommitted changes.
+const fs = require('node:fs');
+const path = require('node:path');
+const { run } = require('./exec');
+const { state, event } = require('./state');
+const repo = require('./repo');
+const { round2 } = require('./util');
+
+const PIT_VERSION = process.env.PIT_VERSION || '1.15.2';
+const PIT_JUNIT5_VERSION = process.env.PIT_JUNIT5_VERSION || '1.2.1';
+const PIT_TESTNG_VERSION = process.env.PIT_TESTNG_VERSION || '1.0.0';
+const MUTATORS = process.env.PIT_MUTATORS || 'DEFAULTS';
+const INIT_SCRIPT = '.ijt-pitest.init.gradle';
+
+// ── Maven wiring ───────────────────────────────────────────────────────────
+
+function pitPluginXml(framework, frameworkVersion) {
+  const deps = [];
+  if (framework === 'junit5') {
+    deps.push(`      <dependency><groupId>org.pitest</groupId><artifactId>pitest-junit5-plugin</artifactId><version>${PIT_JUNIT5_VERSION}</version></dependency>`);
+    // JUnit 6 unified versioning: platform shares the jupiter version, and PIT's bundled
+    // launcher would mismatch the engine unless we pin it to the project's version.
+    const major = parseInt(String(frameworkVersion || '').split('.')[0], 10);
+    if (major >= 6) {
+      deps.push(`      <dependency><groupId>org.junit.platform</groupId><artifactId>junit-platform-launcher</artifactId><version>${frameworkVersion}</version></dependency>`);
+    }
+  } else if (framework === 'testng') {
+    deps.push(`      <dependency><groupId>org.pitest</groupId><artifactId>pitest-testng-plugin</artifactId><version>${PIT_TESTNG_VERSION}</version></dependency>`);
+  }
+  return `    <plugin>
+      <groupId>org.pitest</groupId>
+      <artifactId>pitest-maven</artifactId>
+      <version>${PIT_VERSION}</version>${deps.length ? `
+      <dependencies>
+${deps.join('\n')}
+      </dependencies>` : ''}
+    </plugin>`;
+}
+
+/**
+ * Make sure the module's pom carries a usable PIT plugin. Returns 'present' when the
+ * project already declares one (we defer to it), 'injected' when we added ours.
+ */
+function ensureMavenWiring(moduleRel) {
+  const dir = repo.repoDir();
+  const pomRel = path.join(moduleRel === '.' ? '' : moduleRel, 'pom.xml');
+  const pomAbs = path.join(dir, pomRel);
+  if (!fs.existsSync(pomAbs)) return 'no-pom';
+  let pom = fs.readFileSync(pomAbs, 'utf8');
+  if (/<artifactId>\s*pitest-maven\s*<\/artifactId>/.test(pom)) {
+    const framework = state.runner?.testFramework;
+    const needsJunit5 = framework === 'junit5' && !/pitest-junit5-plugin/.test(pom);
+    const needsTestng = framework === 'testng' && !/pitest-testng-plugin/.test(pom);
+    if (!needsJunit5 && !needsTestng) return 'present';
+    // project declares PIT but not the engine bridge it needs — add just the dependency
+    const dep = needsJunit5
+      ? `<dependencies><dependency><groupId>org.pitest</groupId><artifactId>pitest-junit5-plugin</artifactId><version>${PIT_JUNIT5_VERSION}</version></dependency></dependencies>`
+      : `<dependencies><dependency><groupId>org.pitest</groupId><artifactId>pitest-testng-plugin</artifactId><version>${PIT_TESTNG_VERSION}</version></dependency></dependencies>`;
+    pom = pom.replace(/(<artifactId>\s*pitest-maven\s*<\/artifactId>\s*(?:<version>[^<]*<\/version>\s*)?)/,
+      `$1${dep}\n      `);
+    fs.writeFileSync(pomAbs, pom);
+    event('pit', `added the missing PIT ${needsJunit5 ? 'JUnit 5' : 'TestNG'} bridge to ${pomRel}`);
+    return 'patched';
+  }
+  const block = pitPluginXml(state.runner?.testFramework, state.runner?.testFrameworkVersion);
+  const profilesAt = pom.indexOf('<profiles>');
+  const buildAt = pom.indexOf('<build>');
+  const buildIsTopLevel = buildAt !== -1 && (profilesAt === -1 || buildAt < profilesAt);
+  if (buildIsTopLevel) {
+    const pluginsAt = pom.indexOf('<plugins>', buildAt);
+    const buildEnd = pom.indexOf('</build>', buildAt);
+    if (pluginsAt !== -1 && pluginsAt < buildEnd) {
+      pom = pom.slice(0, pluginsAt + '<plugins>'.length) + '\n' + block + pom.slice(pluginsAt + '<plugins>'.length);
+    } else {
+      pom = pom.slice(0, buildAt + '<build>'.length) + `\n  <plugins>\n${block}\n  </plugins>` + pom.slice(buildAt + '<build>'.length);
+    }
+  } else {
+    pom = pom.replace(/<\/project>\s*$/, `  <build>\n    <plugins>\n${block}\n    </plugins>\n  </build>\n</project>\n`);
+  }
+  fs.writeFileSync(pomAbs, pom);
+  event('pit', `injected PIT ${PIT_VERSION} into ${pomRel} (${state.runner?.testFramework})`);
+  return 'injected';
+}
+
+function gradleInitScript(targetClasses, targetTests) {
+  return `// injected by improve-java-tests-n8n — applies gradle-pitest-plugin without touching the repo
+initscript {
+  repositories { maven { url = uri('${process.env.MAVEN_MIRROR_URL || 'https://plugins.gradle.org/m2'}') }; mavenCentral() }
+  dependencies { classpath 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:1.15.0' }
+}
+allprojects { p ->
+  p.plugins.withId('java') {
+    p.apply plugin: info.solidsoft.gradle.pitest.PitestPlugin
+    p.pitest {
+      pitestVersion = '${PIT_VERSION}'
+      ${state.runner?.testFramework === 'junit5' ? "junit5PluginVersion = '" + PIT_JUNIT5_VERSION + "'" : ''}
+      targetClasses = ['${targetClasses}']
+      ${targetTests ? `targetTests = ['${targetTests}']` : ''}
+      mutators = ['${MUTATORS}']
+      outputFormats = ['XML']
+      timestampedReports = false
+      failWhenNoMutations = false
+    }
+  }
+}
+`;
+}
+
+// ── running ────────────────────────────────────────────────────────────────
+
+/**
+ * Run PIT against one source file (= one class) and return its mutation score.
+ * `targetTests` scopes which tests PIT runs — the class's own tests plus ours — so an
+ * unrelated broken test elsewhere in the module cannot sink the measurement.
+ */
+async function runPit(fileRel) {
+  const dir = repo.repoDir();
+  if (!state.runner?.tool) throw new Error('build not detected — call /api/repo/prepare first');
+  const fqcn = state.files[fileRel]?.fqcn || repo.fqcnOf(fileRel);
+  const moduleRel = state.files[fileRel]?.module || repo.moduleOf(fileRel);
+  const pkg = fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '';
+  const cls = fqcn.slice(fqcn.lastIndexOf('.') + 1);
+  // the class's own tests, ours, and anything else named after it
+  const targetTests = pkg ? `${pkg}.${cls}*Test*` : `${cls}*Test*`;
+  const targetClasses = `${fqcn}*`;   // includes inner classes
+
+  let r;
+  if (state.runner.tool === 'maven') {
+    ensureMavenWiring(moduleRel);
+    const argv = [state.runner.wrapper, '-B', '-ntp',
+      `org.pitest:pitest-maven:${PIT_VERSION}:mutationCoverage`,
+      `-DtargetClasses=${targetClasses}`, `-DtargetTests=${targetTests}`,
+      `-Dmutators=${MUTATORS}`, '-DoutputFormats=XML', '-DtimestampedReports=false',
+      '-DfailWhenNoMutations=false', '-DskipTests=false', '-DtimeoutConstant=8000'];
+    if (moduleRel && moduleRel !== '.') argv.push('-pl', moduleRel, '-am', '-DskipTests');
+    r = await run(argv, { cwd: dir, timeoutMs: 3600000, label: 'pit', env: repo.buildEnv() });
+  } else {
+    fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript(targetClasses, targetTests));
+    const task = moduleRel && moduleRel !== '.' ? `:${moduleRel.split('/').join(':')}:pitest` : 'pitest';
+    r = await run([state.runner.wrapper, '--no-daemon', '-I', INIT_SCRIPT, task],
+      { cwd: dir, timeoutMs: 3600000, label: 'pit', env: repo.buildEnv() });
+  }
+
+  const reportAbs = findReport(dir, moduleRel);
+  if (!reportAbs) {
+    const out = r.stderr + r.stdout;
+    if (/No mutations found|no tests to run|0 tests/i.test(out)) {
+      event('pit', `${fileRel}: no mutations exercised — mutation score 0 (nothing kills mutants yet)`);
+      return { file: fileRel, fqcn, totalMutants: null, killed: 0, score: 0, survived: [], noTests: true };
+    }
+    throw new Error(`PIT produced no report (exit ${r.code}): ` + out.slice(-800));
+  }
+  const parsed = parseReport(reportAbs, fileRel, fqcn);
+  event('pit', `${fileRel}: ${parsed.totalMutants} mutants, ${parsed.killed} killed, `
+    + `${parsed.survived.length} survived+nocov, score ${parsed.score}%`);
+  return parsed;
+}
+
+function findReport(dir, moduleRel) {
+  const candidates = [
+    path.join(dir, moduleRel === '.' ? '' : moduleRel, 'target', 'pit-reports', 'mutations.xml'),
+    path.join(dir, moduleRel === '.' ? '' : moduleRel, 'build', 'reports', 'pitest', 'mutations.xml'),
+    path.join(dir, 'target', 'pit-reports', 'mutations.xml'),
+    path.join(dir, 'build', 'reports', 'pitest', 'mutations.xml'),
+  ];
+  const found = candidates.find((p) => fs.existsSync(p));
+  if (found) return found;
+  // multi-module fallback: newest mutations.xml anywhere
+  const all = [];
+  const walk = (d, depth) => {
+    if (depth > 7) return;
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const ent of entries) {
+      const p = path.join(d, ent.name);
+      if (ent.isDirectory()) { if (ent.name !== '.git') walk(p, depth + 1); }
+      else if (ent.name === 'mutations.xml') all.push(p);
+    }
+  };
+  walk(dir, 0);
+  if (!all.length) return null;
+  return all.map((p) => ({ p, m: fs.statSync(p).mtimeMs })).sort((a, b) => b.m - a.m)[0].p;
+}
+
+const MUTATION_RE = /<mutation\b([^>]*)>([\s\S]*?)<\/mutation>/g;
+const TAG = (body, name) => body.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1]?.trim() || '';
+
+function parseReport(reportAbs, fileRel, fqcn) {
+  const xml = fs.readFileSync(reportAbs, 'utf8');
+  const mutants = [];
+  let m;
+  MUTATION_RE.lastIndex = 0;
+  while ((m = MUTATION_RE.exec(xml))) {
+    const attrs = m[1], body = m[2];
+    const status = attrs.match(/status=['"]([^'"]+)['"]/)?.[1] || 'UNKNOWN';
+    const detected = /detected=['"]true['"]/.test(attrs);
+    const mutatedClass = TAG(body, 'mutatedClass');
+    // a PIT run can pull in inner classes; keep everything under the target class
+    if (mutatedClass && !mutatedClass.startsWith(fqcn)) continue;
+    mutants.push({
+      status,
+      detected,
+      line: parseInt(TAG(body, 'lineNumber'), 10) || null,
+      mutator: TAG(body, 'mutator').split('.').pop(),
+      method: TAG(body, 'mutatedMethod'),
+      description: TAG(body, 'description'),
+      block: TAG(body, 'block'),
+    });
+  }
+  // NON_VIABLE mutants cannot be killed by any test — excluding them keeps the score honest
+  const scored = mutants.filter((x) => x.status !== 'NON_VIABLE');
+  const killed = scored.filter((x) => x.detected).length;
+  const total = scored.length;
+  const score = total ? round2((killed * 100) / total) : 0;
+  const survived = scored.filter((x) => !x.detected)
+    // NO_COVERAGE first: the cheapest kills — the line is never even executed
+    .sort((a, b) => (a.status === 'NO_COVERAGE' ? 0 : 1) - (b.status === 'NO_COVERAGE' ? 0 : 1));
+  return { file: fileRel, fqcn, totalMutants: total, killed, score, survived, report: path.basename(reportAbs) };
+}
+
+module.exports = { runPit, ensureMavenWiring, parseReport, PIT_VERSION, MUTATORS };

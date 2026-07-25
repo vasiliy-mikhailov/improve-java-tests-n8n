@@ -1,0 +1,2093 @@
+{
+  "id": "ijtImproveJavaTests1",
+  "name": "Improve Java Tests",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "id": "5c0ce51c-dead-4f2b-a6f2-69c314995e3f",
+      "name": "Start (manual)"
+    },
+    {
+      "parameters": {
+        "path": "improve-run",
+        "httpMethod": "POST",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "efbe78f7-ca08-4af1-9527-9f7115b0a329",
+      "name": "Start (webhook)",
+      "webhookId": "aa11bb22-ijt-4run-9000-improvejava01"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/run/start",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body || {} }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "8e6e12d5-c53b-43b4-821f-b1bccd362572",
+      "name": "Start Run"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/repo/clone",
+        "options": {
+          "timeout": 1200000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "6f0189ba-dc96-4419-b6d8-cc8e76f21d62",
+      "name": "Clone Repo"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/rules/apply",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { stage: 'post_clone' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "9be4ba6c-95be-4919-a175-00a91655731d",
+      "name": "Rules: post-clone"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/repo/prepare",
+        "options": {
+          "timeout": 3000000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "id": "9bf0ecfd-cd12-4ea1-910d-630bdd128398",
+      "name": "Build & Detect"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/coverage/run",
+        "options": {
+          "timeout": 3600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { phase: 'baseline', stage: 'measuring_baseline' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ],
+      "id": "d96b140b-78bd-4638-a407-ab92e32b27b6",
+      "name": "Baseline Coverage"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/rules/apply",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { stage: 'pre_pick' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        0
+      ],
+      "id": "26ba5ba1-f7e1-4760-a13d-497b766e1a02",
+      "name": "Rules: pre-pick"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/rules/apply",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { stage: 'write_test' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        0
+      ],
+      "id": "1fab1eca-d9c8-4703-adbf-e3c13670ede3",
+      "name": "Rules: write-test"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        0
+      ],
+      "id": "92b1a713-8792-4204-a96d-a335db15de81",
+      "name": "Next Iteration"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:3000/api/files/candidates",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        0
+      ],
+      "id": "4d0631cc-4049-40b3-bf10-fa7153151a86",
+      "name": "Get Candidates"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.done ? 0 : 1 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2640,
+        0
+      ],
+      "id": "43cb3c82-04f0-4eb1-a85b-8ddc5573babb",
+      "name": "More Work?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/rules/apply",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { stage: 'pick_file' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        0
+      ],
+      "id": "0c3ca044-da71-4a0e-a70d-490c200a233d",
+      "name": "Rules: pick file"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.result && $json.result.file ? 1 : 0 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3080,
+        0
+      ],
+      "id": "7f45a212-42d0-45a3-bc3b-b68576739dd1",
+      "name": "File Picked?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ ($json.result && $json.result.retry) ? 1 : 0 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3300,
+        0
+      ],
+      "id": "5ab3de88-7554-40d6-9880-fc8ca8a9e516",
+      "name": "Pick Retryable?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/iteration/start",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { file: $('Rules: pick file').first().json.result.file } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3520,
+        0
+      ],
+      "id": "1fba401b-c943-4659-a5d7-06e41e71c3e6",
+      "name": "Start Iteration"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/pit/run",
+        "options": {
+          "timeout": 3600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { file: $('Start Iteration').first().json.file, phase: 'baseline', stage: 'improving_mutation' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        200
+      ],
+      "id": "e013921f-fb94-4131-935b-81aa4a8d8144",
+      "name": "Baseline Mutation"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://127.0.0.1:3000/api/files/gaps?path={{ encodeURIComponent($('Start Iteration').first().json.file) }}",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        200
+      ],
+      "id": "73b4dc06-d07f-4025-94ea-24238b91b6fe",
+      "name": "Coverage Gaps"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst gaps = $json; // response of Coverage Gaps\nconst u = gaps.uncovered || {};\nconst fullyUncovered = u.lines === 'all';\nconst nothingToCover = !fullyUncovered && (!u.lines || !u.lines.length);\nconst round = (gaps.rounds || 0) + 1;\nconst targetPath = gaps.testPath.replace(/\\.java$/, 'Cov.java');\nif (nothingToCover) return [{ json: { skip: true, reason: 'class fully covered', targetPath, projectTestPath: gaps.projectTestPath } }];\nconst constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');\nconst testClass = targetPath.split('/').pop().replace(/\\.java$/, '');\nconst system = 'You are an expert Java test engineer writing ' + (gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5') + ' tests to INCREASE LINE COVERAGE of one class. Reply ONLY with JSON: {\"tests\":[{\"path\":\"...\",\"content\":\"full test file content\"}]}. Create a NEW test class only — never modify existing files. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:\\n- ONE test file only. Its public class name MUST equal the file name, and the package declaration MUST match the directory under src/test/java.\\n- Use the SAME test framework and assertion library as the style reference (JUnit 5: org.junit.jupiter.api.Test/Assertions; JUnit 4: org.junit.Test/org.junit.Assert). Do NOT introduce a dependency the project does not already have.\\n- Call only the PUBLIC API of the class under test. Never use reflection, setAccessible, or read source/bytecode.\\n- Do NOT modify production code, existing tests, or the build files.\\n- Deterministic: no network, no clock/randomness without fixing them, no reliance on file-system state or test execution order.\\n- Every test must ASSERT a value or an observable side effect; a test that only checks \"does not throw\" is worthless.\\n- The tests MUST compile and PASS against the CURRENT implementation.'\n  + (constraints ? '\\nTeam constraints:\\n' + constraints : '');\nconst prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ', JDK ' + gaps.jdk + ')\\n'\n  + String(gaps.source || '').slice(0, 14000)\n  + '\\n\\nUNCOVERED: ' + (fullyUncovered ? 'THE ENTIRE CLASS (no test executes it at all)' : 'source lines ' + JSON.stringify((u.lines || []).slice(0, 140)))\n  + '\\n\\nEXISTING TEST (style reference — imports, assertion library, conventions; do NOT rewrite it):\\n'\n  + String(gaps.existingTest || '(none)').slice(0, 6000)\n  + '\\n\\nWrite one test class that executes the uncovered lines and asserts real behaviour. JSON only.';\nreturn [{ json: { system, prompt, json: true, maxTokens: 7000, temperature: 0.3, stage: 'improving_coverage', stageDetail: 'writing tests for uncovered code', targetPath, projectTestPath: gaps.projectTestPath } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        200
+      ],
+      "id": "bcb026f1-b534-4fa9-a977-d8e87270f669",
+      "name": "Cov: Build Prompt"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.skip ? 0 : 1 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        880,
+        200
+      ],
+      "id": "ad74e690-8f7e-40d2-964d-ecb25a080f5a",
+      "name": "Cov: Has Work?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/llm/chat",
+        "options": {
+          "timeout": 900000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        200
+      ],
+      "id": "7594660e-37d7-411d-83e2-d49d2c33df00",
+      "name": "Cov: LLM Write Tests"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp = $json;\nconst plan = $('Cov: Build Prompt').first().json;\nlet tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];\ntests = tests\n  .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)\n  .slice(0, 1)\n  .map((t) => {\n    let p = typeof t.path === 'string' ? t.path.replace(/^\\.?\\//, '') : '';\n    // a Java file must live at the path its package + class name dictate, so trust our\n    // computed target unless the model produced exactly that\n    const safe = /(^|\\/)src\\/test\\/java\\/.+\\.java$/.test(p) && !p.includes('..');\n    if (!safe || p === plan.projectTestPath) p = plan.targetPath;\n    // the public class name has to match the file name or javac refuses to compile\n    const want = p.split('/').pop().replace(/\\.java$/, '');\n    let content = t.content;\n    const declared = (content.match(/public\\s+(?:final\\s+|abstract\\s+)?class\\s+(\\w+)/) || [])[1];\n    if (declared && declared !== want) {\n      content = content.replace(new RegExp('\\\\b' + declared + '\\\\b', 'g'), want);\n    }\n    return { path: p, content };\n  });\nreturn [{ json: { tests, paths: tests.map(t => t.path), count: tests.length } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        200
+      ],
+      "id": "196aff5d-1223-4da0-80ee-062574ff2770",
+      "name": "Cov: Parse Tests"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/write-many",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { tests: $json.tests, stage: 'improving_coverage' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        200
+      ],
+      "id": "280139e4-f689-48e1-8d65-f3d2c7ec7fdb",
+      "name": "Cov: Write Tests"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/run",
+        "options": {
+          "timeout": 3600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { stage: 'improving_coverage' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        200
+      ],
+      "id": "69b59902-db73-4d40-ba2c-d377b58db118",
+      "name": "Cov: Run Tests"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.passed ? 1 : 0 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1980,
+        200
+      ],
+      "id": "5096922b-cda7-45b0-b801-9853ae4bf57c",
+      "name": "Cov: Green?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $('Cov: Parse Tests').first().json.count }}",
+              "value2": 0,
+              "operation": "larger"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        200
+      ],
+      "id": "d92a72cd-072d-45cf-a6a9-720ae603a49a",
+      "name": "Cov: Wrote Any?"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst fail = $json;\nconst parsed = $('Cov: Parse Tests').first().json;\nconst gaps = $('Coverage Gaps').first().json;\nconst filesTxt = parsed.tests.map(t => 'PATH: ' + t.path + '\\n' + t.content.slice(0, 6000)).join('\\n\\n---\\n\\n');\nconst system = 'You are an expert Java test engineer. Tests you previously wrote FAIL to compile or fail against the current implementation. Fix them. Keep the SAME file path and class name. Reply ONLY with JSON: {\"tests\":[{\"path\":\"...\",\"content\":\"full corrected file content\"}]}. Compilation errors: fix imports, types, visibility and constructor/method signatures against the source shown. Assertion failures: correct the EXPECTED values to match the real behaviour of the source — never weaken an assertion to make it pass trivially. If a test cannot be fixed, drop it from the output.';\nconst prompt = 'BUILD / TEST OUTPUT (failures):\\n' + String(fail.summary || '').slice(0, 4000)\n  + '\\n\\nYOUR TEST FILE(S):\\n' + filesTxt\n  + '\\n\\nCLASS UNDER TEST ' + gaps.fqcn + ' (' + gaps.path + '):\\n' + String(gaps.source || '').slice(0, 10000)\n  + '\\n\\nReply with corrected JSON now.';\nreturn [{ json: { system, prompt, json: true, maxTokens: 7000, temperature: 0.2, stage: 'improving_coverage', stageDetail: 'repairing failing generated tests' } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        200
+      ],
+      "id": "8eb74d31-f6eb-4fdd-b973-d1d67bebd815",
+      "name": "Cov: Build Repair"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/llm/chat",
+        "options": {
+          "timeout": 900000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        200
+      ],
+      "id": "88ca67e6-92a2-4321-84eb-02d1d11209d1",
+      "name": "Cov: LLM Repair"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp = $json;\nconst prev = $('Cov: Parse Tests').first().json;\nlet tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];\ntests = tests\n  .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)\n  .slice(0, prev.paths.length)\n  .map((t, i) => ({ path: prev.paths[i], content: t.content }))\n  .filter(t => t.path);\nreturn [{ json: { tests, paths: tests.map(t => t.path), count: tests.length } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        200
+      ],
+      "id": "bfd89d08-2372-484d-b11a-c5a1ac6d1e3f",
+      "name": "Cov: Parse Repair"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/write-many",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { tests: $json.tests } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        200
+      ],
+      "id": "4b52a206-47a7-4791-8ece-19f233fe309f",
+      "name": "Cov: Write Repair"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/run",
+        "options": {
+          "timeout": 3600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3300,
+        200
+      ],
+      "id": "e2bf85f0-eeb0-4183-b0d1-5ddb943ddd6f",
+      "name": "Cov: Re-run Tests"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.passed ? 1 : 0 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3520,
+        200
+      ],
+      "id": "9b6657b5-e1e6-4a4b-9554-00bbc41c1d42",
+      "name": "Cov: Green After Repair?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/delete-many",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { paths: ($('Cov: Parse Tests').first().json.paths || []).concat($('Cov: Parse Repair').first().json.paths || []) } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        400
+      ],
+      "id": "5987a594-fb7e-4bdc-86a6-4d7067b586d0",
+      "name": "Cov: Delete Broken Tests"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        440,
+        400
+      ],
+      "id": "d7f79059-0372-4b89-a179-842ede023208",
+      "name": "Cov: Done"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst gaps = $('Coverage Gaps').first().json;\nconst cfg = $('Start Run').first().json.run.config;\nconst round = (gaps.rounds || 0) + 1;\nconst targetPath = gaps.testPath.replace(/\\.java$/, 'Mut.java');\n// freshest survivors: the sidecar tracks the last PIT run of this class (any round)\nconst allSurvived = (gaps.survived && gaps.survived.length) ? gaps.survived : ($('Baseline Mutation').first().json.survived || []);\nconst survived = allSurvived.slice(0, cfg.maxMutantsPerFile || 8);\nif (!survived.length) return [{ json: { skip: true, reason: 'no surviving mutants', targetPath, projectTestPath: gaps.projectTestPath } }];\nconst constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');\nconst testClass = targetPath.split('/').pop().replace(/\\.java$/, '');\nconst mutantsTxt = survived.map((m, i) =>\n  '#' + (i + 1) + ' [' + m.status + '] ' + m.mutator + ' at line ' + m.line + ' in method ' + (m.method || '?') + '() — ' + (m.description || '')).join('\\n');\nconst system = 'You are an expert Java test engineer writing ' + (gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5') + ' tests that KILL surviving PIT mutants of one class. A mutant is killed when at least one test FAILS on the mutated code while PASSING on the real code — so each test must assert something that DISTINGUISHES the two. Reply ONLY with JSON: {\"tests\":[{\"path\":\"...\",\"content\":\"full test file content\"}]}. Create a NEW test class only. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:\\n- ONE test file only. Its public class name MUST equal the file name, and the package declaration MUST match the directory under src/test/java.\\n- Use the SAME test framework and assertion library as the style reference (JUnit 5: org.junit.jupiter.api.Test/Assertions; JUnit 4: org.junit.Test/org.junit.Assert). Do NOT introduce a dependency the project does not already have.\\n- Call only the PUBLIC API of the class under test. Never use reflection, setAccessible, or read source/bytecode.\\n- Do NOT modify production code, existing tests, or the build files.\\n- Deterministic: no network, no clock/randomness without fixing them, no reliance on file-system state or test execution order.\\n- Every test must ASSERT a value or an observable side effect; a test that only checks \"does not throw\" is worthless.\\n- The tests MUST compile and PASS against the CURRENT implementation.\\nMutator → the assertion that detects it:\\n- ConditionalsBoundary (< ↔ <=, > ↔ >=): exercise the value EXACTLY at the boundary and assert the branch taken there.\\n- NegateConditionals (== ↔ !=, < ↔ >=): assert behaviour on BOTH sides of the condition.\\n- Math (+ ↔ -, * ↔ /, %): choose inputs where the two operations differ; assert the exact numeric result.\\n- Increments (i++ ↔ i--): assert the final accumulated/counted value.\\n- ReturnVals / NullReturnVals / PrimitiveReturnVals / BooleanTrueReturnVals / EmptyObjectReturnVals: assert the ACTUAL returned value or the returned object's contents (size, a known element) — never merely that it is non-null.\\n- VoidMethodCall / ConstructorCall: assert the observable SIDE EFFECT of the removed call (state change, collaborator interaction, output).\\n- RemoveConditional: assert that the guarded behaviour does NOT happen when the condition is false.\\n- InlineConstant: assert the exact constant-derived value.\\n- Switch: assert the outcome for each case label, including the default.\\nNO_COVERAGE survivors are the cheapest kills: the line never runs at all, so simply calling the method with representative inputs and asserting the result usually removes a whole cluster of them. Do those first.'\n  + (constraints ? '\\nTeam constraints:\\n' + constraints : '');\nconst prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ')\\n'\n  + String(gaps.source || '').slice(0, 12000)\n  + '\\n\\nSURVIVING MUTANTS TO KILL (status SURVIVED = line runs but nothing asserts on it; NO_COVERAGE = line never runs):\\n' + mutantsTxt\n  + '\\n\\nEXISTING TEST (style reference — do NOT rewrite it):\\n'\n  + String(gaps.existingTest || '(none)').slice(0, 4000)\n  + '\\n\\nWrite one test class killing as many of these mutants as possible. JSON only.';\nreturn [{ json: { system, prompt, json: true, maxTokens: 8000, temperature: 0.3, stage: 'improving_mutation', stageDetail: 'writing mutant-killing tests', targetPath, projectTestPath: gaps.projectTestPath } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        400
+      ],
+      "id": "158d9eb4-9d58-4b03-a39e-f1784978673e",
+      "name": "Mut: Build Prompt"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.skip ? 0 : 1 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        880,
+        400
+      ],
+      "id": "e541571b-2495-4159-b01a-0e6e0e2da62c",
+      "name": "Mut: Has Work?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/llm/chat",
+        "options": {
+          "timeout": 900000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        400
+      ],
+      "id": "4528b0be-d812-40a7-b835-b8296abb7ce5",
+      "name": "Mut: LLM Write Tests"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp = $json;\nconst plan = $('Mut: Build Prompt').first().json;\nlet tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];\ntests = tests\n  .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)\n  .slice(0, 1)\n  .map((t) => {\n    let p = typeof t.path === 'string' ? t.path.replace(/^\\.?\\//, '') : '';\n    // a Java file must live at the path its package + class name dictate, so trust our\n    // computed target unless the model produced exactly that\n    const safe = /(^|\\/)src\\/test\\/java\\/.+\\.java$/.test(p) && !p.includes('..');\n    if (!safe || p === plan.projectTestPath) p = plan.targetPath;\n    // the public class name has to match the file name or javac refuses to compile\n    const want = p.split('/').pop().replace(/\\.java$/, '');\n    let content = t.content;\n    const declared = (content.match(/public\\s+(?:final\\s+|abstract\\s+)?class\\s+(\\w+)/) || [])[1];\n    if (declared && declared !== want) {\n      content = content.replace(new RegExp('\\\\b' + declared + '\\\\b', 'g'), want);\n    }\n    return { path: p, content };\n  });\nreturn [{ json: { tests, paths: tests.map(t => t.path), count: tests.length } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        400
+      ],
+      "id": "8166ce66-c121-4824-adc6-8203d4ff7fde",
+      "name": "Mut: Parse Tests"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/write-many",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { tests: $json.tests, stage: 'improving_mutation' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        400
+      ],
+      "id": "4a7c8f89-ddd4-4d85-9e0b-caf43f57d841",
+      "name": "Mut: Write Tests"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/run",
+        "options": {
+          "timeout": 3600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { stage: 'improving_mutation' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        400
+      ],
+      "id": "d9f0d10b-a849-474e-bbf6-4ba0625448ce",
+      "name": "Mut: Run Tests"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.passed ? 1 : 0 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1980,
+        400
+      ],
+      "id": "e3556fda-064b-42a1-9455-fab9c1a47e73",
+      "name": "Mut: Green?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $('Mut: Parse Tests').first().json.count }}",
+              "value2": 0,
+              "operation": "larger"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        400
+      ],
+      "id": "963b9ab3-5bba-4b52-8791-002a74b0f497",
+      "name": "Mut: Wrote Any?"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst fail = $json;\nconst parsed = $('Mut: Parse Tests').first().json;\nconst gaps = $('Coverage Gaps').first().json;\nconst filesTxt = parsed.tests.map(t => 'PATH: ' + t.path + '\\n' + t.content.slice(0, 6000)).join('\\n\\n---\\n\\n');\nconst system = 'You are an expert Java test engineer. Tests you previously wrote FAIL to compile or fail against the current implementation. Fix them. Keep the SAME file path and class name. Reply ONLY with JSON: {\"tests\":[{\"path\":\"...\",\"content\":\"full corrected file content\"}]}. Compilation errors: fix imports, types, visibility and constructor/method signatures against the source shown. Assertion failures: correct the EXPECTED values to match the real behaviour of the source — never weaken an assertion to make it pass trivially. If a test cannot be fixed, drop it from the output.';\nconst prompt = 'BUILD / TEST OUTPUT (failures):\\n' + String(fail.summary || '').slice(0, 4000)\n  + '\\n\\nYOUR TEST FILE(S):\\n' + filesTxt\n  + '\\n\\nCLASS UNDER TEST ' + gaps.fqcn + ' (' + gaps.path + '):\\n' + String(gaps.source || '').slice(0, 10000)\n  + '\\n\\nReply with corrected JSON now.';\nreturn [{ json: { system, prompt, json: true, maxTokens: 7000, temperature: 0.2, stage: 'improving_mutation', stageDetail: 'repairing failing generated tests' } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        400
+      ],
+      "id": "dfc25f8b-3f33-4216-9153-2405e4ea853f",
+      "name": "Mut: Build Repair"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/llm/chat",
+        "options": {
+          "timeout": 900000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        400
+      ],
+      "id": "7838eef5-182b-44e6-8edf-97aa6c4f868d",
+      "name": "Mut: LLM Repair"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst resp = $json;\nconst prev = $('Mut: Parse Tests').first().json;\nlet tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];\ntests = tests\n  .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)\n  .slice(0, prev.paths.length)\n  .map((t, i) => ({ path: prev.paths[i], content: t.content }))\n  .filter(t => t.path);\nreturn [{ json: { tests, paths: tests.map(t => t.path), count: tests.length } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        400
+      ],
+      "id": "1b823def-1e53-4bc5-ad86-d2aa5f2a5a47",
+      "name": "Mut: Parse Repair"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/write-many",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { tests: $json.tests } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        400
+      ],
+      "id": "2c3807be-e6c6-4e71-b98e-ab777ccb4da3",
+      "name": "Mut: Write Repair"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/run",
+        "options": {
+          "timeout": 3600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3300,
+        400
+      ],
+      "id": "e6ed6538-7a9d-4d3e-b221-775805d5b49b",
+      "name": "Mut: Re-run Tests"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.passed ? 1 : 0 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3520,
+        400
+      ],
+      "id": "553fa3fc-9dbb-4ad1-adb8-dfd995d027a1",
+      "name": "Mut: Green After Repair?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/delete-many",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { paths: ($('Mut: Parse Tests').first().json.paths || []).concat($('Mut: Parse Repair').first().json.paths || []) } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        600
+      ],
+      "id": "28eadb74-0752-48c4-b430-a0274e84b280",
+      "name": "Mut: Delete Broken Tests"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        440,
+        600
+      ],
+      "id": "1c940819-93d9-4130-a3f9-528c23d22a50",
+      "name": "Mut: Done"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/verify",
+        "options": {
+          "timeout": 5400000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { file: $('Start Iteration').first().json.file } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        600
+      ],
+      "id": "686b713e-dacf-432d-a4f4-d4215bed2c92",
+      "name": "Verify"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.keepRound ? 1 : 0 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        880,
+        600
+      ],
+      "id": "ca255d6f-0720-4c7c-b8e7-52bfc624e7e7",
+      "name": "Keep Round?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.continueRounds ? 1 : 0 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        600
+      ],
+      "id": "c5e5df49-8054-4337-813d-e4a16935a72a",
+      "name": "Another Round?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/round/accept",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { file: $('Start Iteration').first().json.file } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        600
+      ],
+      "id": "8b9726ad-1c04-454f-ae18-f7725cc30220",
+      "name": "Accept Round"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/round/drop",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { file: $('Start Iteration').first().json.file } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        600
+      ],
+      "id": "d8bfc665-3784-4fea-9704-b788259453ae",
+      "name": "Drop Last Round"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/test/cleanup",
+        "options": {
+          "timeout": 5400000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { file: $('Start Iteration').first().json.file } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        600
+      ],
+      "id": "1b22890f-b4ce-4ec8-b2a2-14807b625797",
+      "name": "Cleanup Tests"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/rules/apply",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { stage: 'check_changes', context: $('Drop Last Round').first().json } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        600
+      ],
+      "id": "5354f2be-fba1-485f-8f52-6f35a8d4a646",
+      "name": "Rules: check changes"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ ($json.result && $json.result.approved && $('Drop Last Round').first().json.improved) ? 1 : 0 }}",
+              "value2": 1,
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        600
+      ],
+      "id": "cc73d9ba-1611-401d-819b-31043084bd59",
+      "name": "Approved?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/rules/apply",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { stage: 'make_pr', context: $('Drop Last Round').first().json } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        600
+      ],
+      "id": "54672717-ef90-4674-95c4-8ba4bee3bc5b",
+      "name": "Rules: make PR"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/pr/create",
+        "options": {
+          "timeout": 300000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { file: $('Start Iteration').first().json.file, title: $json.result.title, body: $json.result.body, labels: $json.result.labels } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        600
+      ],
+      "id": "7a80277a-a990-4e8e-a82f-9036667f9d62",
+      "name": "Create PR"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/iteration/discard",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { file: $('Start Iteration').first().json.file, reason: $('Rules: check changes').first().json.result.reason || 'not approved' } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        600
+      ],
+      "id": "262f11b8-6c41-4faa-8ab0-46ce80c34f41",
+      "name": "Discard Changes"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3080,
+        600
+      ],
+      "id": "229713e7-01c1-4446-b87c-31df058f2320",
+      "name": "Iteration Done"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/run/finish",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3300,
+        600
+      ],
+      "id": "8baf1b0b-8a23-4fa5-be63-24c85fcae30c",
+      "name": "Finish Run"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3520,
+        600
+      ],
+      "id": "320f1d0b-ce62-410d-8cfa-70438621a62a",
+      "name": "End"
+    }
+  ],
+  "connections": {
+    "Start (manual)": {
+      "main": [
+        [
+          {
+            "node": "Start Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start (webhook)": {
+      "main": [
+        [
+          {
+            "node": "Start Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Run": {
+      "main": [
+        [
+          {
+            "node": "Clone Repo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clone Repo": {
+      "main": [
+        [
+          {
+            "node": "Rules: post-clone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rules: post-clone": {
+      "main": [
+        [
+          {
+            "node": "Build & Detect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build & Detect": {
+      "main": [
+        [
+          {
+            "node": "Baseline Coverage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baseline Coverage": {
+      "main": [
+        [
+          {
+            "node": "Rules: pre-pick",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rules: pre-pick": {
+      "main": [
+        [
+          {
+            "node": "Rules: write-test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rules: write-test": {
+      "main": [
+        [
+          {
+            "node": "Next Iteration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next Iteration": {
+      "main": [
+        [
+          {
+            "node": "Get Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Candidates": {
+      "main": [
+        [
+          {
+            "node": "More Work?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "More Work?": {
+      "main": [
+        [
+          {
+            "node": "Rules: pick file",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finish Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rules: pick file": {
+      "main": [
+        [
+          {
+            "node": "File Picked?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Picked?": {
+      "main": [
+        [
+          {
+            "node": "Start Iteration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pick Retryable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Iteration": {
+      "main": [
+        [
+          {
+            "node": "Baseline Mutation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baseline Mutation": {
+      "main": [
+        [
+          {
+            "node": "Coverage Gaps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Coverage Gaps": {
+      "main": [
+        [
+          {
+            "node": "Cov: Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Cov: Has Work?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Has Work?": {
+      "main": [
+        [
+          {
+            "node": "Cov: LLM Write Tests",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cov: Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: LLM Write Tests": {
+      "main": [
+        [
+          {
+            "node": "Cov: Parse Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Parse Tests": {
+      "main": [
+        [
+          {
+            "node": "Cov: Write Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Write Tests": {
+      "main": [
+        [
+          {
+            "node": "Cov: Run Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Run Tests": {
+      "main": [
+        [
+          {
+            "node": "Cov: Green?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Green?": {
+      "main": [
+        [
+          {
+            "node": "Cov: Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cov: Wrote Any?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Wrote Any?": {
+      "main": [
+        [
+          {
+            "node": "Cov: Build Repair",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cov: Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Build Repair": {
+      "main": [
+        [
+          {
+            "node": "Cov: LLM Repair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: LLM Repair": {
+      "main": [
+        [
+          {
+            "node": "Cov: Parse Repair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Parse Repair": {
+      "main": [
+        [
+          {
+            "node": "Cov: Write Repair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Write Repair": {
+      "main": [
+        [
+          {
+            "node": "Cov: Re-run Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Re-run Tests": {
+      "main": [
+        [
+          {
+            "node": "Cov: Green After Repair?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Green After Repair?": {
+      "main": [
+        [
+          {
+            "node": "Cov: Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cov: Delete Broken Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Delete Broken Tests": {
+      "main": [
+        [
+          {
+            "node": "Cov: Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cov: Done": {
+      "main": [
+        [
+          {
+            "node": "Mut: Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Mut: Has Work?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Has Work?": {
+      "main": [
+        [
+          {
+            "node": "Mut: LLM Write Tests",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mut: Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: LLM Write Tests": {
+      "main": [
+        [
+          {
+            "node": "Mut: Parse Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Parse Tests": {
+      "main": [
+        [
+          {
+            "node": "Mut: Write Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Write Tests": {
+      "main": [
+        [
+          {
+            "node": "Mut: Run Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Run Tests": {
+      "main": [
+        [
+          {
+            "node": "Mut: Green?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Green?": {
+      "main": [
+        [
+          {
+            "node": "Mut: Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mut: Wrote Any?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Wrote Any?": {
+      "main": [
+        [
+          {
+            "node": "Mut: Build Repair",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mut: Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Build Repair": {
+      "main": [
+        [
+          {
+            "node": "Mut: LLM Repair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: LLM Repair": {
+      "main": [
+        [
+          {
+            "node": "Mut: Parse Repair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Parse Repair": {
+      "main": [
+        [
+          {
+            "node": "Mut: Write Repair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Write Repair": {
+      "main": [
+        [
+          {
+            "node": "Mut: Re-run Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Re-run Tests": {
+      "main": [
+        [
+          {
+            "node": "Mut: Green After Repair?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Green After Repair?": {
+      "main": [
+        [
+          {
+            "node": "Mut: Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mut: Delete Broken Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Delete Broken Tests": {
+      "main": [
+        [
+          {
+            "node": "Mut: Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mut: Done": {
+      "main": [
+        [
+          {
+            "node": "Verify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify": {
+      "main": [
+        [
+          {
+            "node": "Keep Round?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep Round?": {
+      "main": [
+        [
+          {
+            "node": "Accept Round",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Drop Last Round",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accept Round": {
+      "main": [
+        [
+          {
+            "node": "Another Round?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Another Round?": {
+      "main": [
+        [
+          {
+            "node": "Coverage Gaps",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Drop Last Round",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drop Last Round": {
+      "main": [
+        [
+          {
+            "node": "Rules: check changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rules: check changes": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Tests",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discard Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Tests": {
+      "main": [
+        [
+          {
+            "node": "Rules: make PR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rules: make PR": {
+      "main": [
+        [
+          {
+            "node": "Create PR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create PR": {
+      "main": [
+        [
+          {
+            "node": "Iteration Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discard Changes": {
+      "main": [
+        [
+          {
+            "node": "Iteration Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Iteration Done": {
+      "main": [
+        [
+          {
+            "node": "Next Iteration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Retryable?": {
+      "main": [
+        [
+          {
+            "node": "Next Iteration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finish Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finish Run": {
+      "main": [
+        [
+          {
+            "node": "End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC"
+  },
+  "tags": []
+}

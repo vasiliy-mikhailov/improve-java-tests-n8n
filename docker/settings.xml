@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- improve-java-tests-n8n: route Maven artifact resolution through the on-host Nexus
+     group repo (service `nexus` on the mvn-cache docker network) so builds and PIT runs
+     hit a warm cache instead of upstream repositories — faster and immune to rate limits.
+     `mirrorOf` deliberately excludes nothing but the mirror itself; when Nexus is not on
+     the network Maven falls back to the repositories declared by the project (see the
+     `no-nexus` profile note in README). -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <mirrors>
+    <mirror>
+      <id>nexus</id>
+      <name>nexus maven-public group</name>
+      <mirrorOf>*,!apache.snapshots</mirrorOf>
+      <url>http://nexus:8081/repository/maven-public/</url>
+      <blocked>false</blocked>
+    </mirror>
+  </mirrors>
+</settings>

@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Rewrite ONLY the improve-java-tests-n8n.mikhailov.tech block of the shared
+Caddyfile: keep the existing basic_auth hash, inject the (new) 10-year n8n-auth
+JWT passed as argv[1]. Brace-aware — never touches other site blocks."""
+import re
+import sys
+
+CADDYFILE = "/home/vmihaylov/java_8_11_17_to_java_21/proxy/Caddyfile"
+SITE = "improve-java-tests-n8n.mikhailov.tech"
+
+def main():
+    token = sys.argv[1].strip()
+    assert token and "." in token, "usage: update-caddy.py <n8n-auth-jwt>"
+    text = open(CADDYFILE).read()
+
+    start = text.find(SITE + " {")
+    assert start != -1, f"site block {SITE} not found"
+    # find matching closing brace
+    depth = 0
+    end = None
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+    assert end, "unbalanced braces"
+    old_block = text[start:end]
+
+    m = re.search(r"basic_auth\s*\{([^}]*)\}", old_block, re.S)
+    basic_auth_body = m.group(1).strip() if m else ""
+    assert basic_auth_body, "existing basic_auth credentials not found — refusing to drop auth"
+
+    new_block = f"""{SITE} {{
+	basic_auth {{
+		{basic_auth_body}
+	}}
+	redir /dashboard /dashboard/
+	handle_path /dashboard/* {{
+		reverse_proxy ijtn8n:3000
+	}}
+	handle {{
+		reverse_proxy ijtn8n:5678 {{
+			header_up Cookie "n8n-auth={token}"
+		}}
+	}}
+}}"""
+    if new_block == old_block:
+        print("caddy block already up to date")
+        return
+    open(CADDYFILE, "w").write(text[:start] + new_block + text[end:])
+    print("caddy block updated (token rotated)")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,22 @@
+// improve-java-tests-n8n: same intent as docker/settings.xml — resolve Gradle
+// dependencies through the on-host Nexus group repo when it is reachable, falling
+// back to the project's own repositories otherwise.
+def nexus = 'http://nexus:8081/repository/maven-public/'
+def reachable = {
+  try { new URL(nexus).openConnection().with { connectTimeout = 1500; readTimeout = 1500; connect(); true } }
+  catch (Exception ignored) { false }
+}()
+
+if (reachable) {
+  settingsEvaluated { settings ->
+    settings.pluginManagement {
+      repositories { maven { url = nexus; allowInsecureProtocol = true }; gradlePluginPortal() }
+    }
+  }
+  allprojects {
+    repositories {
+      maven { url = nexus; allowInsecureProtocol = true }
+      mavenCentral()
+    }
+  }
+}

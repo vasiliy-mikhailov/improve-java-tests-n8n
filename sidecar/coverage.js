@@ -1,0 +1,171 @@
+'use strict';
+// Line coverage via JaCoCo.
+//
+// Maven: JaCoCo's goals are invoked directly (prepare-agent sets the `argLine` property
+// Surefire picks up), so a project without JaCoCo configured needs no pom edit.
+// Gradle: an INIT SCRIPT applies the jacoco plugin and forces an XML report, so the
+// repo's own build files stay untouched.
+//
+// Coverage is keyed by fully-qualified class name — that is what JaCoCo reports and
+// what maps cleanly onto a Java "file" (one public class per file).
+const fs = require('node:fs');
+const path = require('node:path');
+const { run } = require('./exec');
+const { state, event, upsertFile } = require('./state');
+const repo = require('./repo');
+const { round2 } = require('./util');
+
+const JACOCO_VERSION = process.env.JACOCO_VERSION || '0.8.12';
+const INIT_SCRIPT = '.ijt-jacoco.init.gradle';
+
+function gradleInitScript() {
+  return `// injected by improve-java-tests-n8n — applies JaCoCo and forces an XML report
+allprojects { p ->
+  p.plugins.withId('java') {
+    p.apply plugin: 'jacoco'
+    p.tasks.withType(Test).configureEach { t -> t.ignoreFailures = true; t.finalizedBy(p.tasks.named('jacocoTestReport')) }
+    p.tasks.named('jacocoTestReport').configure { r ->
+      r.dependsOn p.tasks.withType(Test)
+      r.reports { xml.required = true; html.required = false }
+    }
+  }
+}
+`;
+}
+
+async function runCoverage() {
+  const dir = repo.repoDir();
+  const build = state.runner;
+  if (!build?.tool) throw new Error('build not detected — call /api/repo/prepare first');
+  let r;
+  if (build.tool === 'maven') {
+    const g = `org.jacoco:jacoco-maven-plugin:${JACOCO_VERSION}`;
+    r = await run([build.wrapper, '-B', '-ntp', `${g}:prepare-agent`, 'test', `${g}:report`,
+      '-Dmaven.test.failure.ignore=true', '-DfailIfNoTests=false'],
+    { cwd: dir, timeoutMs: 3600000, label: 'jacoco', env: repo.buildEnv() });
+  } else {
+    fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript());
+    r = await run([build.wrapper, '--no-daemon', '--continue', '-I', INIT_SCRIPT, 'test', 'jacocoTestReport'],
+      { cwd: dir, timeoutMs: 3600000, label: 'jacoco', env: repo.buildEnv() });
+  }
+  const reports = findReports(dir);
+  if (!reports.length) {
+    throw new Error(`JaCoCo produced no XML report (exit ${r.code}): ` + (r.stderr || r.stdout).slice(-700));
+  }
+  const merged = { classes: {}, missed: 0, covered: 0 };
+  for (const rep of reports) mergeReport(merged, fs.readFileSync(rep, 'utf8'));
+  const totalPct = merged.missed + merged.covered > 0
+    ? round2((merged.covered * 100) / (merged.covered + merged.missed)) : 0;
+
+  // map class coverage onto the scope files we track
+  const byPath = {};
+  for (const [rel, f] of Object.entries(state.files)) {
+    const fq = f.fqcn || repo.fqcnOf(rel);
+    const c = merged.classes[fq];
+    if (c) {
+      const pct = c.missed + c.covered > 0 ? round2((c.covered * 100) / (c.covered + c.missed)) : 0;
+      byPath[rel] = pct;
+      upsertFile(rel, { coverage: pct, coveredLines: c.covered, missedLines: c.missed });
+    } else if (f.coverage == null) {
+      // class never loaded by any test → nothing covered
+      upsertFile(rel, { coverage: 0 });
+      byPath[rel] = 0;
+    }
+  }
+  event('coverage', `total line coverage ${totalPct}% over ${reports.length} JaCoCo report(s) (build exit ${r.code})`);
+  return { totalPct, files: byPath, exitCode: r.code, reports: reports.length };
+}
+
+/** Every jacoco XML report under the repo (one per module). */
+function findReports(dir) {
+  const out = [];
+  const walk = (d, depth) => {
+    if (depth > 7) return;
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const ent of entries) {
+      const p = path.join(d, ent.name);
+      if (ent.isDirectory()) {
+        if (ent.name === '.git' || ent.name === 'node_modules') continue;
+        walk(p, depth + 1);
+      } else if (/^(jacoco|jacocoTestReport)\.xml$/.test(ent.name)) out.push(p);
+    }
+  };
+  walk(dir, 0);
+  return out;
+}
+
+/**
+ * Pull per-class LINE counters and per-sourcefile line hits out of a JaCoCo XML report.
+ * Regex-scanned rather than DOM-parsed: the sidecar is dependency-free by design and the
+ * report's shape is fixed and flat.
+ */
+function mergeReport(acc, xml) {
+  // <package name="com/x"> … </package>
+  const pkgRe = /<package\s+name="([^"]*)"\s*>([\s\S]*?)<\/package>/g;
+  let pm;
+  while ((pm = pkgRe.exec(xml))) {
+    const pkg = pm[1].split('/').join('.');
+    const body = pm[2];
+    // <class name="com/x/Foo" sourcefilename="Foo.java"> … <counter type="LINE" missed covered/>
+    const clsRe = /<class\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/class>/g;
+    let cm;
+    while ((cm = clsRe.exec(body))) {
+      const raw = cm[1].split('/').join('.');
+      const fq = raw.split('$')[0];   // fold inner classes into their outer class
+      const line = lineCounter(cm[2]);
+      if (!line) continue;
+      const e = (acc.classes[fq] ||= { missed: 0, covered: 0, lines: {} });
+      e.missed += line.missed; e.covered += line.covered;
+    }
+    // <sourcefile name="Foo.java"> <line nr="7" mi="0" ci="2" .../> …
+    const srcRe = /<sourcefile\s+name="([^"]+)"\s*>([\s\S]*?)<\/sourcefile>/g;
+    let sm;
+    while ((sm = srcRe.exec(body))) {
+      const fq = pkg ? `${pkg}.${sm[1].replace(/\.java$/, '')}` : sm[1].replace(/\.java$/, '');
+      const e = (acc.classes[fq] ||= { missed: 0, covered: 0, lines: {} });
+      const lineRe = /<line\s+nr="(\d+)"\s+mi="(\d+)"\s+ci="(\d+)"/g;
+      let lm;
+      while ((lm = lineRe.exec(sm[2]))) {
+        e.lines[lm[1]] = { mi: parseInt(lm[2], 10), ci: parseInt(lm[3], 10) };
+      }
+    }
+  }
+  // report-level totals: the LAST top-level LINE counter belongs to <report>
+  const totals = [...xml.matchAll(/<counter\s+type="LINE"\s+missed="(\d+)"\s+covered="(\d+)"\s*\/>/g)];
+  if (totals.length) {
+    const t = totals[totals.length - 1];
+    acc.missed += parseInt(t[1], 10);
+    acc.covered += parseInt(t[2], 10);
+  }
+}
+
+function lineCounter(fragment) {
+  const m = fragment.match(/<counter\s+type="LINE"\s+missed="(\d+)"\s+covered="(\d+)"\s*\/>/);
+  return m ? { missed: parseInt(m[1], 10), covered: parseInt(m[2], 10) } : null;
+}
+
+/** Uncovered lines of one source file, for the coverage-improvement prompt. */
+function uncoveredLines(rel) {
+  const dir = repo.repoDir();
+  const fq = state.files[rel]?.fqcn || repo.fqcnOf(rel);
+  const acc = { classes: {}, missed: 0, covered: 0 };
+  for (const rep of findReports(dir)) {
+    try { mergeReport(acc, fs.readFileSync(rep, 'utf8')); } catch { }
+  }
+  const entry = acc.classes[fq];
+  if (!entry || !Object.keys(entry.lines).length) {
+    return { lines: 'all', note: 'class never executed by any test — 0% coverage' };
+  }
+  const uncovered = Object.entries(entry.lines)
+    .filter(([, v]) => v.ci === 0 && v.mi > 0)
+    .map(([nr]) => parseInt(nr, 10))
+    .sort((a, b) => a - b);
+  return {
+    lines: uncovered.slice(0, 200),
+    coveredLines: entry.covered,
+    missedLines: entry.missed,
+  };
+}
+
+module.exports = { runCoverage, uncoveredLines, JACOCO_VERSION };
