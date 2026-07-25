@@ -276,8 +276,43 @@ async function install() {
 
   const tf = detectTestFramework();
   state.runner = { ...state.runner, testFramework: tf.framework, testFrameworkVersion: tf.version };
+  state.runner.hasJacoco = await detectJacoco();
   event('installing', `ready (build=${build.tool}, JDK ${jdk.chosen}, tests=${tf.framework}${tf.version ? ' ' + tf.version : ''})`);
   return state.runner;
+}
+
+/**
+ * Does the project already wire JaCoCo itself?
+ *
+ * It matters because adding our own `prepare-agent` on top of an existing one puts TWO
+ * -javaagent entries on the test JVM, and the JVM dies with
+ * `java.lang.instrument ASSERTION FAILED ... invokeJavaAgentMainMethod` before a single
+ * test runs. Apache's commons-parent is the common case, and it is invisible in the
+ * repo's own pom.xml — only the EFFECTIVE pom shows it, so that is what we ask for.
+ * (Cheap: resolves the parent chain, runs no tests.)
+ */
+async function detectJacoco() {
+  const dir = repoDir();
+  if (state.runner?.tool !== 'maven') {
+    // Gradle: our init script owns the wiring, and applying the plugin twice is a no-op
+    const blob = ['build.gradle', 'build.gradle.kts'].map((f) => readTextSafe(path.join(dir, f))).join('\n');
+    return /jacoco/i.test(blob);
+  }
+  // -Doutput, not stdout: help:effective-pom prints at INFO level, so `-q` silently
+  // yields an empty POM — which made this return false for every Apache project and
+  // put a second agent on the JVM anyway.
+  const out = path.join(dir, '.ijt-effective-pom.xml');
+  const r = await run([state.runner.wrapper, '-B', '-ntp', 'help:effective-pom', `-Doutput=${out}`],
+    { cwd: dir, timeoutMs: 600000, label: 'effective-pom', env: buildEnv() });
+  let text = '';
+  try { text = fs.readFileSync(out, 'utf8'); } catch { text = r.stdout; }
+  try { fs.unlinkSync(out); } catch { }
+  if (r.code !== 0 && !text) return false;   // unknown → assume not, and inject our own
+  const has = /jacoco-maven-plugin/.test(text);
+  event('installing', has
+    ? 'project configures JaCoCo itself — using its agent (a second one would crash the test JVM)'
+    : 'project has no JaCoCo — the pipeline supplies its own agent');
+  return has;
 }
 
 // ── source files ───────────────────────────────────────────────────────────

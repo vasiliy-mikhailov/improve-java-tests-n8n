@@ -40,9 +40,25 @@ async function runCoverage() {
   let r;
   if (build.tool === 'maven') {
     const g = `org.jacoco:jacoco-maven-plugin:${JACOCO_VERSION}`;
-    r = await run([build.wrapper, '-B', '-ntp', `${g}:prepare-agent`, 'test', `${g}:report`,
+    // Only supply an agent when the project has none: two -javaagent entries kill the
+    // test JVM outright (`java.lang.instrument ASSERTION FAILED`), which is how every
+    // Apache Commons repo failed in the first sweep.
+    // when deferring, use the PROJECT's plugin version (bare `jacoco:report` prefix)
+    // so the report tool matches the agent that wrote the exec data
+    const goals = build.hasJacoco
+      ? ['test', 'jacoco:report']
+      : [`${g}:prepare-agent`, 'test', `${g}:report`];
+    r = await run([build.wrapper, '-B', '-ntp', ...goals,
       '-Dmaven.test.failure.ignore=true', '-DfailIfNoTests=false'],
     { cwd: dir, timeoutMs: 3600000, label: 'jacoco', env: repo.buildEnv() });
+    // If deferring to the project produced nothing (its agent sits in an inactive
+    // profile, say), fall back to supplying ours.
+    if (build.hasJacoco && !findReports(dir).length) {
+      event('coverage', 'the project’s own JaCoCo produced no report — retrying with our agent');
+      r = await run([build.wrapper, '-B', '-ntp', `${g}:prepare-agent`, 'test', `${g}:report`,
+        '-Dmaven.test.failure.ignore=true', '-DfailIfNoTests=false'],
+      { cwd: dir, timeoutMs: 3600000, label: 'jacoco', env: repo.buildEnv() });
+    }
   } else {
     fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript());
     r = await run([build.wrapper, '--no-daemon', '--continue', '-I', INIT_SCRIPT, 'test', 'jacocoTestReport'],
@@ -140,9 +156,18 @@ function mergeReport(acc, xml) {
   }
 }
 
+/**
+ * The class-level LINE counter — which is the LAST one in the element, not the first.
+ * A <class> contains a <method> per method, each with its own counters, and only then
+ * its own totals. Reading the first match returned whichever method happened to come
+ * first in the file: a class whose first method was uncovered reported 0 % coverage
+ * while the repo total said 98 %.
+ */
 function lineCounter(fragment) {
-  const m = fragment.match(/<counter\s+type="LINE"\s+missed="(\d+)"\s+covered="(\d+)"\s*\/>/);
-  return m ? { missed: parseInt(m[1], 10), covered: parseInt(m[2], 10) } : null;
+  const all = [...fragment.matchAll(/<counter\s+type="LINE"\s+missed="(\d+)"\s+covered="(\d+)"\s*\/>/g)];
+  if (!all.length) return null;
+  const m = all[all.length - 1];
+  return { missed: parseInt(m[1], 10), covered: parseInt(m[2], 10) };
 }
 
 /** Uncovered lines of one source file, for the coverage-improvement prompt. */
@@ -168,4 +193,4 @@ function uncoveredLines(rel) {
   };
 }
 
-module.exports = { runCoverage, uncoveredLines, JACOCO_VERSION };
+module.exports = { runCoverage, uncoveredLines, JACOCO_VERSION, mergeReport, lineCounter };
