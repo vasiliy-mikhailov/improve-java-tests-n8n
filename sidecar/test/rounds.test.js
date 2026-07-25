@@ -63,6 +63,16 @@ test('a fully-improved file (MAC 100) does not loop forever', () => {
   assert.equal(d.continueRounds, false);
 });
 
+test('reaching a perfect score ends the loop immediately', () => {
+  // with a METHOD as the unit this is the common case, and the extra round used to cost
+  // an LLM call, a suite run and a PIT run to learn there was nothing left
+  const d = decide({ ...base, macBase: 0, macAfter: 100 });
+  assert.equal(d.keepRound, true);
+  assert.equal(d.continueRounds, false);
+  assert.equal(d.perfect, true);
+  assert.match(d.verdict, /nothing left to improve/);
+});
+
 test('thresholds are configurable', () => {
   const strict = decide({ ...base, macBase: 0, macAfter: 40, minGapFrac: 0.5 });
   assert.equal(strict.continueRounds, false);

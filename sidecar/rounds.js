@@ -37,14 +37,19 @@ function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
   // rounds is the count already accepted; this one is number rounds+1
   const roundsLeft = rounds + 1 < Math.max(1, maxRounds);
   const marginal = keepRound && (gapClosed < minGapFrac || gain < minGain);
-  const continueRounds = keepRound && roundsLeft && !marginal;
+  // A perfect score leaves nothing to buy. Without this the loop always spends one more
+  // round to discover that — cheap on a whole class, wasteful when the unit is a single
+  // method, where reaching 100 in the first round is the common case.
+  const perfect = after >= 100;
+  const continueRounds = keepRound && roundsLeft && !marginal && !perfect;
   const verdict = !keepRound
     ? (degradedAny ? 'DEGRADED (stop, drop round)' : 'STALE (stop)')
-    : !roundsLeft ? `PROGRESS (round budget ${Math.max(1, maxRounds)} spent — keep and stop)`
+    : perfect ? `PROGRESS (MAC ${after} — nothing left to improve, keep and stop)`
+      : !roundsLeft ? `PROGRESS (round budget ${Math.max(1, maxRounds)} spent — keep and stop)`
       : marginal ? `PROGRESS but MARGINAL (+${gain} MAC = ${round2(gapClosed * 100)}% of the remaining gap; `
         + `floors ${round2(minGapFrac * 100)}% / +${minGain}) — keep and stop`
         : 'PROGRESS (another round)';
-  return { keepRound, continueRounds, marginal, gain, gapClosed: round2(gapClosed), verdict };
+  return { keepRound, continueRounds, marginal, perfect, gain, gapClosed: round2(gapClosed), verdict };
 }
 
 module.exports = { decide, DEFAULTS };
