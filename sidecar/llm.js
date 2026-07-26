@@ -1,7 +1,7 @@
 'use strict';
 // OpenAI-compatible chat client for the vLLM endpoint (qwen), zero-dep via global fetch.
 const { extractJson } = require('./util');
-const { event, addTokens } = require('./state');
+const { event, addTokens, setProgress } = require('./state');
 
 const BASE = (process.env.LLM_BASE_URL || '').replace(/\/$/, '');
 const KEY = process.env.LLM_API_KEY || '';
@@ -43,6 +43,17 @@ async function chat(opts) {
 async function post(body, attempt = 0) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 300000);
+  // Heartbeat while the model is thinking. Child processes (Maven, PIT) feed the
+  // dashboard's live status line through exec.js, but an LLM call is just a socket we
+  // are waiting on — so the line went blank for minutes at a time, during the phase the
+  // pipeline spends most of its time in, and the dashboard looked dead while it worked.
+  const started = Date.now();
+  const label = `${MODEL}${ENABLE_THINKING ? ' (thinking)' : ''}`;
+  const beat = setInterval(() => {
+    const s = Math.round((Date.now() - started) / 1000);
+    setProgress(`${label}: waiting for completion — ${s}s${attempt ? ` (retry ${attempt})` : ''}`, s);
+  }, 3000);
+  setProgress(`${label}: request sent`, 0);
   try {
     const res = await fetch(BASE + '/chat/completions', {
       method: 'POST',
@@ -63,6 +74,8 @@ async function post(body, attempt = 0) {
     // currently being worked on, so the dashboard can report what the improvement cost
     const u = data.usage || {};
     addTokens(u.prompt_tokens || 0, u.completion_tokens || 0);
+    const secs = Math.round((Date.now() - started) / 1000);
+    setProgress(`${label}: ${u.prompt_tokens || 0} in / ${u.completion_tokens || 0} out tokens in ${secs}s`, secs);
     return data.choices?.[0]?.message?.content || '';
   } catch (e) {
     if (attempt < 2 && /abort|network|fetch failed|ECONN/i.test(String(e.message))) {
@@ -70,7 +83,7 @@ async function post(body, attempt = 0) {
       return post(body, attempt + 1);
     }
     throw e;
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); clearInterval(beat); }
 }
 
 module.exports = { chat };
