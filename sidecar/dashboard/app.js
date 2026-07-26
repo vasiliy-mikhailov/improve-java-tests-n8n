@@ -16,6 +16,7 @@ const ACTIVE = ['starting', 'cloning', 'applying_rules', 'installing', 'measurin
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (x, suf = '%') => (x == null ? '–' : (Math.round(x * 100) / 100) + suf);
+const fmtTok = (n) => !n ? '0' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
 const fmtHours = (h) => h >= 8 ? `${Math.round(h / 8 * 10) / 10} d (${Math.round(h * 10) / 10} h)` : `${Math.round(h * 10) / 10} h`;
 const fmtDur = (sec) => {
   const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
@@ -75,6 +76,11 @@ function render(m) {
   }
   $('c-eta').textContent = w.etaSec != null ? fmtDur(w.etaSec) : '–';
   $('c-eta-d').textContent = w.etaSec != null ? `at current pace, ${w.remaining} file(s) left` : 'measuring pace…';
+  const tin = w.tokensIn || 0, tout = w.tokensOut || 0;
+  $('c-tokens').textContent = (tin || tout) ? `${fmtTok(tin)} / ${fmtTok(tout)}` : '–';
+  $('c-tokens-d').textContent = (tin || tout)
+    ? `in / out · ${w.llmCalls || 0} calls` + (w.tokensPerImproved ? ` · ${fmtTok(w.tokensPerImproved)} per improved unit` : '')
+    : 'in / out';
 
   const tb = $('files').querySelector('tbody');
   const files = (m.files || []).filter((f) => f.status !== 'candidate' || f.coverage != null).slice(0, 200);
@@ -100,6 +106,7 @@ function render(m) {
     <td>${cell(f.mutationAfter, f.attemptMutation)}</td>
     <td>${cell(f.macAfter, f.attemptMac, '')}</td>
     <td title="${f.timesheet ? esc(`analysis ${f.timesheet.analysisMin}m · writing ${f.timesheet.testsMin}m · mutation ${f.timesheet.mutationMin}m · verify ${f.timesheet.verifyMin}m`) : ''}">${f.timesheet ? fmtHours(f.timesheet.hours) : '–'}</td>
+    <td title="${f.llmCalls || 0} LLM call(s)">${(f.tokensIn || f.tokensOut) ? fmtTok(f.tokensIn) + ' / ' + fmtTok(f.tokensOut) : '–'}</td>
     <td><span class="badge b-${esc(f.status)}">${esc(f.status)}</span></td>
     <td>${f.prUrl ? `<a href="${esc(f.prUrl)}" target="_blank">PR ↗</a>` : (f.prPatch ? 'patch' : '')}</td>
   </tr>`;

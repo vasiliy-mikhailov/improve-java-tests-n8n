@@ -81,6 +81,7 @@ function freshRun(overrides = {}) {
     iteration: 0,
     baseline: { coveragePct: null, mutationPct: null, mac: null },
     result: { coveragePct: null, mutationPct: null, mac: null },
+    tokens: { in: 0, out: 0, calls: 0 },
   };
 }
 
@@ -107,6 +108,8 @@ const state = {
   // { [repoSlug]: { [path]: {coverageBefore, mutationBefore, macBefore,
   //                          attemptCoverage, attemptMutation, attemptMac, ts} } }
   measureLedger: {},
+  // unit the pipeline is improving right now — token usage is attributed to it
+  currentUnit: null,
 };
 
 function load() {
@@ -159,6 +162,25 @@ function setProgress(line, elapsed) {
   save();
 }
 
+/**
+ * Accumulate LLM token usage: on the run total and on the unit currently being improved.
+ * Called from llm.js for every completion, including retries and repairs — the cost of a
+ * unit is everything spent getting there, not just the successful call.
+ */
+function addTokens(inTok, outTok) {
+  if (!state.run) return;
+  const t = (state.run.tokens ||= { in: 0, out: 0, calls: 0 });
+  t.in += inTok; t.out += outTok; t.calls += 1;
+  const key = state.currentUnit;
+  if (key && state.files[key]) {
+    const f = state.files[key];
+    f.tokensIn = (f.tokensIn || 0) + inTok;
+    f.tokensOut = (f.tokensOut || 0) + outTok;
+    f.llmCalls = (f.llmCalls || 0) + 1;
+  }
+  save();
+}
+
 function upsertFile(p, patch) {
   const f = state.files[p] || {
     path: p, coverage: null, mutation: null, mac: null,
@@ -171,4 +193,4 @@ function upsertFile(p, patch) {
   return f;
 }
 
-module.exports = { state, load, save, event, setStage, setProgress, upsertFile, freshRun, envConfig, DATA_DIR };
+module.exports = { state, load, save, event, setStage, setProgress, upsertFile, addTokens, freshRun, envConfig, DATA_DIR };

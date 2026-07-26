@@ -119,7 +119,11 @@ function metricsPayload() {
   const comparable = files.filter((f) => f.timesheet?.totalMin > 0 && f.spentSec > 0);
   const comparableHumanMin = comparable.reduce((s, f) => s + f.timesheet.totalMin, 0);
   const comparableMachineSec = comparable.reduce((s, f) => s + f.spentSec, 0);
+  const tokens = state.run?.tokens || { in: 0, out: 0, calls: 0 };
   const work = {
+    tokensIn: tokens.in, tokensOut: tokens.out, llmCalls: tokens.calls,
+    tokensPerImproved: settled.filter((f) => f.status === 'improved').length
+      ? Math.round((tokens.in + tokens.out) / settled.filter((f) => f.status === 'improved').length) : null,
     humanHours: round2(humanMin / 60),
     machineHours: round2(machineSec / 3600),
     fte: comparableMachineSec > 600 ? round2((comparableHumanMin * 60) / comparableMachineSec) : null,
@@ -158,6 +162,7 @@ function metricsPayload() {
       // what the best attempt reached even when the result was not kept
       attemptCoverage: f.attemptCoverage, attemptMutation: f.attemptMutation, attemptMac: f.attemptMac,
       failure: f.failure,
+      tokensIn: f.tokensIn || 0, tokensOut: f.tokensOut || 0, llmCalls: f.llmCalls || 0,
       prUrl: f.prUrl, prPatch: f.prPatch,
       timesheet: f.timesheet && {
         hours: f.timesheet.hours, totalMin: f.timesheet.totalMin,
@@ -408,6 +413,7 @@ const routes = {
     const branch = template.replace('{file}', fileSlug(unitPath(file)));
     S.setStage('picking_file', `iteration ${state.run.iteration}: picked ${file}`);
     await repo.createBranch(branch);
+    state.currentUnit = file;      // token usage is attributed to this unit
     S.upsertFile(file, {
       status: 'picked', branch, attempts: state.files[file].attempts + 1,
       rounds: 0, roundBase: null, lastSurvived: null,

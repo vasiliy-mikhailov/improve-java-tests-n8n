@@ -45,3 +45,9 @@
 > hours ÷ machine hours: how many engineers working in parallel the pipeline replaces).
 
 See RESEARCH.md for the derived DoD and reward formula, eval/RESULTS.md for iteration history.
+
+> add in/out token measurement
+
+(2026-07-26) LLM token usage — input and output tokens — must be measured and shown:
+per improved unit and cumulatively for the run, alongside the machine-time and
+human-equivalent accounting.

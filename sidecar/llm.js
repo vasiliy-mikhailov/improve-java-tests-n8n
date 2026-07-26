@@ -1,7 +1,7 @@
 'use strict';
 // OpenAI-compatible chat client for the vLLM endpoint (qwen), zero-dep via global fetch.
 const { extractJson } = require('./util');
-const { event } = require('./state');
+const { event, addTokens } = require('./state');
 
 const BASE = (process.env.LLM_BASE_URL || '').replace(/\/$/, '');
 const KEY = process.env.LLM_API_KEY || '';
@@ -59,6 +59,10 @@ async function post(body, attempt = 0) {
       throw new Error(`LLM HTTP ${res.status}: ${errText}`);
     }
     const data = await res.json();
+    // token accounting: every call's prompt/completion usage is attributed to the unit
+    // currently being worked on, so the dashboard can report what the improvement cost
+    const u = data.usage || {};
+    addTokens(u.prompt_tokens || 0, u.completion_tokens || 0);
     return data.choices?.[0]?.message?.content || '';
   } catch (e) {
     if (attempt < 2 && /abort|network|fetch failed|ECONN/i.test(String(e.message))) {

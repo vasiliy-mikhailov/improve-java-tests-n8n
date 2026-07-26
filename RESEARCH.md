@@ -71,7 +71,7 @@ These are the constraints the implementation must absorb (sources: `improve-java
 
 ## 2. Definition of Done (DoD)
 
-Each item scores 0 (absent), 0.5 (partial), or 1 (fully met). `DoD_score` = mean of D1–D13.
+Each item scores 0 (absent), 0.5 (partial), or 1 (fully met). `DoD_score` = mean of D1–D14.
 
 | # | Item | Verification |
 |---|------|--------------|
@@ -87,6 +87,7 @@ Each item scores 0 (absent), 0.5 (partial), or 1 (fully met). `DoD_score` = mean
 | **D10** | **Protected access, no n8n login**: Caddy basic auth in front of `improve-java-tests-n8n.mikhailov.tech`; 10-year n8n JWT injected by Caddy; dashboard at `/dashboard`; n8n never shows its login screen. | Open both URLs: only Caddy asks for credentials, then the n8n editor / dashboard loads. |
 | **D11** | **No reasoning leakage in committed artifacts**: LLM chain-of-thought never appears in PR'd test files. Model thinking stays in the thinking channel; a cleanup pass strips residual scratch commentary; at most one short intent comment per test. | Grep PR'd tests for scratch-comment patterns; inspect samples across repos. |
 | **D12** | **No dead-weight tests**: every committed test earns its place — it kills ≥1 mutant or covers previously uncovered code; vacuous tests are pruned by a **verified** cleanup pass (suite stays green and mutation score does not drop, else the cleanup is reverted). | Review PR diffs; cleanup events show prune/revert decisions backed by re-measurement. |
+| **D14** | **LLM token accounting**: input and output tokens are measured for every model call (including retries and repair passes), attributed to the unit being improved, and shown per unit and cumulatively — with tokens per improved unit, so the cost of an improvement is visible next to its value. | Dashboard shows in/out tokens per unit and for the run; totals match the `usage` reported by the LLM endpoint. |
 | **D13** | **Human-equivalent timesheets**: for every improved file, an itemized estimate of the developer time the delivered work would have taken (analysis, test writing, mutation analysis, verification), shown per file and cumulatively on the dashboard, together with machine time, ETA to repo completion and the human-FTE equivalent. | Dashboard shows per-file and cumulative hours, machine time, ETA, FTE; numbers reproducible from the recorded inputs. |
 
 ## 3. Reward formula
@@ -94,7 +95,7 @@ Each item scores 0 (absent), 0.5 (partial), or 1 (fully met). `DoD_score` = mean
 ```
 reward = DoD_score × implementation_performance            ∈ [0, 1]
 
-DoD_score = (Σ Di) / 13                                    Di ∈ {0, 0.5, 1}
+DoD_score = (Σ Di) / 14                                    Di ∈ {0, 0.5, 1}
 
 implementation_performance = mean over eval repos of per_repo_score
   eval set = 1 synthetic Java repo + 10 real-world OSS Java repos (11 total)
