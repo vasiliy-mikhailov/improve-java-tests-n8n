@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test sidecar/test/unit/*.test.js",
     "workflow": "node n8n/generate-workflows.mjs",
-    "check": "node --test sidecar/test/unit/*.test.js && node n8n/generate-workflows.mjs"
+    "check": "node --test sidecar/test/unit/*.test.js && node n8n/generate-workflows.mjs",
+    "test:model": "node --test --test-timeout=900000 sidecar/test/model/*.test.js"
   },
   "license": "MIT"
 }

@@ -15,6 +15,7 @@ const COMMON_TEST_RULES = `
 - Do NOT modify production code, existing tests, or the build files.
 - Deterministic: no network, no clock/randomness without fixing them, no reliance on file-system state or test execution order.
 - Every test must ASSERT a value or an observable side effect; a test that only checks "does not throw" is worthless.
+- Be TERSE. No javadoc, no explanatory prose, at most ONE short comment naming what the test pins down. Long answers get truncated before they finish, and a truncated answer is thrown away.
 - The tests MUST compile and PASS against the CURRENT implementation.`;
 
 /** PIT mutator → the assertion that detects it. */
@@ -190,7 +191,11 @@ function mutationPrompt(gaps) {
       : `\n\nWrite one FOCUSED test class: one short test method per mutant above, each with the single assertion that distinguishes the real code from that mutation. JSON only.`);
 
   return { ...base, system, prompt, json: true,
-    maxTokens: single ? 2500 : 5000, temperature: 0.25,
+    // 2500 was marginal on real prompts: measured truncations at that ceiling with
+    // thinking OFF and no reasoning at all, which throws the whole call away and pays for
+    // it again at double. A ceiling is not a spend — an answer that fits in 900 tokens
+    // still costs 900.
+    maxTokens: single ? 4000 : 6000, temperature: 0.25,
     stage: 'improving_mutation',
     stageDetail: single ? `killing ${choices[0].mutator} at line ${choices[0].line}` : 'writing mutant-killing tests',
     offered: choices.map((m) => ({ line: m.line, mutator: m.mutator, status: m.status })) };

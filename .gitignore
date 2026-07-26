@@ -13,3 +13,5 @@ node_modules/
 .DS_Store
 .env.deploy
 .claude/
+
+# fixtures are recorded model answers; refresh with MODEL_TEST_REFRESH=1
