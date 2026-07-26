@@ -361,6 +361,9 @@ function gapsFor(p) {
     survived: rankSurvivors(select.eligible(f.lastSurvived || [], f.attemptedMutants || [])),
     attemptedMutants: (f.attemptedMutants || []).length,
     targetMethod: f.targetMethod || null,
+    // the mutant this round is aiming at, so a repair does not flip an assertion and
+    // abandon the very thing the test was written for
+    targetMutant: roundsMod.targetForRound(f.targetMutant, (f.rounds || 0) + 1),
     fqcn,
     package: fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '',
     className: fqcn.slice(fqcn.lastIndexOf('.') + 1),

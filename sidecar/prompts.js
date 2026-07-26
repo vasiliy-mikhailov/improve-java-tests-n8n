@@ -175,15 +175,29 @@ function mutationPrompt(gaps) {
     offered: choices.map((m) => ({ line: m.line, mutator: m.mutator, status: m.status })) };
 }
 
-/** Repair — the tests we just wrote do not compile or do not pass. */
+/**
+ * Repair — the tests we just wrote do not compile or do not pass.
+ *
+ * The repair must not cost the round its purpose. A test written to kill
+ * BooleanTrueReturnVals asserted the mutant's absence, failed against real behaviour, and
+ * the repair simply flipped assertFalse to assertTrue: a passing test that distinguishes
+ * nothing, and a round that missed. Correcting a wrong expectation is right; asserting
+ * the behaviour the MUTATION would produce is worthless.
+ */
 function repairPrompt(gaps, failure, tests, stage = 'improving_mutation') {
   const filesTxt = (tests || []).map((t) => `PATH: ${t.path}\n${String(t.content || '').slice(0, 6000)}`).join('\n\n---\n\n');
+  const tm = gaps.targetMutant;
   const system = 'You are an expert Java test engineer. Tests you previously wrote FAIL to compile or fail against the current implementation. Fix them. Keep the SAME file path and class name.'
     + ' Reply ONLY with JSON: {"tests":[{"path":"...","content":"full corrected file content"}]}.'
     + ' Compilation errors: fix imports, types, visibility and constructor/method signatures against the source shown.'
     + ' Assertion failures: correct the EXPECTED values to match the real behaviour of the source — never weaken an assertion to make it pass trivially.'
+    + (tm ? ' The corrected test MUST STILL DISTINGUISH the mutant named below: it has to pass on the real code AND still fail on the mutated code.'
+      + ' Flipping an assertion so that it asserts what the MUTATION would produce makes the test pass and kills nothing —'
+      + ' if the test cannot be both correct and distinguishing, drop it and return an empty tests array.' : '')
     + ' If a test cannot be fixed, drop it from the output.';
   const prompt = `BUILD / TEST OUTPUT (failures):\n${String(failure?.summary || '').slice(0, 4000)}`
+    + (tm ? `\n\nMUTANT THIS TEST MUST STILL KILL: ${tm.mutator} at line ${tm.line}`
+      + ` — the test has to PASS on the real code and FAIL on that mutation. A test that passes on both is worth nothing.` : '')
     + `\n\nYOUR TEST FILE(S):\n${filesTxt}`
     + `\n\nCLASS UNDER TEST ${gaps.fqcn} (${gaps.path}${gaps.method ? `, method ${gaps.method}()` : ''}):\n${sourceBlock(gaps, 10000)}`
     + '\n\nReply with corrected JSON now.';

@@ -136,3 +136,34 @@ test('a private method nothing calls is reported as unreachable, not attempted',
   assert.equal(r.skip, true);
   assert.match(r.reason, /no public method|unreachable/i);
 });
+
+// ── repair must not abandon the mutant ────────────────────────────────────
+const FAILING = [{ path: 'src/test/java/a/BMacMutTest.java', content: 'assertFalse(jo.has("x"));' }];
+
+test('a repair is told which mutant the test still has to distinguish', () => {
+  // The round targeted BooleanTrueReturnVals at line 2072. The test asserted the mutant's
+  // absence, failed against real behaviour, and the repair simply flipped assertFalse to
+  // assertTrue — a passing test that no longer distinguishes anything. The round missed.
+  const r = repairPrompt({ ...gaps, targetMutant: { mutator: 'BooleanTrueReturnValsMutator', line: 2072 } },
+    { summary: 'expected:<false> but was:<true>' }, FAILING);
+  assert.match(r.prompt, /BooleanTrueReturnValsMutator/);
+  assert.match(r.prompt, /2072/);
+});
+
+test('flipping an assertion to match the mutation is called out as worthless', () => {
+  const r = repairPrompt({ ...gaps, targetMutant: { mutator: 'BooleanTrueReturnValsMutator', line: 2072 } },
+    { summary: 'boom' }, FAILING);
+  assert.match(r.system + r.prompt, /still fail on the mutated code|must still distinguish/i);
+  assert.match(r.system + r.prompt, /drop the test|return an empty/i,
+    'if it cannot be both correct and distinguishing, dropping it is the honest answer');
+});
+
+test('correcting a genuinely wrong expected value is still allowed', () => {
+  const r = repairPrompt({ ...gaps, targetMutant: { mutator: 'MathMutator', line: 3 } }, { summary: 'boom' }, FAILING);
+  assert.match(r.system, /correct the EXPECTED values/i);
+});
+
+test('a coverage-phase repair has no mutant to protect and says nothing about one', () => {
+  const r = repairPrompt(gaps, { summary: 'boom' }, FAILING, 'improving_coverage');
+  assert.doesNotMatch(r.prompt, /MUTANT THIS TEST MUST STILL KILL/);
+});
