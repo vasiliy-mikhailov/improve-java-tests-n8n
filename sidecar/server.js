@@ -228,9 +228,14 @@ function candidates() {
   const cfg = state.run.config;
   const maxAttempts = cfg.maxAttemptsPerFile || 3;
   const all = Object.values(state.files);
-  // ledger-replayed files were settled in PREVIOUS batches — they must not
-  // consume this batch's scopeLimit quota
-  const processed = all.filter((f) => ['improved', 'no_improvement', 'failed'].includes(f.status) && !f.fromLedger).length;
+  // ledger-replayed units were settled in PREVIOUS batches — they must not consume this
+  // batch's quota. Neither do FAILURES: a unit we could not even measure says nothing
+  // about the repo, and letting one broken measurement spend the whole quota is how
+  // java-dataloader produced 0 PRs from its first pick. Failures are bounded separately
+  // so a repo that fails on everything still terminates.
+  const processed = all.filter((f) => ['improved', 'no_improvement'].includes(f.status) && !f.fromLedger).length;
+  const failed = all.filter((f) => f.status === 'failed' && !f.fromLedger).length;
+  const maxFailures = cfg.maxFailures || 10;
   const list = all
     .filter((f) => f.status === 'candidate' && f.attempts < maxAttempts)
     // a class JaCoCo reports no executable lines for cannot be tested or mutated
@@ -250,9 +255,10 @@ function candidates() {
       || (b.executableLines ?? b.lines ?? 0) - (a.executableLines ?? a.lines ?? 0));
   let done = false, reason = '';
   if (cfg.maxIterations > 0 && state.run.iteration >= cfg.maxIterations) { done = true; reason = `max iterations (${cfg.maxIterations}) reached`; }
-  else if (cfg.scopeLimit > 0 && processed >= cfg.scopeLimit) { done = true; reason = `scope limit (${cfg.scopeLimit} files) reached`; }
+  else if (cfg.scopeLimit > 0 && processed >= cfg.scopeLimit) { done = true; reason = `scope limit (${cfg.scopeLimit} units) reached`; }
+  else if (failed >= maxFailures) { done = true; reason = `${failed} units failed to measure (limit ${maxFailures}) — the repo or its toolchain is the problem, not the units`; }
   else if (!list.length) { done = true; reason = 'no remaining candidate files'; }
-  return { done, reason, iteration: state.run.iteration, processed, candidates: list.slice(0, 100) };
+  return { done, reason, iteration: state.run.iteration, processed, failed, candidates: list.slice(0, 100) };
 }
 
 // ── route table ────────────────────────────────────────────────────────────
