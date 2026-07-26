@@ -49,6 +49,31 @@ function signatureBlock(gaps) {
     : '';
 }
 
+/**
+ * A test cannot call a private (or package-private, from another package) method, and
+ * reflection is forbidden — so it has to arrive through something public. Told none of
+ * this, the model wrote a compiling, passing test for JSONObject's private
+ * isRecordStyleAccessor that executed none of it: coverage 0 → 0, all 14 mutants alive.
+ */
+function reachBlock(gaps) {
+  const vis = gaps.visibility;
+  if (!vis || vis === 'public') return '';
+  // every caller, not just the public ones: the route is often a chain (a public
+  // constructor → a private helper → the target), and the model needs to see it
+  const list = (gaps.callers || [])
+    .map((c) => `- ${c.method}()${c.visibility === 'public' ? ' [public — a test can call this]' : ` [${c.visibility}, reachable only through one of the others]`}`)
+    .join('\n');
+  return `\n\nREACHED VIA: ${gaps.method}() is ${vis}, so a test CANNOT call it directly and must NOT use reflection.`
+    + ` Reach it by calling one of these, choosing arguments that make execution flow into ${gaps.method}():\n${list}`
+    + `\nAssert on what that public call returns or changes — that is what distinguishes the real code from the mutation.`;
+}
+
+/** A private method nothing calls cannot be executed by any test. */
+function unreachable(gaps) {
+  const vis = gaps.visibility;
+  return vis && vis !== 'public' && !(gaps.callers || []).length;
+}
+
 function constraintBlock(gaps) {
   const c = (gaps.constraints || []).map((x) => `- ${x}`).join('\n');
   return c ? `\nTeam constraints:\n${c}` : '';
@@ -74,6 +99,10 @@ function coveragePrompt(gaps) {
     };
   }
 
+  if (unreachable(gaps)) {
+    return { ...base, skip: true, reason: `${gaps.method}() is ${gaps.visibility} and has no caller in this class — no test can execute it, so there is nothing to write` };
+  }
+
   const testClass = targetPath.split('/').pop().replace(/\.java$/, '');
   const system = `You are an expert Java test engineer writing the FIRST test for ONE METHOD that no test executes yet`
     + `${gaps.method ? ` (${gaps.method}())` : ''}, in ${frameworkName(gaps.testFramework)}.`
@@ -83,7 +112,7 @@ function coveragePrompt(gaps) {
     + constraintBlock(gaps);
   const prompt = `CLASS UNDER TEST: ${gaps.fqcn}  (file ${gaps.path}, module ${gaps.module}, JDK ${gaps.jdk})\n`
     + (gaps.method ? `TARGET METHOD: ${gaps.method}()${gaps.methodLine ? ` (around line ${gaps.methodLine})` : ''} — the tests must exercise THIS method; coverage and mutation score are measured on it alone.\n` : '')
-    + sourceBlock(gaps, 14000)
+    + sourceBlock(gaps, 14000) + signatureBlock(gaps) + reachBlock(gaps)
     + `\n\nUNCOVERED: ${fullyUncovered ? 'THE ENTIRE METHOD (no test executes it at all)' : `source lines ${JSON.stringify((u.lines || []).slice(0, 140))}`}`
     + `\n\nEXISTING TEST (style reference — imports, assertion library, conventions; do NOT rewrite it):\n${String(gaps.existingTest || '(none)').slice(0, 6000)}`
     + `\n\nWrite the SIMPLEST test class that executes the uncovered lines of the target method: 2-4 short test methods, straightforward inputs, direct assertions. This is only the first pass — later rounds add the sharp, mutation-killing assertions, so do NOT try to be exhaustive. A small test that compiles and passes is worth far more than a large one that does not. JSON only.`;
@@ -105,6 +134,9 @@ function mutationPrompt(gaps) {
   const choices = survived.slice(0, perRound);
   const base = { targetPath, projectTestPath: gaps.projectTestPath || null };
 
+  if (unreachable(gaps)) {
+    return { ...base, skip: true, reason: `${gaps.method}() is ${gaps.visibility} and has no caller in this class — no test can execute it, so there is nothing to write` };
+  }
   if (!choices.length) {
     return {
       ...base,
@@ -127,7 +159,7 @@ function mutationPrompt(gaps) {
     + constraintBlock(gaps);
 
   const prompt = `CLASS UNDER TEST: ${gaps.fqcn}  (file ${gaps.path}, module ${gaps.module})\n`
-    + sourceBlock(gaps, 12000) + signatureBlock(gaps)
+    + sourceBlock(gaps, 12000) + signatureBlock(gaps) + reachBlock(gaps)
     + (gaps.method ? `\n\nFOCUS: this unit of work IS the method ${gaps.method}() — shown in full above; the mutant below is inside it, and the score is measured on it alone.` : '')
     + `\n\n${single ? 'MUTANT TO KILL' : 'SURVIVING MUTANTS'} (SURVIVED = the line runs but nothing asserts on it; NO_COVERAGE = the line never runs):\n${mutantsTxt}`
     + `\n\nEXISTING TEST (style reference — do NOT rewrite it):\n${String(gaps.existingTest || '(none)').slice(0, 4000)}`

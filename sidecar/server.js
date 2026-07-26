@@ -18,6 +18,7 @@ const prompts = require('./prompts');
 const parse = require('./parse');
 const select = require('./select');
 const measure = require('./measure');
+const javasrc = require('./javasrc');
 const { run } = require('./exec');
 const { mac, fileSlug, round2, clamp, slugify } = require('./util');
 
@@ -272,6 +273,10 @@ function gapsFor(p) {
     methodSource: mctx ? mctx.body : null,
     classHeader: mctx ? mctx.header : null,
     siblingSignatures: mctx ? mctx.signatures : null,
+    // a test cannot call a private method, so the prompt has to name the public route in
+    // — and a private method with no caller at all is not worth a round
+    visibility: f.method ? javasrc.methodVisibility(source, f.method) : null,
+    callers: f.method ? javasrc.callersOf(source, f.method) : [],
     uncovered: coverage.uncoveredLines(p),
     coverage: f.coverage ?? null,
     missedLines: f.missedLines ?? null,

@@ -87,3 +87,51 @@ test('the repair prompt shows the failure and the method, and pins the path', ()
   assert.match(r.prompt, /int calc\(int x\)/);
   assert.match(r.system, /SAME file path/);
 });
+
+// ── reaching a method a test cannot call directly ──────────────────────────
+const PRIVATE_GAPS = {
+  ...gaps,
+  method: 'isRecordStyleAccessor',
+  visibility: 'private',
+  callers: [
+    { method: 'populateMap', visibility: 'private' },
+    { method: 'JSONObject', visibility: 'public' },
+  ],
+  survived: [{ status: 'NO_COVERAGE', mutator: 'BooleanTrueReturnValsMutator', line: 2072, method: 'isRecordStyleAccessor' }],
+  uncovered: { lines: 'all' },
+};
+
+test('a private target is named as private, with the routes that reach it', () => {
+  // The model wrote a compiling, passing test for this private method that executed none
+  // of it: cov 0 → 0, all 14 mutants alive, one round gone. It was never told it could
+  // not call the method.
+  const r = mutationPrompt(PRIVATE_GAPS);
+  assert.match(r.prompt, /private/i);
+  assert.match(r.prompt, /JSONObject/, 'the public route must be named');
+  assert.match(r.prompt, /populateMap/);
+});
+
+test('the coverage phase gets the same routes', () => {
+  const r = coveragePrompt(PRIVATE_GAPS);
+  assert.equal(r.skip, undefined);
+  assert.match(r.prompt, /private/i);
+  assert.match(r.prompt, /JSONObject/);
+});
+
+test('reflection stays forbidden — the route is public API, not a back door', () => {
+  const r = mutationPrompt(PRIVATE_GAPS);
+  assert.match(r.system, /never use reflection/i);
+  assert.doesNotMatch(r.prompt, /setAccessible/i);
+});
+
+test('a public target gets no routing section to wade through', () => {
+  const r = mutationPrompt({ ...PRIVATE_GAPS, visibility: 'public', callers: [] });
+  assert.doesNotMatch(r.prompt, /REACHED VIA|cannot be called directly/i);
+});
+
+test('a private method nothing calls is reported as unreachable, not attempted', () => {
+  // dead private code: no test can execute it, so the round can only waste a call
+  const r = mutationPrompt({ ...PRIVATE_GAPS, callers: [] });
+  assert.equal(r.skip, true);
+  assert.match(r.reason, /no caller|unreachable/i);
+});
