@@ -42,6 +42,18 @@ function setBanner(stage) {
     ? `${p.line}  ·  ${p.elapsed}s` : '';
 }
 
+/** `a/b/Class.java::method` → dimmed package, class, highlighted #method. */
+function unitCell(f) {
+  const src = f.sourcePath || String(f.path).split('::')[0];
+  const method = f.method || (String(f.path).split('::')[1] || '');
+  const short = src.replace(/^.*?src\/main\/java\//, '');
+  const i = short.lastIndexOf('/');
+  const dir = i === -1 ? '' : short.slice(0, i + 1);
+  const cls = i === -1 ? short : short.slice(i + 1);
+  return `<span class="dir">${esc(dir)}</span><span class="cls">${esc(cls)}</span>`
+    + (method ? `<span class="meth"> #${esc(method)}</span>` : '');
+}
+
 function render(m) {
   setBanner(m.stage || { name: 'idle' });
   const cfg = m.run?.config;
@@ -100,13 +112,13 @@ function render(m) {
       : tried ? `<span class="attempt" title="best attempt — not kept (no net MAC gain)">${fmt(attempt, suffix)}</span>`
         : '–';
     return `<tr class="st-${esc(f.status)}"${f.failure ? ` title="${esc(f.failure)}"` : ''}>
-    <td class="path">${esc(f.path)}</td>
-    <td>${fmt(covB)}</td><td>${fmt(mutB)}</td><td>${fmt(macB, '')}</td>
-    <td>${cell(f.coverageAfter, f.attemptCoverage)}</td>
-    <td>${cell(f.mutationAfter, f.attemptMutation)}</td>
-    <td>${cell(f.macAfter, f.attemptMac, '')}</td>
+    <td class="path" title="${esc(f.path)}">${unitCell(f)}</td>
+    <td class="num">${fmt(covB)}</td><td class="num">${fmt(mutB)}</td><td class="num">${fmt(macB, '')}</td>
+    <td class="num">${cell(f.coverageAfter, f.attemptCoverage)}</td>
+    <td class="num">${cell(f.mutationAfter, f.attemptMutation)}</td>
+    <td class="num">${cell(f.macAfter, f.attemptMac, '')}</td>
     <td title="${f.timesheet ? esc(`analysis ${f.timesheet.analysisMin}m · writing ${f.timesheet.testsMin}m · mutation ${f.timesheet.mutationMin}m · verify ${f.timesheet.verifyMin}m`) : ''}">${f.timesheet ? fmtHours(f.timesheet.hours) : '–'}</td>
-    <td title="${f.llmCalls || 0} LLM call(s)">${(f.tokensIn || f.tokensOut) ? fmtTok(f.tokensIn) + ' / ' + fmtTok(f.tokensOut) : '–'}</td>
+    <td class="num" title="${f.llmCalls || 0} LLM call(s)">${(f.tokensIn || f.tokensOut) ? fmtTok(f.tokensIn) + ' / ' + fmtTok(f.tokensOut) : '–'}</td>
     <td><span class="badge b-${esc(f.status)}">${esc(f.status)}</span></td>
     <td>${f.prUrl ? `<a href="${esc(f.prUrl)}" target="_blank">PR ↗</a>` : (f.prPatch ? 'patch' : '')}</td>
   </tr>`;

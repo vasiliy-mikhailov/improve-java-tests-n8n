@@ -1,7 +1,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: #0d1117; color: #e6edf3; padding: 24px; max-width: 1200px; margin: 0 auto;
+  background: #0d1117; color: #e6edf3; padding: 24px 20px; max-width: min(1900px, 97vw); margin: 0 auto;
 }
 header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
 h1 { font-size: 20px; font-weight: 700; }
@@ -32,7 +32,13 @@ h2 { font-size: 15px; margin: 26px 0 10px; color: #c9d1d9; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #21262d; white-space: nowrap; }
 th { color: #8b949e; font-weight: 600; font-size: 11px; text-transform: uppercase; }
-td.path { font-family: ui-monospace, monospace; font-size: 12px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+/* the unit key is `<path>::<method>` and paths are deep — give it the room it needs,
+   keep the method visible at the end rather than ellipsised away */
+td.path { font-family: ui-monospace, monospace; font-size: 12px; max-width: 760px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.path .dir { color: #7d8590; }
+td.path .cls { color: #e6edf3; }
+td.path .meth { color: #79c0ff; font-weight: 600; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tr.st-picked { background: #1f6feb14; }
 tr.st-improved { background: #3fb95014; }
 
