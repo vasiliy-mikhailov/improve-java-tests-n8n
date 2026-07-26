@@ -137,6 +137,8 @@ function phase(prefix, buildPromptCode, entryNode) {
 const resp = $json;
 const plan = $('${B('Build Prompt')}').first().json;
 let tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];
+const chosen = (resp.json && resp.json.mutant != null)
+  ? { n: resp.json.mutant, why: String(resp.json.why || '').slice(0, 160) } : null;
 tests = tests
   .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)
   .slice(0, 1)
@@ -155,8 +157,8 @@ tests = tests
     }
     return { path: p, content };
   });
-return [{ json: { tests, paths: tests.map(t => t.path), count: tests.length } }];`);
-  Http(B('Write Tests'), { path: '/api/test/write-many', body: `={{ { tests: $json.tests, stage: '${stage}' } }}` });
+return [{ json: { tests, paths: tests.map(t => t.path), count: tests.length, chosen } }];`);
+  Http(B('Write Tests'), { path: '/api/test/write-many', body: `={{ { tests: $json.tests, stage: '${stage}', note: $json.chosen ? ('model chose mutant #' + $json.chosen.n + ' — ' + $json.chosen.why) : null } }}` });
   Http(B('Run Tests'), { path: '/api/test/run', body: `={{ { stage: '${stage}' } }}`, timeout: 3600000 });
   IfNum(B('Green?'), '={{ $json.passed ? 1 : 0 }}', 'equal', 1);
   IfNum(B('Wrote Any?'), `={{ $('${B('Parse Tests')}').first().json.count }}`, 'larger', 0);
@@ -245,32 +247,42 @@ const mutDone = phase('Mut', `
 const gaps = $('Coverage Gaps').first().json;
 const cfg = $('Start Run').first().json.run.config;
 const targetPath = gaps.mutTestPath;
-// freshest survivors: the sidecar tracks the last PIT run of this class (any round)
+// freshest survivors: the sidecar tracks the last PIT run of this unit (any round)
 const allSurvived = (gaps.survived && gaps.survived.length) ? gaps.survived : ($('Baseline Mutation').first().json.survived || []);
-// ONE mutant per round by default: a single short test, verified immediately, then the
-// next mutant. Small prompts compile far more reliably than a sprawling test aimed at a
-// dozen mutants at once, and every kill is measured before the next is attempted.
-const perRound = gaps.mutantsPerRound || 1;
-const survived = allSurvived.slice(0, perRound);
-if (!survived.length) return [{ json: { skip: true, reason: 'no surviving mutants', targetPath, projectTestPath: gaps.projectTestPath } }];
+// ONE mutant per round: a single short test, verified immediately, then the next mutant.
+// The MODEL chooses which one — from the source it can tell which kill is cheap and which
+// drags neighbouring mutants down with it, where the mechanical order only knows
+// NO_COVERAGE before SURVIVED. It picks and writes in the same call, so choosing costs no
+// extra round-trip, and the choice and its reason are recorded.
+const single = (gaps.mutantsPerRound || 1) === 1;
+const choices = allSurvived.slice(0, single ? (gaps.mutantChoices || 20) : (gaps.mutantsPerRound || 1));
+if (!choices.length) return [{ json: { skip: true, reason: 'no surviving mutants', targetPath, projectTestPath: gaps.projectTestPath } }];
 const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
 const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
-const mutantsTxt = survived.map((m, i) =>
+const mutantsTxt = choices.map((m, i) =>
   '#' + (i + 1) + ' [' + m.status + '] ' + m.mutator + ' at line ' + m.line + ' in method ' + (m.method || '?') + '() — ' + (m.description || '')).join('\\n');
 const RULES = ${JSON.stringify(COMMON_TEST_RULES)};
 const PLAYBOOK = ${JSON.stringify(MUTATOR_PLAYBOOK)};
-const system = 'You are an expert Java test engineer writing ' + (gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5') + ' tests that KILL surviving PIT mutants of one class. A mutant is killed when at least one test FAILS on the mutated code while PASSING on the real code — so each test must assert something that DISTINGUISHES the two. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}. Create a NEW test class only. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES + PLAYBOOK
+const framework = gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5';
+const replyShape = single
+  ? '{"mutant": <the # you chose>, "why": "one line", "tests":[{"path":"...","content":"full test file content"}]}'
+  : '{"tests":[{"path":"...","content":"full test file content"}]}';
+const system = 'You are an expert Java test engineer killing surviving PIT mutants of ONE METHOD, one at a time, writing ' + framework + ' tests. A mutant is killed when at least one test FAILS on the mutated code while PASSING on the real code — so the test must assert something that DISTINGUISHES the two. Reply ONLY with JSON: ' + replyShape + '. Create a NEW test class only. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES + PLAYBOOK
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
 const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ')\\n'
   + String(gaps.source || '').slice(0, 12000)
   + (gaps.method ? '\\n\\nFOCUS: this unit of work IS the method ' + gaps.method + '() — every mutant below is inside it, and the score is measured on it alone.' : '')
-  + '\\n\\nSURVIVING MUTANTS TO KILL (status SURVIVED = line runs but nothing asserts on it; NO_COVERAGE = line never runs):\\n' + mutantsTxt
+  + '\\n\\nSURVIVING MUTANTS (status SURVIVED = the line runs but nothing asserts on it; NO_COVERAGE = the line never runs):\\n' + mutantsTxt
   + '\\n\\nEXISTING TEST (style reference — do NOT rewrite it):\\n'
   + String(gaps.existingTest || '(none)').slice(0, 4000)
-  + '\\n\\nWrite one test class killing as many of these mutants as possible. JSON only.';
-// bounded per round: each round targets a handful of mutants, and a smaller answer
-// arrives sooner and compiles more often than a sprawling one
-return [{ json: { system, prompt, json: true, maxTokens: single ? 2500 : 5000, temperature: 0.25, stage: 'improving_mutation', stageDetail: single ? ('killing 1 mutant: ' + (survived[0].mutator || '') + ' at line ' + survived[0].line) : 'writing mutant-killing tests', targetPath, projectTestPath: gaps.projectTestPath } }];`,
+  + (single
+    ? '\\n\\nCHOOSE the single MOST PROMISING mutant above and kill it now. Most promising = you can kill it with a short, obviously-correct test; it sits on a path reachable with simple inputs rather than behind elaborate setup; and the test that kills it is likely to kill neighbouring mutants too. Then write ONE test class with ONE short test method that kills exactly that mutant: call the method with inputs reaching that line and assert the value that differs between the real code and the mutation. Nothing more — another round follows for the next mutant. JSON only.'
+    : '\\n\\nWrite one FOCUSED test class: one short test method per mutant above, each with the single assertion that distinguishes the real code from that mutation. JSON only.');
+// small answers arrive sooner and compile far more often than sprawling ones
+return [{ json: { system, prompt, json: true, maxTokens: single ? 2500 : 5000, temperature: 0.25,
+  stage: 'improving_mutation',
+  stageDetail: single ? ('choosing among ' + choices.length + ' surviving mutants') : 'writing mutant-killing tests',
+  targetPath, projectTestPath: gaps.projectTestPath } }];`,
   covDone);
 
 // =============================================================================
@@ -336,15 +348,31 @@ console.log(`✓ ${w.name}: ${w.nodes.length} nodes`);
 // only failed hours later, mid-run, inside n8n. Fragments are injected as JSON
 // now — this check is what keeps it that way.
 const broken = [];
+// Stubs rich enough for the prompt builders to run: every node reads $json / $('Node')
+// and returns [{json}]. Parsing alone is not enough — an identifier that is never defined
+// (a half-applied edit) parses perfectly and throws ReferenceError at runtime, mid-run,
+// inside n8n. That happened; this is the check that catches it.
+const stubUnit = {
+  path: 'src/main/java/a/B.java', unit: 'src/main/java/a/B.java::m', fqcn: 'a.B', method: 'm',
+  module: '.', source: 'class B { int m(int x){ return x + 1; } }', sourceLines: 1,
+  uncovered: { lines: [3, 4] }, coverage: 0, missedLines: 2, executableLines: 4,
+  covTestPath: 'src/test/java/a/BMacCovTest.java', mutTestPath: 'src/test/java/a/BMacMutTest.java',
+  projectTestPath: null, testExists: false, existingTest: null, rounds: 0, package: 'a',
+  className: 'B', testFramework: 'junit5', jdk: 17, constraints: [], mutantsPerRound: 1,
+  mutantChoices: 20, covPhaseMaxPct: 0, totalMutants: 306,
+  survived: [{ status: 'SURVIVED', mutator: 'MathMutator', line: 3, method: 'm', description: 'replaced + with -' }],
+};
+const stubJson = { ...stubUnit, ok: true, json: { tests: [{ path: 'src/test/java/a/BMacMutTest.java', content: 'class X {}' }], mutant: 1, why: 'cheap' }, passed: false, summary: 'boom', tests: [], paths: [], count: 0, file: stubUnit.unit, run: { config: { maxMutantsPerFile: 8, mutantsPerRound: 1 } } };
+const $ = () => ({ first: () => ({ json: stubJson }) });
 for (const n of w.nodes.filter((x) => x.type === 'n8n-nodes-base.code')) {
-  try { new Function(n.parameters.jsCode); }
-  catch (e) { broken.push(`${n.name}: ${e.message}`); }
+  try { new Function('$json', '$', n.parameters.jsCode)(stubJson, $); }
+  catch (e) { broken.push(`${n.name}: ${e.constructor.name}: ${e.message}`); }
 }
 if (broken.length) {
-  console.error('CODE NODE SYNTAX ERRORS:\n  ' + broken.join('\n  '));
+  console.error('CODE NODE ERRORS (parse or execute):\n  ' + broken.join('\n  '));
   process.exit(1);
 }
-console.log(`✓ all ${w.nodes.filter((x) => x.type === 'n8n-nodes-base.code').length} Code nodes parse`);
+console.log(`✓ all ${w.nodes.filter((x) => x.type === 'n8n-nodes-base.code').length} Code nodes parse AND execute`);
 
 // static safety scan: forbid non-native/system node types
 const allowed = ['n8n-nodes-base.manualTrigger', 'n8n-nodes-base.webhook', 'n8n-nodes-base.httpRequest',

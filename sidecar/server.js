@@ -519,6 +519,7 @@ const routes = {
       executableLines: f.executableLines ?? null,
       covPhaseMaxPct: state.run.config.covPhaseMaxPct ?? 0,
       mutantsPerRound: state.run.config.mutantsPerRound ?? 1,
+      mutantChoices: state.run.config.mutantChoices ?? 20,
       totalMutants: f.totalMutants ?? null,
       // the method this unit is about: the tests must concentrate here
       method: f.method || null,
@@ -562,6 +563,9 @@ const routes = {
   'POST /api/test/write-many': async (q, body) => {
     needRun();
     if (body.stage) S.setStage(body.stage, 'writing generated tests');
+    // the model's own account of which mutant it chose and why — worth seeing on the
+    // dashboard, since the choice drives the whole round
+    if (body.note) S.event(body.stage || 'improving_mutation', String(body.note).slice(0, 300));
     const written = [], errors = [];
     for (const t of (body.tests || []).slice(0, 5)) {
       try {

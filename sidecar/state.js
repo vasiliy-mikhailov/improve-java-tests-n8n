@@ -23,6 +23,8 @@ function envConfig() {
     // promising survivor, re-measure, repeat: tiny prompts, fast answers, and every
     // round is independently verified instead of betting a big test on many mutants.
     mutantsPerRound: parseInt(e.MUTANTS_PER_ROUND || '1', 10),
+    // survivors offered to the model when it chooses which mutant to kill this round
+    mutantChoices: parseInt(e.MUTANT_CHOICES || '20', 10),
     // rounds are cheap now, but a mutant-dense method still needs a ceiling
     unitBudgetSec: parseInt(e.UNIT_BUDGET_SEC || '2400', 10),
     maxAttemptsPerFile: parseInt(e.MAX_ATTEMPTS_PER_FILE || '3', 10),
@@ -67,7 +69,7 @@ function freshRun(overrides = {}) {
   const o = overrides && typeof overrides === 'object' ? overrides : {};
   for (const k of ['repoUrl', 'repoBranch', 'scopeGlob', 'scopeLimit', 'maxIterations',
     'maxMutantsPerFile', 'maxRoundsPerFile', 'maxAttemptsPerFile', 'minRoundGapFrac',
-    'minRoundGain', 'mutantsPerRound', 'unitBudgetSec', 'minMutantsPerClass', 'pitScope', 'minUnitLines', 'maxFailures', 'covPhaseMaxPct', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
+    'minRoundGain', 'mutantsPerRound', 'mutantChoices', 'unitBudgetSec', 'minMutantsPerClass', 'pitScope', 'minUnitLines', 'maxFailures', 'covPhaseMaxPct', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
     if (o[k] !== undefined && o[k] !== null && o[k] !== '') cfg[k] = o[k];
   }
   if (o.rules && typeof o.rules === 'object') {
