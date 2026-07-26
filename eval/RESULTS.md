@@ -191,3 +191,70 @@ coverage 0 % beside mutation 100 %, a baseline of 0 for a tested class, "no muta
 missing report is a failure not a zero, PIT "no tests" against non-zero coverage is recorded
 as UNMEASURED, and the workflow generator now EXECUTES every Code node at build time (a
 half-applied edit left an identifier undefined — it parsed fine and threw at runtime).
+
+---
+
+## Iteration 4 — extract the node code, then let e2e find the bugs
+
+Two instructions shaped this iteration: *"you don't need graph simulator — you should put
+pieces of code from n8n nodes to files and test them with tdd"*, and the loop that follows
+from it: **run e2e, observe what fails, root-cause it, write the unit test, watch it red,
+fix, watch it green, run e2e again.** Straight-through runs are the e2e; the code a node
+calls is what unit tests cover.
+
+The workflow now has **zero Code nodes** — 66 nodes, all HTTP into the sidecar, each path
+checked at build time against a route `server.js` actually defines. Prompt building
+(`prompts.js`) and answer handling (`parse.js`) moved into files. The extraction alone
+surfaced two live defects: `Parse Tests` read `$('Mut: Build Prompt')` in **both** phases,
+so the coverage phase reached for a node that never ran; and the deployed mutation prompt
+still said *"CHOOSE the single MOST PROMISING mutant"* — contradicting the comment directly
+above it — because an earlier `str.replace` had silently matched nothing.
+
+Unit tests: **41 → 190**.
+
+### What e2e found, in order
+
+| symptom | cause |
+|---|---|
+| run died at its first step | `REPO_BRANCH=main` handed straight to git; JSON-java's default is `master` |
+| a round spent on a mutant at line 3005 of a unit whose method ends at 2090 | `excludedMethods` is best-effort and nothing filtered the report. `isRecordStyleAccessor`'s "15.79 %, 3 kills" were `toString()`'s; scoped properly the method measures **0 %** |
+| 4 of 12 completions truncated and re-run at ~100 s each | fixed thinking reserve, and nothing remembered the truncation |
+| the same `ConditionalsBoundary` offered after misses at 164, 191, 234 | demotion required "never killed", so one early kill immunised the kind |
+| a private method: passing test, `cov 0→0`, 14 mutants alive, four rounds | the model was told "public API only, never reflection" with no way to satisfy both |
+| that fix shipped and changed nothing | analysis read the 24 000-char copy clipped **for the prompt**; and brace counting drifted to −4 on `'{'`/`"}"` inside literals |
+| `JSONArray#getNumber` 0 % covered in one run, 100 % in the next | `jacoco.exec` is APPENDED to and `target/` is gitignored, so `git clean -fd` left 10 MB of accumulated executions — the 100 % came from a generated test that had already been deleted |
+
+### The audit
+
+A 45-agent adversarial audit (five lenses: measurement, rounds, graph, model-io, state;
+every finding attacked by a skeptic told to default to refuted) raised 40 candidates, of
+which **29 survived**. Sixteen are fixed. The sharpest was created by this iteration's own
+scoping fix: PIT XML-escapes method names, so a constructor arrives as `&lt;init&gt;` while
+JaCoCo gives `<init>` — **every constructor unit measured "0 mutants, no mutation surface"**
+and was settled for good. Before scoping, another method's mutants had stood in for them.
+
+Also confirmed and fixed: `mutatedClass.startsWith(fqcn)` credited `a.BFoo`'s kills to
+`a.B`; `/api/round/miss` echoed the previous round's `continueRounds`, so a verify that
+stopped measuring looped the run for ever; the per-**file** branch was reset by the second
+**method** of that file, dropping already-PR'd commits and then force-pushing over the PR;
+`prBase` stayed frozen at the unresolved branch so `gh pr create` failed after the work was
+committed; `MAX_ROUNDS_PER_FILE=0`, documented uncapped, was `|| 5`; and only one existing
+test file was guarded, so any other real test could be overwritten and then deleted.
+
+### Measured
+
+`JSONArray#getNumber`: coverage 0 → 100, mutation 0 → 66.67, **MAC 0 → 66.67**, one
+targeted mutant killed taking a second with it. Reproduced across two runs.
+
+Whole-repo JSON-java: 26 classes → **307 method units**. PR-stage evidence is still
+outstanding, so D5/D12 keep their earlier scores; D9 has the Gradle wiring under test but
+no Gradle repo run yet.
+
+### The recurring lesson, again
+
+Every defect above is the same one: **a number stated that nothing measured** — a score
+computed over another method's mutants, a baseline replayed from semantics that had
+changed, coverage produced by a deleted test, a kill announced by a round that wrote
+nothing, machine hours charged three times. The guard list in SPEC §4 is now long enough
+that it is the specification's centre of gravity, which is the honest description of this
+project.
