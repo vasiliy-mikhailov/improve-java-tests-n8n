@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { rankSurvivors, eligible, penalty, rankUnits } = require('../../select');
+const { rankSurvivors, eligible, penalty, rankUnits, exhausted } = require('../../select');
 
 const m = (mutator, difficulty, line, extra = {}) => ({ mutator, difficulty, line, status: 'SURVIVED', ...extra });
 const order = (list, stats) => rankSurvivors(list, stats).map((x) => `${x.mutator}@${x.line}`);
@@ -170,4 +170,27 @@ test('a unit that HAS been reached is never demoted for missing', () => {
     u({ path: 'untried', reach: 'none' }),
   ]);
   assert.deepEqual(r.units.map((x) => x.path), ['reached', 'untried']);
+});
+
+test('a unit whose every survivor has been attempted is exhausted, not re-picked', () => {
+  // getRawType: 3 survivors, all attempted, so the round targets nothing and is discarded
+  // — then it is picked again, and again, each time costing a PIT run and a coverage run
+  // with no model call and no possible outcome.
+  const survivors = [{ mutator: 'NullReturnValsMutator', line: 3414 }, { mutator: 'RemoveConditionalMutator', line: 3413 }];
+  const attempted = ['NullReturnValsMutator@3414', 'RemoveConditionalMutator@3413'];
+  assert.equal(exhausted({ lastSurvived: survivors, attemptedMutants: attempted }), true);
+});
+
+test('a unit with an un-attempted survivor is not exhausted', () => {
+  const survivors = [{ mutator: 'NullReturnValsMutator', line: 3414 }, { mutator: 'MathMutator', line: 99 }];
+  assert.equal(exhausted({ lastSurvived: survivors, attemptedMutants: ['NullReturnValsMutator@3414'] }), false);
+});
+
+test('a unit that was never measured is not exhausted — nothing is known about it', () => {
+  assert.equal(exhausted({}), false);
+  assert.equal(exhausted({ lastSurvived: null, attemptedMutants: [] }), false);
+});
+
+test('a unit measured as having no survivors at all is exhausted', () => {
+  assert.equal(exhausted({ lastSurvived: [], attemptedMutants: [] }), true);
 });

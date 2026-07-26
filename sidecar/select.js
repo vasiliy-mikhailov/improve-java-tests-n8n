@@ -101,4 +101,17 @@ function isTargeted(f) {
   return !!f && f.macBefore != null && f.status !== 'no_mutants';
 }
 
-module.exports = { rankSurvivors, eligible, penalty, attemptKey, rankUnits, isTargeted };
+/**
+ * Is there anything left to attack? A unit that has been measured and whose every
+ * surviving mutant has already been attempted can produce nothing: the prompt skips, the
+ * round targets nothing, and it is discarded — then picked again, up to its attempt limit,
+ * costing a PIT run and a coverage run each time for an outcome that cannot change.
+ *
+ * Never measured is NOT exhausted: nothing is known about it yet.
+ */
+function exhausted(f) {
+  if (!f || !Array.isArray(f.lastSurvived)) return false;
+  return eligible(f.lastSurvived, f.attemptedMutants || []).length === 0;
+}
+
+module.exports = { rankSurvivors, eligible, penalty, attemptKey, rankUnits, isTargeted, exhausted };

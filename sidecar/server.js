@@ -1124,8 +1124,19 @@ const routes = {
       const spentSec = accrueSpent(file);
       if (f.status !== 'failed') {
         const maxAttempts = state.run.config.maxAttemptsPerFile || 3;
-        S.upsertFile(file, { status: f.attempts >= maxAttempts ? 'no_improvement' : 'candidate' });
-        if (f.attempts >= maxAttempts) {
+        // A unit with no un-attempted survivor left cannot produce anything on a further
+        // attempt: the prompt skips, the round targets nothing, it is discarded — and
+        // each of those costs a PIT run and a coverage run. Settle it now.
+        const spent = select.exhausted(f);
+        if (spent && f.attempts < maxAttempts) {
+          S.event('improving_mac', `${unitLabel(file)}: every surviving mutant has been attempted — `
+            + 'settling it rather than spending another attempt that can only repeat itself');
+        }
+        S.upsertFile(file, {
+          status: (spent || f.attempts >= maxAttempts) ? 'no_improvement' : 'candidate',
+          attempts: spent ? maxAttempts : f.attempts,
+        });
+        if (spent || f.attempts >= maxAttempts) {
           // keep the numbers: a file we could not improve is still a file we measured
           const m = measured()[file] || {};
           ledger()[file] = {
