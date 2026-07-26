@@ -16,7 +16,7 @@
 // MAC 0 on a 782-mutant schema file closes 0.4 % and is a tar pit.
 const { round2 } = require('./util');
 
-const DEFAULTS = { minGapFrac: 0.05, minGain: 0.5, maxRounds: 12 };
+const DEFAULTS = { minGapFrac: 0.05, minGain: 0.5, maxRounds: 0 };
 
 /**
  * @param {object} a
@@ -45,7 +45,9 @@ function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
   const effMinGapFrac = (oneMutant != null && gapLeft > 0)
     ? Math.min(minGapFrac, (oneMutant * 0.99) / gapLeft) : minGapFrac;
   // rounds is the count already accepted; this one is number rounds+1
-  const roundsLeft = rounds + 1 < Math.max(1, maxRounds);
+  // maxRounds 0 = uncapped: what ends a unit is a round that achieves nothing, an
+  // exhausted mutant list, or the time budget — never an arbitrary count
+  const roundsLeft = !maxRounds || rounds + 1 < maxRounds;
   const marginal = keepRound && (gapClosed < effMinGapFrac || gain < effMinGain);
   // a mutant-dense method must not hold the run for ever, however cheap each round is
   const outOfTime = budgetSec > 0 && elapsedSec >= budgetSec;
@@ -58,7 +60,7 @@ function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
     ? (degradedAny ? 'DEGRADED (stop, drop round)' : 'STALE (stop)')
     : outOfTime ? `PROGRESS (unit time budget ${budgetSec}s spent — keep and stop)`
       : perfect ? `PROGRESS (MAC ${after} — nothing left to improve, keep and stop)`
-      : !roundsLeft ? `PROGRESS (round budget ${Math.max(1, maxRounds)} spent — keep and stop)`
+      : !roundsLeft ? `PROGRESS (round budget ${maxRounds} spent — keep and stop)`
       : marginal ? `PROGRESS but MARGINAL (+${gain} MAC = ${round2(gapClosed * 100)}% of the remaining gap; `
         + `floors ${round2(minGapFrac * 100)}% / +${minGain}) — keep and stop`
         : 'PROGRESS (another round)';

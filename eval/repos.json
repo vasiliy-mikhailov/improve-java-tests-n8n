@@ -16,8 +16,7 @@
       "write_test": "no reflection or introspection; JUnit 5 only; tests mirror the package under src/test/java",
       "check_changes": "good only if suite green and MAC improved",
       "make_pr": "read AGENTS.md to find out how to make the PR properly"
-    },
-    "maxMutantsPerFile": 8
+    }
   },
   "candidates": [
     {

@@ -249,7 +249,6 @@ return [{ json: { system, prompt, json: true, maxTokens: 3000, temperature: 0.2,
 // ── mutation phase ─────────────────────────────────────────────────────────
 const mutDone = phase('Mut', `
 const gaps = $('Coverage Gaps').first().json;
-const cfg = $('Start Run').first().json.run.config;
 const targetPath = gaps.mutTestPath;
 // freshest survivors: the sidecar tracks the last PIT run of this unit (any round)
 const allSurvived = (gaps.survived && gaps.survived.length) ? gaps.survived : ($('Baseline Mutation').first().json.survived || []);
@@ -260,7 +259,9 @@ const allSurvived = (gaps.survived && gaps.survived.length) ? gaps.survived : ($
 // extra round-trip, and the choice and its reason are recorded.
 const single = (gaps.mutantsPerRound || 1) === 1;
 const choices = allSurvived.slice(0, single ? (gaps.mutantChoices || 20) : (gaps.mutantsPerRound || 1));
-if (!choices.length) return [{ json: { skip: true, reason: 'no surviving mutants', targetPath, projectTestPath: gaps.projectTestPath } }];
+if (!choices.length) return [{ json: { skip: true, reason: gaps.attemptedMutants
+  ? ('every remaining survivor has already been attempted (' + gaps.attemptedMutants + ' tried)')
+  : 'no surviving mutants', targetPath, projectTestPath: gaps.projectTestPath } }];
 const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
 const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
 const mutantsTxt = choices.map((m, i) =>

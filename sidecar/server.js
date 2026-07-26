@@ -535,7 +535,13 @@ const routes = {
       method: f.method || null,
       methodLine: f.methodLine || null,
       rounds: f.rounds || 0,
-      survived: f.lastSurvived || [],
+      // Never offer a mutant we have already tried and failed to kill. Each round
+      // re-measures, so the list is fresh — a kill often takes neighbours with it and
+      // those simply disappear — but a survivor we already attacked and left alive is a
+      // known dead end for this approach, and re-picking it burns the round.
+      survived: (f.lastSurvived || []).filter((m) =>
+        !(f.attemptedMutants || []).includes(`${m.mutator}@${m.line}`)),
+      attemptedMutants: (f.attemptedMutants || []).length,
       targetMethod: f.targetMethod || null,
       fqcn,
       package: fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '',
@@ -579,7 +585,11 @@ const routes = {
     // remember WHICH mutant this round is trying to kill, so the next measurement can
     // report whether it actually died instead of leaving us to infer it from a score
     if (body.targetMutant && state.currentUnit) {
-      S.upsertFile(state.currentUnit, { targetMutant: body.targetMutant });
+      const u = state.files[state.currentUnit] || {};
+      const tried = (u.attemptedMutants || []).slice();
+      const key = `${body.targetMutant.mutator}@${body.targetMutant.line}`;
+      if (body.targetMutant.line && !tried.includes(key)) tried.push(key);
+      S.upsertFile(state.currentUnit, { targetMutant: body.targetMutant, attemptedMutants: tried });
     }
     const written = [], errors = [];
     for (const t of (body.tests || []).slice(0, 5)) {
@@ -705,8 +715,11 @@ const routes = {
       const tm = f.targetMutant;
       if (tm && tm.line) {
         const stillAlive = (st.survived || []).some((m) => m.line === tm.line && m.mutator === tm.mutator);
+        const killedNow = (st.killed ?? 0) - (f.mutation != null && f.totalMutants
+          ? Math.round((f.mutation / 100) * f.totalMutants) : 0);
         S.event('improving_mac', `targeted mutant ${tm.mutator} at line ${tm.line}: `
           + (stillAlive ? 'STILL ALIVE — the new test does not distinguish it' : 'KILLED')
+          + (killedNow > 1 ? ` — and took ${killedNow - 1} other mutant(s) with it` : '')
           + (st.testsRun ? ` (${st.testsRun} tests ran)` : ''));
         S.upsertFile(file, { lastTargetKilled: !stillAlive });
       }

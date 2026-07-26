@@ -17,8 +17,10 @@ function envConfig() {
     scopeGlob: e.SCOPE_GLOB || '**/src/main/java/**/*.java',
     scopeLimit: parseInt(e.SCOPE_LIMIT || '0', 10),
     maxIterations: parseInt(e.MAX_ITERATIONS || '0', 10), // 0 = unlimited
-    maxMutantsPerFile: parseInt(e.MAX_MUTANTS_PER_FILE || '5', 10),
-    maxRoundsPerFile: parseInt(e.MAX_ROUNDS_PER_FILE || '12', 10),
+    // 0 = no cap. Rounds end when a round kills nothing, when every surviving mutant
+    // has already been attempted, or when the unit's time budget runs out — a fixed
+    // count would stop a unit that is still paying off.
+    maxRoundsPerFile: parseInt(e.MAX_ROUNDS_PER_FILE || '0', 10),
     // Mutants shown to the model per round. 1 = write ONE test for the single most
     // promising survivor, re-measure, repeat: tiny prompts, fast answers, and every
     // round is independently verified instead of betting a big test on many mutants.
@@ -68,7 +70,7 @@ function freshRun(overrides = {}) {
   const cfg = envConfig();
   const o = overrides && typeof overrides === 'object' ? overrides : {};
   for (const k of ['repoUrl', 'repoBranch', 'scopeGlob', 'scopeLimit', 'maxIterations',
-    'maxMutantsPerFile', 'maxRoundsPerFile', 'maxAttemptsPerFile', 'minRoundGapFrac',
+    'maxRoundsPerFile', 'maxAttemptsPerFile', 'minRoundGapFrac',
     'minRoundGain', 'mutantsPerRound', 'mutantChoices', 'unitBudgetSec', 'minMutantsPerClass', 'pitScope', 'minUnitLines', 'maxFailures', 'covPhaseMaxPct', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
     if (o[k] !== undefined && o[k] !== null && o[k] !== '') cfg[k] = o[k];
   }
@@ -77,8 +79,7 @@ function freshRun(overrides = {}) {
   }
   cfg.scopeLimit = parseInt(cfg.scopeLimit, 10) || 0;
   cfg.maxIterations = Math.max(0, parseInt(cfg.maxIterations, 10) || 0); // 0 = unlimited
-  cfg.maxMutantsPerFile = parseInt(cfg.maxMutantsPerFile, 10) || 5;
-  cfg.maxRoundsPerFile = parseInt(cfg.maxRoundsPerFile, 10) || 12;
+  cfg.maxRoundsPerFile = Math.max(0, parseInt(cfg.maxRoundsPerFile, 10) || 0);
   cfg.mutantsPerRound = Math.max(1, parseInt(cfg.mutantsPerRound, 10) || 1);
   cfg.unitBudgetSec = Math.max(0, parseInt(cfg.unitBudgetSec, 10) || 0);
   cfg.maxAttemptsPerFile = parseInt(cfg.maxAttemptsPerFile, 10) || 3;
