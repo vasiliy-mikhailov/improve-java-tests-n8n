@@ -38,6 +38,22 @@ async function changedTestFiles() {
   return [...all].filter(isCommittableTest);
 }
 
+/**
+ * The diff since a specific commit — what THIS unit added, not what the whole branch
+ * holds. A branch is per FILE and a unit is per METHOD, so the second method of a class
+ * inherits the first method's committed tests, and a whole-branch diff counted them
+ * again: one unit's timesheet claimed four test cases for the one test it wrote.
+ */
+async function diffSince(sha) {
+  const dir = repoDir();
+  if (!sha) return diffAgainstBase();
+  const newTests = pruneEmptyTests((await changedFiles()).filter(isCommittableTest));
+  if (newTests.length) await run(['git', 'add', '-N', '--', ...newTests], { cwd: dir, timeoutMs: 30000 });
+  const r = await run(['git', 'diff', sha, '--', ':!target', ':!build', ':!.gradle', ':!.ijt-*', ':!pom.xml', ':!**/pom.xml'],
+    { cwd: dir, timeoutMs: 60000 });
+  return r.stdout;
+}
+
 async function diffAgainstBase() {
   const dir = repoDir();
   const base = state.run.config.prBase;
@@ -139,4 +155,4 @@ async function createPr({ file, branch, title, body, labels = [] }) {
   return record;
 }
 
-module.exports = { commit, createPr, changedFiles, changedTestFiles, diffAgainstBase, pruneEmptyTests };
+module.exports = { commit, createPr, changedFiles, changedTestFiles, diffAgainstBase, diffSince, pruneEmptyTests };

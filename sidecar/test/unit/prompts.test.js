@@ -167,3 +167,25 @@ test('a coverage-phase repair has no mutant to protect and says nothing about on
   const r = repairPrompt(gaps, { summary: 'boom' }, FAILING, 'improving_coverage');
   assert.doesNotMatch(r.prompt, /MUTANT THIS TEST MUST STILL KILL/);
 });
+
+// ── telling the model its last test never reached the method ──────────────
+test('a test that never executed the method is fed back as exactly that', () => {
+  // JSONObject#isRecordStyleAccessor is called under `if (isRecordType && ...)`. The model
+  // built a plain bean, the guard was false, the method never ran — and the pipeline
+  // reported "the new test does not distinguish it", which is a different problem with a
+  // different fix. Round after round it rewrote assertions for code it never reached.
+  const r = mutationPrompt({ ...gaps, lastRound: { reached: false, coverage: 0 } });
+  assert.match(r.prompt, /never executed|did not reach/i);
+  assert.match(r.prompt, /guard|condition|path/i);
+});
+
+test('a test that reached the method but missed is told the other thing', () => {
+  const r = mutationPrompt({ ...gaps, lastRound: { reached: true, mutator: 'MathMutator', line: 3 } });
+  assert.match(r.prompt, /reached|executed/i);
+  assert.doesNotMatch(r.prompt, /never executed/i);
+});
+
+test('the first round on a unit has nothing to feed back', () => {
+  const r = mutationPrompt(gaps);
+  assert.doesNotMatch(r.prompt, /YOUR PREVIOUS ATTEMPT/);
+});

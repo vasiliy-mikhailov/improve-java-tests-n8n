@@ -58,10 +58,18 @@ function restorable(entry, key) {
 function planReplay(improved, measurements, hasUnit) {
   const settle = [], restore = [];
   let stale = 0, unknown = 0;
+  let retryable = 0;
   for (const [rawKey, record] of Object.entries(improved || {})) {
     const key = normalizeUnitKey(rawKey);
     if (!hasUnit(key)) { unknown += 1; continue; }
-    settle.push({ key, record });
+    // A unit we could not MEASURE settles nothing: blacklisting it for the lifetime of
+    // the ledger writes off improvable work on the strength of a measurement that, by the
+    // pipeline's own definition, measured nothing.
+    if (record && record.state === 'failed') { retryable += 1; continue; }
+    // The status is a record of what happened and stands. Its metrics are measurements,
+    // and they carry no version stamp — the same numbers the measurement ledger rejects
+    // as stale were being admitted through this door and averaged into the headline.
+    settle.push({ key, record, metrics: restorable(record && record.metrics, key) ? record.metrics : null });
   }
   for (const [rawKey, entry] of Object.entries(measurements || {})) {
     const key = normalizeUnitKey(rawKey);
@@ -69,7 +77,7 @@ function planReplay(improved, measurements, hasUnit) {
     if (!restorable(entry, key)) { stale += 1; continue; }
     restore.push({ key, entry });
   }
-  return { settle, restore, stale, unknown };
+  return { settle, restore, stale, unknown, retryable };
 }
 
 module.exports = { MEASURE_VERSION, stamp, restorable, normalizeUnitKey, planReplay };

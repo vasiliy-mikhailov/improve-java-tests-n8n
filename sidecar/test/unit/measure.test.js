@@ -99,3 +99,26 @@ test('an escaped constructor key still finds its unit', () => {
   const plan = planReplay({ 'src/main/java/org/json/Property.java::&lt;init&gt;': { state: 'improved' } }, {}, has);
   assert.deepEqual(plan.settle.map((x) => x.key), ['src/main/java/org/json/Property.java::<init>']);
 });
+
+test("a settled unit's status is replayed but its stale metrics are not", () => {
+  // planReplay gated the MEASUREMENT ledger on version and left the IMPROVEMENT ledger
+  // ungated — and its records carry the same numbers. isRecordStyleAccessor's 15.79%
+  // (three kills that all belonged to toString) was rejected through one door and
+  // admitted through the other, into the run's headline mutation score.
+  const improved = { 'src/main/java/org/json/XML.java::parse': { state: 'improved', metrics: { mutationBefore: 15.79, macBefore: 12.6 } } };
+  const plan = planReplay(improved, {}, has);
+  assert.equal(plan.settle.length, 1, 'the unit is still settled — it was really improved');
+  assert.deepEqual(plan.settle[0].metrics, null, 'but numbers from older semantics are not restored');
+});
+
+test('metrics stamped with the current semantics are replayed', () => {
+  const improved = { 'src/main/java/org/json/XML.java::parse': { state: 'improved', metrics: stamp({ mutationBefore: 70 }) } };
+  const plan = planReplay(improved, {}, has);
+  assert.equal(plan.settle[0].metrics.mutationBefore, 70);
+});
+
+test('a unit that once failed to measure is offered again, not blacklisted for ever', () => {
+  const plan = planReplay({ 'src/main/java/org/json/XML.java::parse': { state: 'failed' } }, {}, has);
+  assert.equal(plan.settle.length, 0, 'a failure measured nothing, so it settles nothing');
+  assert.equal(plan.retryable, 1);
+});

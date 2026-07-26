@@ -72,13 +72,15 @@ test('the weakest unit comes first — that is where the gap is', () => {
   assert.deepEqual(r.units.map((x) => x.path), ['b', 'c', 'a']);
 });
 
-test('a unit no public path reaches is dropped, not queued', () => {
-  // the model is told to write a test for it, correctly refuses, the round changes
-  // nothing, and the unit is abandoned after 3 misses — four PIT runs to learn what the
-  // call graph already said.
+test('a unit with no known route sinks to the bottom of the queue', () => {
+  // It used to be DROPPED, to save the four PIT runs a genuinely dead private method
+  // costs. That traded a bounded cost for an unbounded one: reachability is regex over
+  // Java source, and every construct it misreads deleted real, testable work from the run.
+  // Last place keeps the saving where the analysis is right and costs only ordering where
+  // it is wrong.
   const r = rankUnits([u({ path: 'live', reach: 'route' }), u({ path: 'dead', reach: 'none' })]);
-  assert.deepEqual(r.units.map((x) => x.path), ['live']);
-  assert.equal(r.unreachable, 1);
+  assert.deepEqual(r.units.map((x) => x.path), ['live', 'dead']);
+  assert.equal(r.unreachable, 0);
 });
 
 test('at equal weakness, a method a test can call outright beats one behind private hops', () => {
@@ -124,4 +126,19 @@ test('a unit that was never measured is not counted either way', () => {
 
 test('a measured unit that failed to improve still counts — it was really attempted', () => {
   assert.equal(isTargeted({ macBefore: 40, status: 'no_improvement' }), true);
+});
+
+test('a unit the analysis cannot find a route to is ranked last, never dropped', () => {
+  // Dropping on the strength of a regex over Java source deletes real work silently:
+  // multi-line signatures, callers inside inner classes, `this::foo` method references
+  // and overloads all defeated it. Ranking it last keeps the benefit and costs at most
+  // some rounds at the very end of a run.
+  const r = rankUnits([u({ path: 'unsure', reach: 'none' }), u({ path: 'callable', reach: 'public' })]);
+  assert.deepEqual(r.units.map((x) => x.path), ['callable', 'unsure']);
+  assert.equal(r.unreachable, 0, 'nothing is discarded');
+});
+
+test('behind a private chain still beats no known route at all', () => {
+  const r = rankUnits([u({ path: 'none', reach: 'none' }), u({ path: 'route', reach: 'route' })]);
+  assert.deepEqual(r.units.map((x) => x.path), ['route', 'none']);
 });

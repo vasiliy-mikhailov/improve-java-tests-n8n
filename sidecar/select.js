@@ -44,8 +44,17 @@ function rankSurvivors(list, stats) {
 
 const isCtor = (m) => m === '<init>' || m === '<clinit>';
 
-/** How hard it is for a test to get at this unit at all. */
-const REACH_COST = { public: 0, route: 1, none: Infinity };
+/**
+ * How hard it is for a test to get at this unit — a RANKING signal, never a filter.
+ *
+ * It was a filter, and it deleted real work: reachability is decided by regex over Java
+ * source, which missed multi-line signatures, callers inside inner and anonymous classes,
+ * `this::foo` method references, and overloads whose first declaration was private. Each
+ * miss removed a genuinely testable method from the queue for the whole run, silently and
+ * permanently. Ranked last instead, an analysis mistake costs some rounds at the end of a
+ * run rather than the method itself.
+ */
+const REACH_COST = { public: 0, route: 1, none: 2 };
 
 /**
  * Which unit to work on next.
@@ -58,7 +67,7 @@ const REACH_COST = { public: 0, route: 1, none: Infinity };
  */
 function rankUnits(list) {
   const all = list || [];
-  const units = all.filter((x) => REACH_COST[x.reach ?? 'public'] !== Infinity);
+  const units = all.slice();
   units.sort((a, b) =>
     // a unit with no MAC yet is not a perfect one — rank it on the coverage we do have
     (a.mac ?? (a.coverage ?? 0) / 2) - (b.mac ?? (b.coverage ?? 0) / 2)
@@ -66,7 +75,7 @@ function rankUnits(list) {
     || REACH_COST[a.reach ?? 'public'] - REACH_COST[b.reach ?? 'public']
     || (b.executableLines ?? b.lines ?? 0) - (a.executableLines ?? a.lines ?? 0)
     || String(a.path).localeCompare(String(b.path)));
-  return { units, unreachable: all.length - units.length };
+  return { units, unreachable: 0 };
 }
 
 /**

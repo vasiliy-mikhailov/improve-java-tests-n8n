@@ -255,11 +255,11 @@ const isCtor = (m) => m === '<init>' || m === '<clinit>';
  */
 function replayLedgers() {
   const plan = measure.planReplay(ledger(), measured(), (k) => !!state.files[k]);
-  for (const { key, record } of plan.settle) {
+  for (const { key, record, metrics } of plan.settle) {
     S.upsertFile(key, record.state === 'improved'
-      ? { status: 'improved', fromLedger: true, prUrl: record.prUrl || null, prPatch: record.patchPath || null, ...(record.metrics || {}) }
-      : { status: record.state === 'failed' ? 'failed' : record.state === 'no_mutants' ? 'no_mutants' : 'no_improvement',
-        fromLedger: true, attempts: state.run.config.maxAttemptsPerFile || 3, ...(record.metrics || {}) });
+      ? { status: 'improved', fromLedger: true, prUrl: record.prUrl || null, prPatch: record.patchPath || null, ...(metrics || {}) }
+      : { status: record.state === 'no_mutants' ? 'no_mutants' : 'no_improvement',
+        fromLedger: true, attempts: state.run.config.maxAttemptsPerFile || 3, ...(metrics || {}) });
   }
   for (const { key, entry } of plan.restore) {
     S.upsertFile(key, {
@@ -271,7 +271,8 @@ function replayLedgers() {
   if (plan.settle.length || plan.restore.length || plan.stale) {
     S.event('measuring_baseline', `ledger: ${plan.settle.length} unit(s) already settled in previous runs — skipping them; `
       + `${plan.restore.length} restored earlier measurements`
-      + (plan.stale ? `; ${plan.stale} discarded as measured under older semantics (v<${measure.MEASURE_VERSION})` : ''));
+      + (plan.stale ? `; ${plan.stale} discarded as measured under older semantics (v<${measure.MEASURE_VERSION})` : '')
+      + (plan.retryable ? `; ${plan.retryable} left open — they failed to measure, which settles nothing` : ''));
   }
   S.save();
 }
@@ -290,9 +291,12 @@ function reachOf(srcPath, method) {
     let src = reachCache.get(srcPath);
     if (src === undefined) { src = repo.readFileSafe(srcPath, 2000000) || ''; reachCache.set(srcPath, src); }
     const vis = javasrc.methodVisibility(src, method);
-    // unknown visibility (not declared in this file — inherited, generated, or a lambda)
-    // is treated as reachable: a guess must never silently drop a real unit
-    reach = !vis || vis === 'public' ? 'public' : (javasrc.routesTo(src, method).length ? 'route' : 'none');
+    // Generated tests live in the SAME package as the class (src/test/java mirrors
+    // src/main/java), so package-private and protected members are callable directly —
+    // treating them as hidden dropped ordinary, testable methods from the queue. Only
+    // `private` genuinely needs a route in. Unknown visibility (inherited, generated,
+    // lambda) counts as callable: a guess must never cost a real unit.
+    reach = vis !== 'private' ? 'public' : (javasrc.routesTo(src, method).length ? 'route' : 'none');
   } catch { reach = 'public'; }
   reachCache.set(key, reach);
   return reach;
@@ -364,6 +368,11 @@ function gapsFor(p) {
     // the mutant this round is aiming at, so a repair does not flip an assertion and
     // abandon the very thing the test was written for
     targetMutant: roundsMod.targetForRound(f.targetMutant, (f.rounds || 0) + 1),
+    // whether the last round's test even executed this method — a missed round whose
+    // coverage never moved off zero was never about the assertion
+    lastRound: f.lastTargetKilled === false || f.consecutiveMisses
+      ? { reached: (f.coverage ?? 0) > 0, coverage: f.coverage ?? 0 }
+      : null,
     fqcn,
     package: fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '',
     className: fqcn.slice(fqcn.lastIndexOf('.') + 1),
@@ -420,11 +429,6 @@ function candidates() {
   else if (cfg.scopeLimit > 0 && processed >= cfg.scopeLimit) { done = true; reason = `scope limit (${cfg.scopeLimit} units) reached`; }
   else if (failed >= maxFailures) { done = true; reason = `${failed} units failed to measure (limit ${maxFailures}) — the repo or its toolchain is the problem, not the units`; }
   else if (!list.length) { done = true; reason = 'no remaining candidate units'; }
-  if (ranked.unreachable && ranked.unreachable !== state.run.reportedUnreachable) {
-    // say it once per change, not once per pick
-    state.run.reportedUnreachable = ranked.unreachable;
-    S.event('picking_file', `${ranked.unreachable} unit(s) skipped: private with no public path into them, so no test can execute them`);
-  }
   return { done, reason, iteration: state.run.iteration, processed, failed, candidates: list.slice(0, 100) };
 }
 
@@ -556,6 +560,12 @@ const routes = {
       state.overheadLedger[slug] = (state.overheadLedger[slug] || 0)
         + Math.max(0, Math.floor(Date.now() / 1000) - state.run.startedAt);
     }
+    // where this unit's own work begins on the branch — the timesheet must not count a
+    // sibling method's already-committed tests as this one's effort
+    try {
+      const head = await run(['git', 'rev-parse', 'HEAD'], { cwd: repo.repoDir(), timeoutMs: 10000 });
+      if (head.code === 0) S.upsertFile(file, { startSha: head.stdout.trim() });
+    } catch { /* a repo without commits cannot mislead the timesheet */ }
     // A re-picked unit starts its miss budget again. It used to carry the previous
     // attempt's count, so an attempt that began at 3/3 was finalised after a single
     // successful round however much was left to kill.
@@ -962,7 +972,10 @@ const routes = {
     const outcome = roundsMod.missOutcome({
       consecutiveMisses: f.consecutiveMisses || 0,
       maxMisses: state.run.config.maxConsecutiveMisses ?? 3,
-      survivorsLeft: (f.lastSurvived || []).length || null,
+      // the COUNT of what is still worth attacking. `|| null` turned the meaningful
+      // answer 0 into "unknown", so "no surviving mutants left — stop" could never fire
+      // and the loop kept ordering rounds that had nothing to target
+      survivorsLeft: select.eligible(f.lastSurvived || [], f.attemptedMutants || []).length,
     });
     S.upsertFile(file, { consecutiveMisses: outcome.consecutiveMisses, continueRounds: outcome.continueRounds });
     S.event('improving_mac', `dropped the round's test for ${unitLabel(file)} — ${outcome.verdict}`);
@@ -1029,7 +1042,8 @@ const routes = {
     // diff is vs base and includes committed rounds)
     let ts = null;
     try {
-      const diffText = await pr.diffAgainstBase();
+      // only what THIS unit added: the branch may already carry a sibling method's tests
+      const diffText = await pr.diffSince(f.startSha);
       const stats = timesheet.diffStats(diffText);
       const src = repo.readFileSafe(unitPath(file), 500000);
       const mutantsKilled = (f.totalMutants && f.mutationAfter != null && f.mutationBefore != null)

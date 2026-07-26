@@ -75,6 +75,27 @@ function unreachable(gaps) {
   return vis && vis !== 'public' && !(gaps.routes || []).length;
 }
 
+/**
+ * What the last round on this unit actually achieved — the difference between "your test
+ * never ran this method" and "it ran it but asserted nothing that distinguishes the
+ * mutation". Those need opposite fixes, and the pipeline reported both as the second one:
+ * on JSONObject#isRecordStyleAccessor, called under `if (isRecordType && ...)`, the model
+ * built a plain bean, the guard was false, the method never executed — and round after
+ * round it rewrote assertions for code it had never reached.
+ */
+function lastRoundBlock(gaps) {
+  const lr = gaps.lastRound;
+  if (!lr) return '';
+  if (lr.reached === false) {
+    return '\n\nYOUR PREVIOUS ATTEMPT: the test compiled and passed, but it NEVER EXECUTED this method'
+      + ` — coverage stayed at ${lr.coverage ?? 0}%. The entry point you chose does not flow into it.`
+      + ' Look at the conditions guarding the call path above and choose inputs that satisfy every one of them;'
+      + ' if no input can satisfy them, return an empty tests array and say nothing was written.';
+  }
+  return '\n\nYOUR PREVIOUS ATTEMPT: the test reached and executed this method, but asserted nothing that'
+    + ' distinguishes the mutation from the real code. The path is right; the assertion is not.';
+}
+
 function constraintBlock(gaps) {
   const c = (gaps.constraints || []).map((x) => `- ${x}`).join('\n');
   return c ? `\nTeam constraints:\n${c}` : '';
@@ -160,7 +181,7 @@ function mutationPrompt(gaps) {
     + constraintBlock(gaps);
 
   const prompt = `CLASS UNDER TEST: ${gaps.fqcn}  (file ${gaps.path}, module ${gaps.module})\n`
-    + sourceBlock(gaps, 12000) + signatureBlock(gaps) + reachBlock(gaps)
+    + sourceBlock(gaps, 12000) + signatureBlock(gaps) + reachBlock(gaps) + lastRoundBlock(gaps)
     + (gaps.method ? `\n\nFOCUS: this unit of work IS the method ${gaps.method}() — shown in full above; the mutant below is inside it, and the score is measured on it alone.` : '')
     + `\n\n${single ? 'MUTANT TO KILL' : 'SURVIVING MUTANTS'} (SURVIVED = the line runs but nothing asserts on it; NO_COVERAGE = the line never runs):\n${mutantsTxt}`
     + `\n\nEXISTING TEST (style reference — do NOT rewrite it):\n${String(gaps.existingTest || '(none)').slice(0, 4000)}`
