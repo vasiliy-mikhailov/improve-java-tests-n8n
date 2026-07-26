@@ -68,3 +68,24 @@ test('the declaration itself is not mistaken for a call', () => {
 test('a method nothing calls has no callers', () => {
   assert.deepEqual(callersOf(SRC, 'helper'), []);
 });
+
+test('a method past the prompt clip is still found — analysis needs the whole file', () => {
+  // gapsFor analysed the string it sends to the model, which is clipped to 24 000 chars
+  // for prompt size. JSONObject#isRecordStyleAccessor is declared at line 2071, well past
+  // that, so visibility came back null, the REACHED VIA section was omitted, and the fix
+  // that was supposed to name the route silently did nothing in production.
+  const filler = '    // padding padding padding padding padding padding padding\n'.repeat(600);
+  const big = `package org.json;\n\npublic class Big {\n${filler}
+    public void entryPoint() {
+        target(1);
+    }
+
+    private int target(int x) {
+        return x + 1;
+    }
+}
+`;
+  assert.ok(big.length > 24000, `fixture must exceed the prompt clip (was ${big.length})`);
+  assert.equal(methodVisibility(big, 'target'), 'private');
+  assert.deepEqual(callersOf(big, 'target').map((c) => c.method), ['entryPoint']);
+});

@@ -29,6 +29,11 @@ function declares(line, name) {
   if (!/^[\s@\w.$<>[\],?&]*$/.test(prefix)) return false;   // no (, {, =, ; before the name
   if (/\.\s*$/.test(prefix)) return false;                   // this.foo( is a call
   if (/\b(?:return|new|throw)\b/.test(prefix)) return false;
+  // A declaration is preceded by modifiers and/or a return type. Nothing at all means a
+  // bare call statement — and `target(1);` ends in `);` exactly like an abstract method
+  // declaration, so the shape check below cannot tell them apart on its own. The one
+  // exception is a package-private constructor, which is named like the class.
+  if (!prefix.trim() && !/^[A-Z]/.test(name)) return false;
   // a declaration's parameter list is followed by a body or a semicolon
   return /\)\s*(?:throws\s+[\w.,\s]+?)?\s*[{;]/.test(line.slice(m[0].length - 1));
 }

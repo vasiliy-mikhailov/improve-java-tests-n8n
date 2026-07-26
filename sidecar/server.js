@@ -252,7 +252,12 @@ function gapsFor(p) {
   needRun();
   if (!p) throw new Error('path required');
   const srcPath = unitPath(p);
+  // Two different reads on purpose. `source` is clipped for the prompt; `whole` is the
+  // file. Analysing the clipped copy is why the reachability hint silently did nothing on
+  // JSONObject: the method is declared at line 2071, past the 24 000-character clip, so
+  // its visibility read back as null and the route was never named.
   const source = repo.readFileSafe(srcPath, 24000);
+  const whole = repo.readFileSafe(srcPath, 2000000);
   const f = state.files[p] || {};
   const round = (f.rounds || 0) + 1;
   // each round writes its OWN test classes — Java forbids two public classes of the
@@ -275,8 +280,8 @@ function gapsFor(p) {
     siblingSignatures: mctx ? mctx.signatures : null,
     // a test cannot call a private method, so the prompt has to name the public route in
     // — and a private method with no caller at all is not worth a round
-    visibility: f.method ? javasrc.methodVisibility(source, f.method) : null,
-    callers: f.method ? javasrc.callersOf(source, f.method) : [],
+    visibility: f.method ? javasrc.methodVisibility(whole, f.method) : null,
+    callers: f.method ? javasrc.callersOf(whole, f.method) : [],
     uncovered: coverage.uncoveredLines(p),
     coverage: f.coverage ?? null,
     missedLines: f.missedLines ?? null,
