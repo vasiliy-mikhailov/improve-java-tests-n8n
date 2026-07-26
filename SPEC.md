@@ -152,25 +152,9 @@ measured**. The guards that exist because of it:
 | the timesheet diffs from where THIS unit started | the branch is per file and the unit is per method, so a sibling's committed tests were counted as this unit's effort |
 | a round is told whether its last test REACHED the method | "never executed it" and "executed it but did not distinguish the mutation" need opposite fixes and were reported identically |
 | the suite verdict comes from the coverage run that executed it | verify ran 1163 tests, then ran them again under JaCoCo to learn the same thing; `passed: null` (log unclear) still forces a real run |
+| generated test files named per METHOD, not per class | `JSONArray#optEnum` wrote rounds 1-4, then `#putAll` began at round 1 and overwrote its round-1 file: a verified kill vanished from the prepared PR while the PR still reported the MAC measured with it |
+
 | per-stage token ceilings learned from `finish_reason` | 4 of 12 completions were truncated mid-JSON and re-run whole at ~100 s each, and nothing remembered it |
-
-### Known gap: generated test file names collide between units of one class
-
-`guessTestPath` names a generated test by CLASS and ROUND — `JSONObjectMacMutTest` for
-round 1 — but the unit of work is a METHOD. Two methods of the same class both start at
-round 1, so the second overwrites the first's file.
-
-Observed on 2026-07-26: `JSONObject#fromJson` (mutation 66.67 → 100) then
-`JSONObject#putOpt` (coverage → 100) both wrote `JSONObjectMacMutTest.java`. The prepared
-PR does contain both units' tests — but only because the prompt hands the model the
-existing file as a style reference with "do NOT rewrite it", and it chose to preserve it.
-Nothing enforces that. A verified kill can be dropped from a PR at the model's discretion.
-
-The fix is to put the method in the generated class name
-(`JSONObjectFromJsonMacMutTest`), which `sidecar/testpaths.js` and its tests already
-frame. It is deliberately NOT applied mid-run: renaming generated files while branches
-carry the old names risks orphaning work in progress, which is worse than the fault it
-prevents. Apply it at the start of a run.
 
 ### How this is kept true
 

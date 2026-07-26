@@ -324,7 +324,7 @@ function gapsFor(p) {
   const round = (f.rounds || 0) + 1;
   // each round writes its OWN test classes — Java forbids two public classes of the
   // same name, and append-only additions keep earlier rounds' commits intact
-  const guess = repo.guessTestPath(srcPath, round);
+  const guess = repo.guessTestPath(srcPath, round, f.method || '');
   let existingTest = guess.exists ? repo.readFileSafe(guess.path, 12000) : null;
   if (!existingTest) {
     // no test for this class yet → hand the LLM a sibling test to imitate

@@ -454,12 +454,13 @@ function deleteTestFile(rel) {
  *   `path`/`exists` describe the project's OWN test for the class (the style
  *   reference); covPath/mutPath are this round's generated classes.
  */
-function guessTestPath(srcRel, round = 1) {
+function guessTestPath(srcRel, round = 1, method = '') {
   const dir = repoDir();
-  // naming rules (Surefire-includable, one class per round) live in testpaths.js under test
+  // naming rules (Surefire-includable, one class per round PER METHOD) live in
+  // testpaths.js under test
   const candidates = existingTestCandidates(srcRel);
   const own = candidates.find((c) => fs.existsSync(path.join(dir, c)));
-  return { path: own || candidates[0], exists: !!own, ...generatedTestPaths(srcRel, round) };
+  return { path: own || candidates[0], exists: !!own, ...generatedTestPaths(srcRel, round, method) };
 }
 
 /**

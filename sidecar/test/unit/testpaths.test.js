@@ -7,14 +7,30 @@ const SRC = 'src/main/java/org/json/XML.java';
 const MODULE = 'core/src/main/java/com/acme/deep/pkg/Thing.java';
 
 test('generated tests land in src/test/java beside the class, package intact', () => {
-  const g = generatedTestPaths(SRC, 1);
-  assert.equal(g.covPath, 'src/test/java/org/json/XMLMacCovTest.java');
-  assert.equal(g.mutPath, 'src/test/java/org/json/XMLMacMutTest.java');
+  const g = generatedTestPaths(SRC, 1, 'parse');
+  assert.equal(g.covPath, 'src/test/java/org/json/XMLParseMacCovTest.java');
+  assert.equal(g.mutPath, 'src/test/java/org/json/XMLParseMacMutTest.java');
+});
+
+test('two METHODS of one class never share a generated file', () => {
+  // JSONArray#optEnum wrote rounds 1-4, then JSONArray#putAll started at round 1 and
+  // overwrote optEnum's round-1 file. Its test — a verified kill — vanished from the
+  // prepared PR, which still claimed the MAC that test had been measured with.
+  const a = generatedTestPaths('src/main/java/org/json/JSONArray.java', 1, 'optEnum');
+  const b = generatedTestPaths('src/main/java/org/json/JSONArray.java', 1, 'putAll');
+  assert.notEqual(a.mutPath, b.mutPath);
+  assert.notEqual(a.covPath, b.covPath);
+});
+
+test('a constructor yields a legal Java class name', () => {
+  const g = generatedTestPaths('src/main/java/org/json/Cookie.java', 1, '<init>');
+  assert.match(g.mutPath, /^[\w/]+\/Cookie\w*MacMutTest\.java$/);
+  assert.doesNotMatch(g.mutPath, /[<>]/);
 });
 
 test("a module's path prefix survives the mapping", () => {
-  const g = generatedTestPaths(MODULE, 1);
-  assert.equal(g.mutPath, 'core/src/test/java/com/acme/deep/pkg/ThingMacMutTest.java');
+  const g = generatedTestPaths(MODULE, 1, 'run');
+  assert.equal(g.mutPath, 'core/src/test/java/com/acme/deep/pkg/ThingRunMacMutTest.java');
 });
 
 test('every generated name is one Surefire actually runs', () => {
@@ -22,7 +38,7 @@ test('every generated name is one Surefire actually runs', () => {
   // JaCoCo blind, and PIT — which uses its own glob — then reported 100%. The suite was
   // green and every number was a lie.
   for (const round of [1, 2, 3, 11]) {
-    for (const p of Object.values(generatedTestPaths(SRC, round))) {
+    for (const p of Object.values(generatedTestPaths(SRC, round, 'parse'))) {
       const cls = p.split('/').pop().replace(/\.java$/, '');
       assert.ok(SUREFIRE_INCLUDED.some((re) => re.test(cls)), `${cls} is not picked up by Surefire`);
     }
@@ -32,7 +48,7 @@ test('every generated name is one Surefire actually runs', () => {
 test('each round gets its own class — Java forbids two public classes of one name', () => {
   const names = new Set();
   for (const round of [1, 2, 3, 4, 5]) {
-    const g = generatedTestPaths(SRC, round);
+    const g = generatedTestPaths(SRC, round, 'parse');
     assert.notEqual(g.covPath, g.mutPath, 'coverage and mutation classes must differ');
     for (const p of [g.covPath, g.mutPath]) {
       assert.ok(!names.has(p), `${p} collides with an earlier round`);
@@ -56,8 +72,8 @@ test('a source path outside src/main/java still yields a test path under src/tes
   // some repos keep sources in java/ or src/ — a generated path must never be written
   // next to production code
   for (const src of ['src/java/org/json/XML.java', 'java/org/json/XML.java', 'XML.java']) {
-    const g = generatedTestPaths(src, 1);
+    const g = generatedTestPaths(src, 1, 'parse');
     assert.match(g.mutPath, /(^|\/)src\/test\/java\//, `${src} → ${g.mutPath}`);
-    assert.match(g.mutPath, /XMLMacMutTest\.java$/);
+    assert.match(g.mutPath, /XMLParseMacMutTest\.java$/);
   }
 });
