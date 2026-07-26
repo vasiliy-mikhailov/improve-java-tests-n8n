@@ -211,9 +211,16 @@ const covDone = phase('Cov', `
 const gaps = $json; // response of Coverage Gaps
 const u = gaps.uncovered || {};
 const fullyUncovered = u.lines === 'all';
-const nothingToCover = !fullyUncovered && (!u.lines || !u.lines.length);
+const missed = fullyUncovered ? 9999 : (u.lines || []).length;
 const targetPath = gaps.covTestPath;
-if (nothingToCover) return [{ json: { skip: true, reason: 'class fully covered', targetPath, projectTestPath: gaps.projectTestPath } }];
+// Skip the coverage phase when the unit is already well executed. A method at 88 %
+// coverage with a 0 % mutation score does not need MORE code run — it needs assertions,
+// which is the mutation phase's job. Writing coverage tests for it burns a multi-minute
+// LLM call and thousands of tokens to change nothing.
+if (missed === 0) return [{ json: { skip: true, reason: 'method fully covered', targetPath, projectTestPath: gaps.projectTestPath } }];
+if (!fullyUncovered && gaps.coverage != null && gaps.coverage >= (gaps.covPhaseSkipPct ?? 80)) {
+  return [{ json: { skip: true, reason: 'already ' + gaps.coverage + '% covered — the gap is assertions, not execution', targetPath, projectTestPath: gaps.projectTestPath } }];
+}
 const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
 const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
 const RULES = ${JSON.stringify(COMMON_TEST_RULES)};
@@ -226,7 +233,9 @@ const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', mo
   + '\\n\\nEXISTING TEST (style reference — imports, assertion library, conventions; do NOT rewrite it):\\n'
   + String(gaps.existingTest || '(none)').slice(0, 6000)
   + '\\n\\nWrite one test class that executes the uncovered lines OF THE TARGET METHOD and asserts real behaviour. JSON only.';
-return [{ json: { system, prompt, json: true, maxTokens: 7000, temperature: 0.3, stage: 'improving_coverage', stageDetail: 'writing tests for uncovered code', targetPath, projectTestPath: gaps.projectTestPath } }];`,
+// a deliberately small budget for the first pass: it caps both the wait and the size of
+// what comes back, and the rounds provide the depth
+return [{ json: { system, prompt, json: true, maxTokens: 3000, temperature: 0.2, stage: 'improving_coverage', stageDetail: 'writing a first, simple test', targetPath, projectTestPath: gaps.projectTestPath } }];`,
   'Coverage Gaps');
 
 // ── mutation phase ─────────────────────────────────────────────────────────
@@ -253,7 +262,9 @@ const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', mo
   + '\\n\\nEXISTING TEST (style reference — do NOT rewrite it):\\n'
   + String(gaps.existingTest || '(none)').slice(0, 4000)
   + '\\n\\nWrite one test class killing as many of these mutants as possible. JSON only.';
-return [{ json: { system, prompt, json: true, maxTokens: 8000, temperature: 0.3, stage: 'improving_mutation', stageDetail: 'writing mutant-killing tests', targetPath, projectTestPath: gaps.projectTestPath } }];`,
+// bounded per round: each round targets a handful of mutants, and a smaller answer
+// arrives sooner and compiles more often than a sprawling one
+return [{ json: { system, prompt, json: true, maxTokens: 5000, temperature: 0.25, stage: 'improving_mutation', stageDetail: 'writing mutant-killing tests', targetPath, projectTestPath: gaps.projectTestPath } }];`,
   covDone);
 
 // =============================================================================
