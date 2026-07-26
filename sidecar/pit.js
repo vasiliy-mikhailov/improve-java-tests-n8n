@@ -30,9 +30,10 @@ const MUTATORS = process.env.PIT_MUTATORS || 'DEFAULTS';
 // `reporting.baseDir`, which Gradle 9 removed, so applying it there fails outright with
 // "Could not get unknown property 'baseDir'" — that is why every Gradle repo produced
 // nothing. 1.19.0 works on 8/9; older projects keep the older plugin.
-function gradlePitestPluginVersion() {
+function gradlePitestPluginVersion(gradleVersion = state.runner?.gradleVersion) {
   if (process.env.GRADLE_PITEST_PLUGIN_VERSION) return process.env.GRADLE_PITEST_PLUGIN_VERSION;
-  const major = parseInt(String(state.runner?.gradleVersion || '').split('.')[0], 10);
+  const major = parseInt(String(gradleVersion || '').split('.')[0], 10);
+  // an unrecognised Gradle gets the modern plugin: the old one cannot even load on 9
   return Number.isFinite(major) && major < 8 ? '1.15.0' : '1.19.0';
 }
 const INIT_SCRIPT = '.ijt-pitest.init.gradle';
@@ -118,27 +119,36 @@ function ensureMavenWiring(moduleRel) {
   return 'injected';
 }
 
-function gradleInitScript(targetClasses, targetTests, excluded = []) {
+/**
+ * @param {object} [opts]  defaults read from run state; passed explicitly by the tests
+ */
+function gradleInitScript(targetClasses, targetTests, excluded = [], opts = {}) {
+  const gradleVersion = opts.gradleVersion ?? state.runner?.gradleVersion;
+  const testFramework = opts.testFramework ?? state.runner?.testFramework;
+  const pitVersion = opts.pitVersion ?? PIT_VERSION;
+  const junit5Plugin = opts.junit5PluginVersion ?? PIT_JUNIT5_VERSION;
+  const mutators = opts.mutators ?? MUTATORS;
+  const mirrorUrl = opts.mirrorUrl ?? process.env.MAVEN_MIRROR_URL ?? 'https://plugins.gradle.org/m2';
   return `// injected by improve-java-tests-n8n — applies gradle-pitest-plugin without touching the repo
 initscript {
   // allowInsecureProtocol: the on-host Nexus is plain http, and Gradle 7+ refuses
   // http repositories without it — that rejection killed the Gradle PIT path.
   repositories {
-    maven { url = uri('${process.env.MAVEN_MIRROR_URL || 'https://plugins.gradle.org/m2'}'); allowInsecureProtocol = true }
+    maven { url = uri('${mirrorUrl}'); allowInsecureProtocol = true }
     gradlePluginPortal()
     mavenCentral()
   }
-  dependencies { classpath 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:${gradlePitestPluginVersion()}' }
+  dependencies { classpath 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:${gradlePitestPluginVersion(gradleVersion)}' }
 }
 allprojects { p ->
   p.plugins.withId('java') {
     p.apply plugin: info.solidsoft.gradle.pitest.PitestPlugin
     p.pitest {
-      pitestVersion = '${PIT_VERSION}'
-      ${state.runner?.testFramework === 'junit5' ? "junit5PluginVersion = '" + PIT_JUNIT5_VERSION + "'" : ''}
+      pitestVersion = '${pitVersion}'
+      ${testFramework === 'junit5' ? `junit5PluginVersion = '${junit5Plugin}'` : ''}
       targetClasses = ['${targetClasses}']
       ${targetTests ? `targetTests = ['${targetTests}']` : ''}
-      mutators = ['${MUTATORS}']
+      mutators = ['${mutators}']
       ${excluded.length ? `excludedMethods = [${excluded.map((m) => `'${m}'`).join(', ')}]` : ''}
       outputFormats = ['XML']
       timestampedReports = false
@@ -419,4 +429,5 @@ function scopeToMethod(parsed, method) {
   };
 }
 
-module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor, killDifficulty, PIT_VERSION, MUTATORS };
+module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor,
+  gradlePitestPluginVersion, gradleInitScript, killDifficulty, PIT_VERSION, MUTATORS };
