@@ -17,6 +17,7 @@ const roundsMod = require('./rounds');
 const prompts = require('./prompts');
 const parse = require('./parse');
 const select = require('./select');
+const measure = require('./measure');
 const { run } = require('./exec');
 const { mac, fileSlug, round2, clamp, slugify } = require('./util');
 
@@ -63,7 +64,10 @@ function measured() {
 }
 function recordMeasurement(file, patch) {
   const m = measured();
-  m[file] = { ...(m[file] || {}), ...patch, ts: Date.now() };
+  const key = measure.normalizeUnitKey(file);
+  // stamped with the measurement semantics in force, so a later change to what a number
+  // MEANS invalidates it instead of silently replaying it into a new run
+  m[key] = measure.stamp({ ...(m[key] || {}), ...patch, ts: Date.now() });
   S.save();
 }
 
@@ -417,9 +421,12 @@ const routes = {
     const files = await repo.listScopeFiles();
     // replay measurements first: every file we ever measured keeps its numbers,
     // whether or not it was ever improved (status is untouched here)
-    let remeasured = 0;
-    for (const [p, m] of Object.entries(measured())) {
+    let remeasured = 0, stale = 0;
+    for (const [rawKey, m] of Object.entries(measured())) {
+      const p = measure.normalizeUnitKey(rawKey);
       if (!state.files[p]) continue;
+      // a number produced by older semantics describes something else now — measure again
+      if (!measure.restorable(m, p)) { stale += 1; continue; }
       S.upsertFile(p, {
         coverageBefore: m.coverageBefore, mutationBefore: m.mutationBefore, macBefore: m.macBefore,
         attemptCoverage: m.attemptCoverage, attemptMutation: m.attemptMutation, attemptMac: m.attemptMac,
@@ -427,18 +434,23 @@ const routes = {
       });
       remeasured += 1;
     }
-    // replay the persistent ledger so finished files are not re-picked
+    // Replay the persistent ledger so finished units are not re-picked. Unlike the
+    // measurement ledger above, this is a record of what HAPPENED — a PR was prepared,
+    // with the numbers measured at the time — so it is not invalidated by a later change
+    // to measurement semantics; it seeds no new decision.
     let replayed = 0;
-    for (const [p, rec] of Object.entries(ledger())) {
+    for (const [rawKey, rec] of Object.entries(ledger())) {
+      const p = measure.normalizeUnitKey(rawKey);
       if (!state.files[p]) continue;
       S.upsertFile(p, rec.state === 'improved'
         ? { status: 'improved', fromLedger: true, prUrl: rec.prUrl || null, prPatch: rec.patchPath || null, ...(rec.metrics || {}) }
         : { status: rec.state === 'failed' ? 'failed' : 'no_improvement', fromLedger: true, attempts: state.run.config.maxAttemptsPerFile || 3, ...(rec.metrics || {}) });
       replayed += 1;
     }
-    if (replayed || remeasured) {
-      S.event('installing', `ledger: ${replayed} file(s) already settled in previous runs — skipping them; `
-        + `${remeasured} file(s) restored earlier measurements`);
+    if (replayed || remeasured || stale) {
+      S.event('installing', `ledger: ${replayed} unit(s) already settled in previous runs — skipping them; `
+        + `${remeasured} restored earlier measurements`
+        + (stale ? `; ${stale} discarded as measured under older semantics (v<${measure.MEASURE_VERSION}) and will be re-measured` : ''));
     }
     return { ok: true, runner: det, scopeFiles: files.length, settledFromLedger: replayed, measurementsRestored: remeasured };
   },
