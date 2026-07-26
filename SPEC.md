@@ -145,6 +145,13 @@ measured**. The guards that exist because of it:
 | a round writes exactly one file, at the planned path | only one existing test was guarded, so the model could name any other real test file and have it overwritten — then deleted when the suite went red |
 | setup overhead charged once per run | keyed on `iteration === 0`, and a no-mutation-surface skip REFUNDS its iteration, so each skip re-charged the whole elapsed time |
 | units with no mutation surface excluded from the repo mean | averaging their 0 % made the repo look weaker on the strength of methods that cannot be mutated |
+| reachability RANKS a unit, it never removes one | as a filter it deleted real work: tests share the class's package, so package-private and protected methods are directly callable, and the regex behind it misses multi-line signatures, inner-class callers, `this::foo` and overloads |
+| replayed improvement records restore status, not metrics | the metrics carry no version stamp, so numbers rejected as stale by the measurement ledger were admitted through the improvement ledger into the headline |
+| a unit that failed to MEASURE is left open | settling it blacklists improvable work on the strength of a measurement that measured nothing |
+| a survivor count of 0 means zero, not "unknown" | `|| null` made "no surviving mutants left — stop" unreachable, so rounds kept being ordered with nothing to target |
+| the timesheet diffs from where THIS unit started | the branch is per file and the unit is per method, so a sibling's committed tests were counted as this unit's effort |
+| a round is told whether its last test REACHED the method | "never executed it" and "executed it but did not distinguish the mutation" need opposite fixes and were reported identically |
+| the suite verdict comes from the coverage run that executed it | verify ran 1163 tests, then ran them again under JaCoCo to learn the same thing; `passed: null` (log unclear) still forces a real run |
 | per-stage token ceilings learned from `finish_reason` | 4 of 12 completions were truncated mid-JSON and re-run whole at ~100 s each, and nothing remembered it |
 
 ### How this is kept true
