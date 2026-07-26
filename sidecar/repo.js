@@ -484,8 +484,55 @@ function findStyleReference(srcRel) {
   return { path: best, content: readFileSafe(best, 8000) };
 }
 
+/**
+ * The source the model actually needs to test ONE method: the file's package + imports,
+ * the class declaration, the sibling method signatures (so it knows the available API),
+ * and the target method's full body.
+ *
+ * Sending the whole class instead is what made each call slow: XML.java is ~1500 lines,
+ * 12k characters of prompt to produce a 400-byte test for one method. Prompt size drives
+ * both latency and cost, and most of that class is irrelevant to the mutant at hand.
+ */
+function methodContext(rel, methodName, methodLine) {
+  const src = readFileSafe(rel, 500000);
+  if (!src) return null;
+  const lines = src.split('\n');
+  const header = [];
+  for (const l of lines) {
+    if (/^\s*(package|import)\s/.test(l)) header.push(l);
+    if (/\b(class|interface|enum|record)\s+\w/.test(l)) { header.push(l.replace(/\s*\{\s*$/, ' {')); break; }
+  }
+  // sibling signatures: one line each, no bodies
+  const signatures = lines
+    .filter((l) => /^\s{2,6}(public|protected|private|static)[\w\s<>\[\],.]*\([^)]*\)\s*(\{|throws)/.test(l))
+    .map((l) => l.replace(/\s*\{\s*$/, ';').trim())
+    .slice(0, 60);
+  // the target method: from its declaration to the matching closing brace
+  let body = null;
+  const startAt = Math.max(0, (methodLine || 1) - 1);
+  let start = startAt;
+  // the JaCoCo line points at the first executable line, so walk back to the signature
+  for (let i = startAt; i >= Math.max(0, startAt - 12); i--) {
+    if (new RegExp('\\b' + methodName.replace(/[^\w]/g, '') + '\\s*\\(').test(lines[i] || '')) { start = i; break; }
+  }
+  let depth = 0, opened = false;
+  for (let i = start; i < Math.min(lines.length, start + 600); i++) {
+    for (const ch of lines[i]) {
+      if (ch === '{') { depth += 1; opened = true; } else if (ch === '}') depth -= 1;
+    }
+    if (opened && depth <= 0) { body = lines.slice(start, i + 1).join('\n'); break; }
+  }
+  if (!body) body = lines.slice(start, Math.min(lines.length, start + 120)).join('\n');
+  return {
+    header: header.join('\n'),
+    signatures,
+    body,
+    startLine: start + 1,
+  };
+}
+
 module.exports = {
-  repoDir, clone, install, detectBuild, detectJdk, detectTestFramework, buildEnv,
+  repoDir, clone, install, detectBuild, detectJdk, detectTestFramework, buildEnv, methodContext,
   listScopeFiles, listModules, moduleOf, moduleSelector, fqcnOf,
   createBranch, resetToBase, discardUncommitted,
   readFileSafe, writeTestFile, deleteTestFile, guessTestPath, findStyleReference,

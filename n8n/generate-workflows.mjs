@@ -170,7 +170,8 @@ const filesTxt = parsed.tests.map(t => 'PATH: ' + t.path + '\\n' + t.content.sli
 const system = 'You are an expert Java test engineer. Tests you previously wrote FAIL to compile or fail against the current implementation. Fix them. Keep the SAME file path and class name. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full corrected file content"}]}. Compilation errors: fix imports, types, visibility and constructor/method signatures against the source shown. Assertion failures: correct the EXPECTED values to match the real behaviour of the source — never weaken an assertion to make it pass trivially. If a test cannot be fixed, drop it from the output.';
 const prompt = 'BUILD / TEST OUTPUT (failures):\\n' + String(fail.summary || '').slice(0, 4000)
   + '\\n\\nYOUR TEST FILE(S):\\n' + filesTxt
-  + '\\n\\nCLASS UNDER TEST ' + gaps.fqcn + ' (' + gaps.path + '):\\n' + String(gaps.source || '').slice(0, 10000)
+  + '\\n\\nCLASS UNDER TEST ' + gaps.fqcn + ' (' + gaps.path + (gaps.method ? ', method ' + gaps.method + '()' : '') + '):\\n'
+  + (gaps.methodSource ? (gaps.classHeader || '') + '\\n\\n' + gaps.methodSource : String(gaps.source || '').slice(0, 10000))
   + '\\n\\nReply with corrected JSON now.';
 return [{ json: { system, prompt, json: true, maxTokens: 7000, temperature: 0.2, stage: '${stage}', stageDetail: 'repairing failing generated tests' } }];`);
   Http(B('LLM Repair'), { path: '/api/llm/chat', body: '={{ $json }}', timeout: 900000 });
@@ -232,7 +233,7 @@ const system = 'You are an expert Java test engineer writing the FIRST test for 
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
 const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ', JDK ' + gaps.jdk + ')\\n'
   + (gaps.method ? 'TARGET METHOD: ' + gaps.method + '()' + (gaps.methodLine ? ' (declared around line ' + gaps.methodLine + ')' : '') + ' — the tests must exercise THIS method; coverage and mutation score are measured on it alone.\\n' : '')
-  + String(gaps.source || '').slice(0, 14000)
+  + (gaps.methodSource ? (gaps.classHeader || '') + '\\n\\n  // … other members omitted …\\n\\n' + gaps.methodSource : String(gaps.source || '').slice(0, 14000))
   + '\\n\\nUNCOVERED: ' + (fullyUncovered ? 'THE ENTIRE CLASS (no test executes it at all)' : 'source lines ' + JSON.stringify((u.lines || []).slice(0, 140)))
   + '\\n\\nEXISTING TEST (style reference — imports, assertion library, conventions; do NOT rewrite it):\\n'
   + String(gaps.existingTest || '(none)').slice(0, 6000)
@@ -269,9 +270,16 @@ const replyShape = single
   : '{"tests":[{"path":"...","content":"full test file content"}]}';
 const system = 'You are an expert Java test engineer killing surviving PIT mutants of ONE METHOD, one at a time, writing ' + framework + ' tests. A mutant is killed when at least one test FAILS on the mutated code while PASSING on the real code — so the test must assert something that DISTINGUISHES the two. Reply ONLY with JSON: ' + replyShape + '. Create a NEW test class only. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES + PLAYBOOK
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
+// the METHOD, not the whole class: prompt size drives latency, and the rest of a
+// 1500-line class is noise when the target is a single method
+const srcBlock = gaps.methodSource
+  ? (gaps.classHeader || '') + '\\n\\n  // … other members omitted …\\n\\n' + gaps.methodSource
+  : String(gaps.source || '').slice(0, 12000);
+const sigBlock = (gaps.siblingSignatures && gaps.siblingSignatures.length)
+  ? '\\n\\nOTHER MEMBERS (signatures only, for building inputs):\\n' + gaps.siblingSignatures.slice(0, 40).join('\\n') : '';
 const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ')\\n'
-  + String(gaps.source || '').slice(0, 12000)
-  + (gaps.method ? '\\n\\nFOCUS: this unit of work IS the method ' + gaps.method + '() — every mutant below is inside it, and the score is measured on it alone.' : '')
+  + srcBlock + sigBlock
+  + (gaps.method ? '\\n\\nFOCUS: this unit of work IS the method ' + gaps.method + '() — shown in full above; every mutant below is inside it, and the score is measured on it alone.' : '')
   + '\\n\\nSURVIVING MUTANTS (status SURVIVED = the line runs but nothing asserts on it; NO_COVERAGE = the line never runs):\\n' + mutantsTxt
   + '\\n\\nEXISTING TEST (style reference — do NOT rewrite it):\\n'
   + String(gaps.existingTest || '(none)').slice(0, 4000)

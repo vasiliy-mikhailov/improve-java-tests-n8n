@@ -514,8 +514,13 @@ const routes = {
       if (ref) existingTest = `// STYLE REFERENCE — an existing test from this repo (${ref.path}).\n// Imitate its imports, assertion style and conventions. Do not modify it.\n${ref.content}`;
     }
     const fqcn = f.fqcn || repo.fqcnOf(srcPath);
+    // only the part of the class the model needs for THIS method
+    const mctx = f.method ? repo.methodContext(srcPath, f.method, f.methodLine) : null;
     return {
       ok: true, path: srcPath, unit: p, source, sourceLines: source ? source.split('\n').length : 0,
+      methodSource: mctx ? mctx.body : null,
+      classHeader: mctx ? mctx.header : null,
+      siblingSignatures: mctx ? mctx.signatures : null,
       uncovered: coverage.uncoveredLines(p),
       coverage: f.coverage ?? null,
       missedLines: f.missedLines ?? null,
