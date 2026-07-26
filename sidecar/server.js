@@ -797,7 +797,10 @@ const routes = {
     S.setStage('preparing_pr', `cleaning up generated tests for ${file}`);
     // Accepted rounds are already COMMITTED, so the working tree is usually clean
     // here — select against the base branch, not `git status`.
-    const changed = await pr.changedTestFiles();
+    // Only this unit's own files: the verification below re-measures THIS unit, so a
+    // strip of an earlier method's test would be judged by a score that cannot see it.
+    const guess = repo.guessTestPath(unitPath(file), (f.rounds || 0) + 1, unitMethod(file) || '');
+    const changed = cleanupMod.ownedByUnit(await pr.changedTestFiles(), guess);
     if (!changed.length) S.event('preparing_pr', `cleanup: no generated test files found for ${file}`);
     const results = [];
     for (const p of changed.slice(0, 5)) {

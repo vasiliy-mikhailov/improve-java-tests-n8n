@@ -87,4 +87,20 @@ function worthCommitting(content) {
   return countTests(src) > 0;
 }
 
-module.exports = { extractCleanedFile, plausibleCleanup, worthCommitting };
+/**
+ * Of the test files changed on this branch, the ones belonging to THIS unit.
+ *
+ * The pass used to clean every changed file but re-measure only the current unit — so a
+ * strip that broke an earlier method's kill passed verification on a score that could not
+ * see it. It happened: JSONObjectGetElementTypeMacMutTest was stripped and kept while
+ * isNumberSimilar was current, having already been reverted once for dropping
+ * getElementType from 80 to 60. Earlier units' files were verified when those units were
+ * current; they are not this round's business.
+ */
+function ownedByUnit(changed, paths) {
+  const stem = (p) => String(p || '').replace(/Mac(Cov|Mut)(R\d+)?Test\.java$/, 'Mac');
+  const mine = new Set([stem(paths && paths.covPath), stem(paths && paths.mutPath)].filter(Boolean));
+  return (changed || []).filter((p) => mine.has(stem(p)) && /Mac(Cov|Mut)(R\d+)?Test\.java$/.test(p));
+}
+
+module.exports = { extractCleanedFile, plausibleCleanup, worthCommitting, ownedByUnit };

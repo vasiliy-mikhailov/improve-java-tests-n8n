@@ -127,3 +127,41 @@ test('a parameterised or repeated test counts as a test', () => {
   const p = 'package a;\nimport org.junit.jupiter.params.ParameterizedTest;\npublic class T {\n  @ParameterizedTest\n  void t(int x) { assertEquals(1, x); }\n}\n';
   assert.equal(worthCommitting(p), true);
 });
+
+// ── which files a cleanup may touch ───────────────────────────────────────
+const { ownedByUnit } = require('../../cleanup');
+
+test('a cleanup only touches the files of the unit it can re-measure', () => {
+  // The pass cleaned every changed test file on the branch but re-measured only the
+  // CURRENT unit. JSONObjectGetElementTypeMacMutTest.java was stripped again while
+  // isNumberSimilar was current, and "kept" on isNumberSimilar's score — the very file
+  // whose stripping had already been reverted once for dropping getElementType from
+  // 80 to 60. A verification that cannot see the thing it is verifying is not one.
+  const changed = [
+    'src/test/java/org/json/JSONObjectIsNumberSimilarMacMutTest.java',
+    'src/test/java/org/json/JSONObjectIsNumberSimilarMacMutR2Test.java',
+    'src/test/java/org/json/JSONObjectGetElementTypeMacMutTest.java',
+  ];
+  const mine = ownedByUnit(changed, { covPath: 'src/test/java/org/json/JSONObjectIsNumberSimilarMacCovTest.java',
+    mutPath: 'src/test/java/org/json/JSONObjectIsNumberSimilarMacMutTest.java' });
+  assert.deepEqual(mine, [
+    'src/test/java/org/json/JSONObjectIsNumberSimilarMacMutTest.java',
+    'src/test/java/org/json/JSONObjectIsNumberSimilarMacMutR2Test.java',
+  ]);
+});
+
+test('every round of the current unit is included, not just this one', () => {
+  const changed = ['src/test/java/a/BRunMacCovTest.java', 'src/test/java/a/BRunMacMutR4Test.java'];
+  const mine = ownedByUnit(changed, { covPath: 'src/test/java/a/BRunMacCovR2Test.java', mutPath: 'src/test/java/a/BRunMacMutR2Test.java' });
+  assert.deepEqual(mine.sort(), changed.slice().sort());
+});
+
+test('a sibling method of the same class is not ours to clean', () => {
+  const changed = ['src/test/java/a/BOtherMacMutTest.java'];
+  assert.deepEqual(ownedByUnit(changed, { covPath: 'src/test/java/a/BRunMacCovTest.java', mutPath: 'src/test/java/a/BRunMacMutTest.java' }), []);
+});
+
+test("the project's own test file is never a cleanup target", () => {
+  const changed = ['src/test/java/a/BTest.java'];
+  assert.deepEqual(ownedByUnit(changed, { covPath: 'src/test/java/a/BRunMacCovTest.java', mutPath: 'src/test/java/a/BRunMacMutTest.java' }), []);
+});
