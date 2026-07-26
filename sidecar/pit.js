@@ -206,21 +206,24 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
     if (moduleRel && moduleRel !== '.') compileArgv.push('-pl', moduleRel, '-am');
     const c = await run(compileArgv, { cwd: dir, timeoutMs: 1800000, label: 'compile', env: repo.buildEnv() });
     if (c.code !== 0) throw new Error('test-compile before PIT failed: ' + (c.stderr || c.stdout).slice(-600));
-    // Incremental analysis: PIT keeps a history of each mutant's fate keyed by the
-    // checksums of the mutated class and its tests, and skips re-running the ones that
-    // cannot have changed. Rounds re-measure the SAME method over and over — 306 mutants
-    // each time on XML#parse — so this is the difference between re-running everything
-    // and re-running what the new test could plausibly affect. The file lives outside the
-    // repo so `git clean` between rounds cannot delete it.
-    const histDir = path.join(DATA_DIR, 'pit-history', slugify(state.run.config.repoUrl));
-    fs.mkdirSync(histDir, { recursive: true });
-    const histFile = path.join(histDir, fqcn.replace(/[^\w.]/g, '_') + '.txt');
+    // Incremental analysis would be ideal here — rounds re-measure the same method over
+    // and over — but PIT 1.25 moved history behind the commercial arcmutate plugin:
+    // passing historyInputFile/historyOutputFile without it fails the whole run with
+    // "History has been enabled but no history plugin has been installed/activated".
+    // Off unless a deployment actually has that plugin.
+    const useHistory = String(process.env.PIT_HISTORY || 'false') === 'true';
+    let histFile = null;
+    if (useHistory) {
+      const histDir = path.join(DATA_DIR, 'pit-history', slugify(state.run.config.repoUrl));
+      fs.mkdirSync(histDir, { recursive: true });
+      histFile = path.join(histDir, fqcn.replace(/[^\w.]/g, '_') + '.txt');
+    }
     const argv = [state.runner.wrapper, '-B', '-ntp',
       `org.pitest:pitest-maven:${PIT_VERSION}:mutationCoverage`,
       `-DtargetClasses=${targetClasses}`, `-DtargetTests=${targetTests}`,
       `-Dmutators=${MUTATORS}`, '-DoutputFormats=XML', '-DtimestampedReports=false',
-      '-DfailWhenNoMutations=false', '-DtimeoutConstant=8000',
-      `-DhistoryInputFile=${histFile}`, `-DhistoryOutputFile=${histFile}`];
+      '-DfailWhenNoMutations=false', '-DtimeoutConstant=8000'];
+    if (histFile) argv.push(`-DhistoryInputFile=${histFile}`, `-DhistoryOutputFile=${histFile}`);
     if (excluded.length) argv.push(`-DexcludedMethods=${excluded.join(',')}`);
     // no -am here: dependencies are built by the compile step above, and -DskipTests
     // (which -am would need) makes PIT skip its own run
