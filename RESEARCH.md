@@ -1,5 +1,9 @@
 # Research: improve-java-tests-n8n — an adaptable n8n pipeline that raises test quality of any Java repo
 
+> Scope note: this document holds the **Definition of Done** and the **evaluation method**.
+> The problem statement, improvement loop and reward formula live in
+> [PROBLEM.md](PROBLEM.md); the implementation as built is described in [SPEC.md](SPEC.md).
+
 ## 1. Problem
 
 Teams own Java repositories (Maven or Gradle) whose test suites are green but weakly verifying.

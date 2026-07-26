@@ -5,8 +5,10 @@ produces **pull requests that improve tests**: higher JaCoCo line coverage, high
 mutation score, and higher **MAC = coverage % × mutation %** — one PR per improved class —
 with a live dashboard showing exactly what the pipeline is doing right now.
 
-See [RESEARCH.md](RESEARCH.md) for the problem statement, Definition of Done and reward formula,
-and [PROBLEM.md](PROBLEM.md) for the verbatim brief.
+[PROBLEM.md](PROBLEM.md) — what we want, the ralph loop and the reward formula.
+[SPEC.md](SPEC.md) — how the implementation actually works.
+[RESEARCH.md](RESEARCH.md) — the Definition of Done and evaluation method.
+[eval/RESULTS.md](eval/RESULTS.md) — iteration history, including the wrong turns.
 
 ## Quick start (a team adapting this to their repo)
 
