@@ -81,10 +81,16 @@ function detectBuild() {
   const hasGradle = ['build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts']
     .some((f) => fs.existsSync(path.join(dir, f)));
   const tool = hasPom ? 'maven' : hasGradle ? 'gradle' : null;
+  // the wrapper pins the Gradle version, and the PIT plugin has to match its API
+  let gradleVersion = null;
+  if (tool === 'gradle') {
+    const props = readTextSafe(path.join(dir, 'gradle', 'wrapper', 'gradle-wrapper.properties'), 20000);
+    gradleVersion = props.match(/gradle-([\d.]+)-(?:bin|all)/)?.[1] || null;
+  }
   const wrapper = tool === 'maven'
     ? (fs.existsSync(path.join(dir, 'mvnw')) ? './mvnw' : 'mvn')
     : (fs.existsSync(path.join(dir, 'gradlew')) ? './gradlew' : 'gradle');
-  return { tool, wrapper, hasPom, hasGradle };
+  return { tool, wrapper, hasPom, hasGradle, gradleVersion };
 }
 
 /**

@@ -25,6 +25,15 @@ const PIT_VERSION = process.env.PIT_VERSION || '1.25.8';
 const PIT_JUNIT5_VERSION = process.env.PIT_JUNIT5_VERSION || '1.2.3';
 const PIT_TESTNG_VERSION = process.env.PIT_TESTNG_VERSION || '1.0.0';
 const MUTATORS = process.env.PIT_MUTATORS || 'DEFAULTS';
+// gradle-pitest-plugin must match the project's Gradle: 1.15.0 reads
+// `reporting.baseDir`, which Gradle 9 removed, so applying it there fails outright with
+// "Could not get unknown property 'baseDir'" — that is why every Gradle repo produced
+// nothing. 1.19.0 works on 8/9; older projects keep the older plugin.
+function gradlePitestPluginVersion() {
+  if (process.env.GRADLE_PITEST_PLUGIN_VERSION) return process.env.GRADLE_PITEST_PLUGIN_VERSION;
+  const major = parseInt(String(state.runner?.gradleVersion || '').split('.')[0], 10);
+  return Number.isFinite(major) && major < 8 ? '1.15.0' : '1.19.0';
+}
 const INIT_SCRIPT = '.ijt-pitest.init.gradle';
 
 // ── Maven wiring ───────────────────────────────────────────────────────────
@@ -118,7 +127,7 @@ initscript {
     gradlePluginPortal()
     mavenCentral()
   }
-  dependencies { classpath 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:1.15.0' }
+  dependencies { classpath 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:${gradlePitestPluginVersion()}' }
 }
 allprojects { p ->
   p.plugins.withId('java') {
