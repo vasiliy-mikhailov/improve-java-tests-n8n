@@ -28,22 +28,22 @@ function envConfig() {
     // survivors offered to the model when it chooses which mutant to kill this round
     mutantChoices: parseInt(e.MUTANT_CHOICES || '20', 10),
     // rounds are cheap now, but a mutant-dense method still needs a ceiling
-    unitBudgetSec: parseInt(e.UNIT_BUDGET_SEC || '2400', 10),
+    unitBudgetSec: parseInt(e.UNIT_BUDGET_SEC || '3600', 10),
     maxAttemptsPerFile: parseInt(e.MAX_ATTEMPTS_PER_FILE || '3', 10),
     // diminishing-returns stop: a further round is only worth its ~10 min of
     // machine time if the last one closed a real share of the remaining MAC gap
-    minRoundGapFrac: parseFloat(e.MIN_ROUND_GAP_FRAC || '0.05'),
-    minRoundGain: parseFloat(e.MIN_ROUND_GAIN || '0.5'),
+    minRoundGapFrac: parseFloat(e.MIN_ROUND_GAP_FRAC || '0'),
+    minRoundGain: parseFloat(e.MIN_ROUND_GAIN || '0'),
     // a class with fewer mutants than this has no mutation surface worth a run
     // (annotations, marker interfaces, constants holders)
-    minMutantsPerClass: parseInt(e.MIN_MUTANTS_PER_CLASS || '3', 10),
+    minMutantsPerClass: parseInt(e.MIN_MUTANTS_PER_CLASS || '1', 10),
     // 'method' (default): rounds mutate one method at a time and project the class
     // score, with one class-wide measurement at the end. 'class': mutate everything
     // every round — honest but far slower.
     pitScope: e.PIT_SCOPE || 'method',
     // a method with fewer executable lines than this has no behaviour worth verifying
     // (one-line accessors, private utility-class constructors)
-    minUnitLines: parseInt(e.MIN_UNIT_LINES || '2', 10),
+    minUnitLines: parseInt(e.MIN_UNIT_LINES || '1', 10),
     // units we could not measure do not consume the scope quota, but too many of them
     // means the repo/toolchain is broken rather than the units
     maxFailures: parseInt(e.MAX_FAILURES || '10', 10),
