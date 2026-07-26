@@ -134,13 +134,24 @@ measured**. The guards that exist because of it:
 | units no public path reaches are dropped from the queue | a private method with no route in costs a pick, a PIT run, a model call and three misses — ~25 min to learn what the call graph already said |
 | among equally weak units, a directly callable one first | `isRecordStyleAccessor` (5 hops of private calls) outranked three callable methods on weakness alone |
 | the team rule **excludes**; the ranking **chooses** | asked to choose, the model took the fifth-ranked unit over three callable ones on the strength of "high potential" — the same judgement that lost 0-4 to PIT's data on mutant selection |
+| PIT method names XML-decoded (`&lt;init&gt;`, `&#60;init&#62;`) | JaCoCo gives `<init>`, PIT escapes it — so every constructor unit scoped to zero and was written off as having no mutation surface |
+| the mutated class matched exactly, or as `Fqcn$Inner` | `startsWith` counted `a.BFoo` as part of `a.B`, and with the method matched by name alone, `a.BFoo#run`'s kills were credited to `a.B#run` |
+| "could not measure" is its own outcome, recorded nowhere | `totalMutants ?? 0` turned a failed PIT run into a confident "0 mutants", settled the unit and wrote the invented zero into both ledgers |
+| a missed round decides for itself whether another follows | `/api/round/miss` echoed the PREVIOUS round's `continueRounds`; when verify stopped measuring, that stale `true` looped the run for ever |
+| the round-change guard counts TEST files only | `changedFiles()` includes the injected `pom.xml`, so "did this round change anything" was true in every round |
+| a target mutant is stamped with its round | a round whose mutation phase skipped inherited the last round's target, found it already dead, and announced a KILL it had not made |
+| branches this run owns are continued, not reset | the branch is per FILE and the unit is a METHOD, so `checkout -B` dropped the first method's already-PR'd commits and the force-push rewrote the PR |
+| `prBase` follows the branch actually resolved | frozen at the unresolved `REPO_BRANCH`, `gh pr create --base main` failed after the work was measured and committed |
+| a round writes exactly one file, at the planned path | only one existing test was guarded, so the model could name any other real test file and have it overwritten — then deleted when the suite went red |
+| setup overhead charged once per run | keyed on `iteration === 0`, and a no-mutation-surface skip REFUNDS its iteration, so each skip re-charged the whole elapsed time |
+| units with no mutation surface excluded from the repo mean | averaging their 0 % made the repo look weaker on the strength of methods that cannot be mutated |
 | per-stage token ceilings learned from `finish_reason` | 4 of 12 completions were truncated mid-JSON and re-run whole at ~100 s each, and nothing remembered it |
 
 ### How this is kept true
 
 Two kinds of test, and they answer different questions:
 
-- **unit tests** (`sidecar/test/unit/`, `npm test`) cover the code the workflow's nodes call.
+- **unit tests** (`sidecar/test/unit/`, `npm test` — 190 of them) cover the code the workflow's nodes call.
   Every case is a defect that actually shipped; the table above is, row by row, an
   assertion in that suite.
 - **e2e** is a straight-through run against a real repo — hundreds of methods, real Maven,
