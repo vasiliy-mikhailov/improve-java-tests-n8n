@@ -131,6 +131,17 @@ function findReports(dir) {
  * Regex-scanned rather than DOM-parsed: the sidecar is dependency-free by design and the
  * report's shape is fixed and flat.
  */
+/**
+ * XML attribute values are escaped, and JaCoCo writes constructors as `&lt;init&gt;`.
+ * Reading the raw attribute produced the literal string "&lt;init&gt;" as a method name,
+ * which then flowed into unit keys, PIT's excludedMethods (where it can never match) and
+ * the dashboard.
+ */
+function unesc(v) {
+  return String(v).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+}
+
 function mergeReport(acc, xml) {
   // <package name="com/x"> … </package>
   const pkgRe = /<package\s+name="([^"]*)"\s*>([\s\S]*?)<\/package>/g;
@@ -161,7 +172,7 @@ function mergeReport(acc, xml) {
       // are what makes the method the pipeline's unit of work: every method's line
       // coverage is known before a single mutation run.
       for (const mpart of frag.split(/<method\s+/).slice(1)) {
-        const mname = mpart.match(/^name="([^"]+)"/)?.[1];
+        const mname = unesc(mpart.match(/^name="([^"]+)"/)?.[1] || '');
         if (!mname) continue;
         const mline = parseInt(mpart.match(/\sline="(\d+)"/)?.[1] || '0', 10);
         const mend = mpart.indexOf('</method>');
@@ -234,4 +245,4 @@ function uncoveredLines(rel) {
   };
 }
 
-module.exports = { runCoverage, uncoveredLines, JACOCO_VERSION, mergeReport, lineCounter };
+module.exports = { runCoverage, uncoveredLines, JACOCO_VERSION, mergeReport, lineCounter, unesc };

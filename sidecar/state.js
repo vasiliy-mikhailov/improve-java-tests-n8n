@@ -31,6 +31,9 @@ function envConfig() {
     // score, with one class-wide measurement at the end. 'class': mutate everything
     // every round — honest but far slower.
     pitScope: e.PIT_SCOPE || 'method',
+    // a method with fewer executable lines than this has no behaviour worth verifying
+    // (one-line accessors, private utility-class constructors)
+    minUnitLines: parseInt(e.MIN_UNIT_LINES || '2', 10),
     prMode: e.PR_MODE || 'github', // github | local
     prBase: e.PR_BASE || '',       // defaults to repoBranch
     setupScript: e.SETUP_SCRIPT || '', // extra build goal/task to run after compile (e.g. 'shade')
@@ -51,7 +54,7 @@ function freshRun(overrides = {}) {
   const o = overrides && typeof overrides === 'object' ? overrides : {};
   for (const k of ['repoUrl', 'repoBranch', 'scopeGlob', 'scopeLimit', 'maxIterations',
     'maxMutantsPerFile', 'maxRoundsPerFile', 'maxAttemptsPerFile', 'minRoundGapFrac',
-    'minRoundGain', 'minMutantsPerClass', 'pitScope', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
+    'minRoundGain', 'minMutantsPerClass', 'pitScope', 'minUnitLines', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
     if (o[k] !== undefined && o[k] !== null && o[k] !== '') cfg[k] = o[k];
   }
   if (o.rules && typeof o.rules === 'object') {

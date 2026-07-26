@@ -187,7 +187,8 @@ function metricsPayload() {
  */
 function expandFilesIntoMethodUnits(classes) {
   const files = Object.values(state.files).filter((f) => !f.method);
-  let units = 0, skipped = 0;
+  const minUnitLines = state.run.config.minUnitLines ?? 2;
+  let units = 0, skipped = 0, trivial = 0;
   for (const f of files) {
     const fq = f.fqcn || repo.fqcnOf(f.path);
     const c = classes[fq];
@@ -196,6 +197,12 @@ function expandFilesIntoMethodUnits(classes) {
     for (const [name, m] of Object.entries(c.methods)) {
       const executable = m.missed + m.covered;
       if (executable <= 0) continue;                 // nothing to test in there
+      // Skip units with no behaviour to verify. A one-line private constructor, a
+      // getter that returns a field, a static initialiser: PIT finds nothing worth
+      // mutating and a run spent there buys nothing. The first Gradle run picked
+      // `Assertions#<init>()` — a private utility-class constructor — and failed on it.
+      if (name === '<clinit>') continue;
+      if (executable < minUnitLines) { trivial += 1; continue; }
       const key = `${f.path}::${name}`;
       state.files[key] = {
         path: f.path, method: name, fqcn: fq, module: f.module, lines: f.lines,
@@ -211,6 +218,7 @@ function expandFilesIntoMethodUnits(classes) {
   }
   if (units) {
     S.event('measuring_baseline', `unit of work is the METHOD: ${files.length} class(es) → ${units} method(s)`
+      + (trivial ? `; skipped ${trivial} trivial method(s) (< ${minUnitLines} executable lines)` : '')
       + (skipped ? `; ${skipped} class(es) had no executable method` : ''));
   }
   S.save();
