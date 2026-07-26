@@ -827,11 +827,22 @@ const routes = {
     const f = state.files[file];
     S.setStage('improving_mac', `verifying MAC improvement for ${file}`);
     try {
-      const suite = await tests.runTests(null);
+      // The coverage run executes the suite, so ask it whether the suite passed instead of
+      // running all 1163 tests a second time to learn the same thing. When its log does
+      // not say (`passed: null`), run them properly — an unclear log must never read green.
+      const cov = await coverage.runCoverage();
+      let suite = cov.suite;
+      if (!suite || suite.passed == null) {
+        S.event('tests', 'the coverage build did not report a test outcome — running the suite to be sure');
+        suite = await tests.runTests(null);
+      } else {
+        S.event('tests', `full suite: ${suite.passed ? 'green' : 'RED'}`
+          + (suite.tests ? ` (${suite.tests} tests, ${suite.failures + suite.errors} failing)` : '')
+          + ' — from the coverage run, not a second execution');
+      }
       if (!suite.passed) {
         return { ok: true, improved: false, testsGreen: false, reason: 'full suite red', summary: suite.summary, file };
       }
-      const cov = await coverage.runCoverage();
       // The unit IS a method, so PIT measures exactly it: the score needs no projection
       // and no class-wide reconciliation. MAC for the unit = method coverage x method
       // mutation score, both measured on the same method.

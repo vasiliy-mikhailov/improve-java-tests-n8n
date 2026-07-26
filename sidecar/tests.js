@@ -57,4 +57,45 @@ function failureSummary(out, passed) {
   return text.slice(-4000);
 }
 
-module.exports = { runTests, classNameOf };
+/**
+ * Did the suite pass, judged from the build log alone?
+ *
+ * verify used to run the full suite, then run it AGAIN under the JaCoCo agent, then let
+ * PIT run it a third time — three executions of 1163 tests per round on JSON-java, two of
+ * them saying the same thing. The coverage run passes
+ * `-Dmaven.test.failure.ignore=true` so its exit code is always 0; the reported counts are
+ * the only honest signal in it.
+ *
+ * `passed` is deliberately three-valued. NULL means "this log does not say", and the
+ * caller must then run the suite properly — reading an unclear log as green is exactly the
+ * kind of unmeasured claim this project keeps paying for.
+ *
+ * @returns {{passed: boolean|null, tests: number|null, failures: number|null, errors: number|null, summary: string}}
+ */
+function suiteOutcome(log) {
+  const out = String(log || '');
+  if (!out.trim()) return { passed: null, tests: null, failures: null, errors: null, summary: '' };
+
+  // Maven: the LAST "Tests run:" line is the aggregate across modules
+  const totals = [...out.matchAll(/Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+)/g)];
+  if (totals.length) {
+    const [, t, f, e] = totals[totals.length - 1].map(Number.isFinite ? String : String);
+    const tests = parseInt(t, 10), failures = parseInt(f, 10), errors = parseInt(e, 10);
+    // nothing ran → nothing was proven, whatever the build says
+    if (!tests) return { passed: null, tests, failures, errors, summary: failureSummary(out, false) };
+    const passed = failures === 0 && errors === 0 && !/COMPILATION ERROR/.test(out);
+    return { passed, tests, failures, errors, summary: failureSummary(out, passed) };
+  }
+  if (/COMPILATION ERROR|cannot find symbol/.test(out)) {
+    return { passed: false, tests: null, failures: null, errors: null, summary: failureSummary(out, false) };
+  }
+  // Gradle prints no counts on success
+  if (/^BUILD SUCCESSFUL/m.test(out)) return { passed: true, tests: null, failures: null, errors: null, summary: '' };
+  if (/^FAILURE: Build failed|Task :test FAILED/m.test(out)) {
+    return { passed: false, tests: null, failures: null, errors: null, summary: failureSummary(out, false) };
+  }
+  return { passed: null, tests: null, failures: null, errors: null, summary: '' };
+}
+
+module.exports = {
+  suiteOutcome, runTests, classNameOf };

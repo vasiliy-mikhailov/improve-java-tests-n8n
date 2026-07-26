@@ -13,6 +13,7 @@ const path = require('node:path');
 const { run } = require('./exec');
 const { state, event, upsertFile } = require('./state');
 const repo = require('./repo');
+const tests = require('./tests');
 const { round2 } = require('./util');
 
 const JACOCO_VERSION = process.env.JACOCO_VERSION || '0.8.12';
@@ -105,7 +106,11 @@ async function runCoverage() {
     }
   }
   event('coverage', `total line coverage ${totalPct}% over ${reports.length} JaCoCo report(s) (build exit ${r.code})`);
-  return { totalPct, files: byPath, exitCode: r.code, reports: reports.length, classes: merged.classes };
+  // This run EXECUTED the suite, so it already knows whether it passed — the caller does
+  // not need a second full execution to find out. `passed: null` means the log did not
+  // say, and the caller must run the tests properly rather than assume.
+  const suite = tests.suiteOutcome(r.stdout + '\n' + r.stderr);
+  return { totalPct, files: byPath, exitCode: r.code, reports: reports.length, classes: merged.classes, suite };
 }
 
 /**
