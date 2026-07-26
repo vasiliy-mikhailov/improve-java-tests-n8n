@@ -79,7 +79,7 @@ Mutator → the assertion that detects it:
 - RemoveConditional: assert that the guarded behaviour does NOT happen when the condition is false.
 - InlineConstant: assert the exact constant-derived value.
 - Switch: assert the outcome for each case label, including the default.
-NO_COVERAGE survivors are the cheapest kills: the line never runs at all, so simply calling the method with representative inputs and asserting the result usually removes a whole cluster of them. Do those first.`;
+Prefer SURVIVED over NO_COVERAGE. A SURVIVED mutant is on a line the suite already executes, so only an assertion is missing and a few lines of test will kill it. A NO_COVERAGE mutant is on a line nothing reaches: on an already well-covered method those are the leftovers behind error paths and awkward edge cases, and reaching them takes elaborate setup that often fails. Take a NO_COVERAGE mutant only when you can see plainly, from the code above, which inputs reach that line.`;
 
 // =============================================================================
 // SPINE
@@ -137,8 +137,11 @@ function phase(prefix, buildPromptCode, entryNode) {
 const resp = $json;
 const plan = $('${B('Build Prompt')}').first().json;
 let tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];
+const offered = $('Mut: Build Prompt').first().json.offered || [];
+const picked = (resp.json && resp.json.mutant != null) ? offered[Number(resp.json.mutant) - 1] : null;
 const chosen = (resp.json && resp.json.mutant != null)
-  ? { n: resp.json.mutant, why: String(resp.json.why || '').slice(0, 160) } : null;
+  ? { n: resp.json.mutant, why: String(resp.json.why || '').slice(0, 160),
+      line: picked && picked.line, mutator: picked && picked.mutator } : null;
 tests = tests
   .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)
   .slice(0, 1)
@@ -158,7 +161,7 @@ tests = tests
     return { path: p, content };
   });
 return [{ json: { tests, paths: tests.map(t => t.path), count: tests.length, chosen } }];`);
-  Http(B('Write Tests'), { path: '/api/test/write-many', body: `={{ { tests: $json.tests, stage: '${stage}', note: $json.chosen ? ('model chose mutant #' + $json.chosen.n + ' — ' + $json.chosen.why) : null } }}` });
+  Http(B('Write Tests'), { path: '/api/test/write-many', body: `={{ { tests: $json.tests, stage: '${stage}', note: $json.chosen ? ('model chose mutant #' + $json.chosen.n + ' — ' + $json.chosen.why) : null, targetMutant: $json.chosen || null } }}` });
   Http(B('Run Tests'), { path: '/api/test/run', body: `={{ { stage: '${stage}' } }}`, timeout: 3600000 });
   IfNum(B('Green?'), '={{ $json.passed ? 1 : 0 }}', 'equal', 1);
   IfNum(B('Wrote Any?'), `={{ $('${B('Parse Tests')}').first().json.count }}`, 'larger', 0);
@@ -290,6 +293,7 @@ const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', mo
 return [{ json: { system, prompt, json: true, maxTokens: single ? 2500 : 5000, temperature: 0.25,
   stage: 'improving_mutation',
   stageDetail: single ? ('choosing among ' + choices.length + ' surviving mutants') : 'writing mutant-killing tests',
+  offered: choices.map(m => ({ line: m.line, mutator: m.mutator, status: m.status })),
   targetPath, projectTestPath: gaps.projectTestPath } }];`,
   covDone);
 

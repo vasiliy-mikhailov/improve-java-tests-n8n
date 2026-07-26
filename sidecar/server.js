@@ -574,6 +574,11 @@ const routes = {
     // the model's own account of which mutant it chose and why — worth seeing on the
     // dashboard, since the choice drives the whole round
     if (body.note) S.event(body.stage || 'improving_mutation', String(body.note).slice(0, 300));
+    // remember WHICH mutant this round is trying to kill, so the next measurement can
+    // report whether it actually died instead of leaving us to infer it from a score
+    if (body.targetMutant && state.currentUnit) {
+      S.upsertFile(state.currentUnit, { targetMutant: body.targetMutant });
+    }
     const written = [], errors = [];
     for (const t of (body.tests || []).slice(0, 5)) {
       try {
@@ -691,6 +696,17 @@ const routes = {
       // mutation score, both measured on the same method.
       S.setStage('improving_mac', `re-measuring mutation score of ${unitLabel(file)}`);
       const st = await pit.runPit(file);
+      // Did the mutant this round aimed at actually die? An unchanged score says the
+      // round achieved nothing but not WHY; this distinguishes "the test never ran",
+      // "the test ran but does not distinguish the mutation" and "it worked".
+      const tm = f.targetMutant;
+      if (tm && tm.line) {
+        const stillAlive = (st.survived || []).some((m) => m.line === tm.line && m.mutator === tm.mutator);
+        S.event('improving_mac', `targeted mutant ${tm.mutator} at line ${tm.line}: `
+          + (stillAlive ? 'STILL ALIVE — the new test does not distinguish it' : 'KILLED')
+          + (st.testsRun ? ` (${st.testsRun} tests ran)` : ''));
+        S.upsertFile(file, { lastTargetKilled: !stillAlive });
+      }
       const coverageAfter = state.files[file].coverage;
       const macAfter = mac(coverageAfter, st.score);
       S.upsertFile(file, {

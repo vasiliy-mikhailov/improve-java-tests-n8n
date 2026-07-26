@@ -258,9 +258,14 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
   }
   const parsed = parseReport(reportAbs, fileRel, fqcn);
   parsed.scope = onlyMethod || 'class';
+  // PIT prints how many tests it ran; if our freshly written test is not in that number
+  // the round cannot possibly kill anything, and we should say so rather than report an
+  // unchanged score as if the test had simply been ineffective
+  parsed.testsRun = parseInt((r.stdout + r.stderr).match(/Ran (\d+) tests?/)?.[1] || '0', 10) || null;
   event('pit', `${fileRel}${onlyMethod ? ' [method ' + onlyMethod + '()]' : ''}: `
     + `${parsed.totalMutants} mutants, ${parsed.killed} killed, `
-    + `${parsed.survived.length} survived+nocov, score ${parsed.score}%`);
+    + `${parsed.survived.length} survived+nocov, score ${parsed.score}%`
+    + (parsed.testsRun ? ` (${parsed.testsRun} tests ran)` : ''));
   return parsed;
 }
 
@@ -345,9 +350,16 @@ function parseReport(reportAbs, fileRel, fqcn) {
     e.total += 1;
     if (m.detected) e.killed += 1; else e.survived += 1;
   }
+  // SURVIVED first, NO_COVERAGE last — the opposite of the intuition, and of what this
+  // code used to do. A SURVIVED mutant sits on a line the suite ALREADY executes: only an
+  // assertion is missing, which a short test can supply. A NO_COVERAGE mutant sits on a
+  // line nothing reaches, and on a method that is already well covered those are the hard
+  // leftovers — error paths and edge branches needing elaborate inputs. Offering those
+  // first is why four consecutive rounds on JSON-java killed nothing: the model dutifully
+  // picked NO_COVERAGE every time and could not reach the code.
   const survived = scored.filter((x) => !x.detected)
-    // NO_COVERAGE first: the cheapest kills — the line is never even executed
-    .sort((a, b) => (a.status === 'NO_COVERAGE' ? 0 : 1) - (b.status === 'NO_COVERAGE' ? 0 : 1));
+    .sort((a, b) => (a.status === 'SURVIVED' ? 0 : 1) - (b.status === 'SURVIVED' ? 0 : 1)
+      || (a.line || 0) - (b.line || 0));
   return { file: fileRel, fqcn, totalMutants: total, killed, score, survived, byMethod, report: path.basename(reportAbs) };
 }
 
