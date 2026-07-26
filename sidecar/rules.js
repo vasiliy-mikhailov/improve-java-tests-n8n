@@ -2,6 +2,7 @@
 // Per-stage team rules. Rule text comes from env/run config; application = LLM
 // interpretation with mechanical guardrails; results recorded in state.decisions.
 const { state, event } = require('./state');
+const { choosePick } = require('./pick');
 const { readFileSafe } = require('./repo');
 const { chat } = require('./llm');
 
@@ -67,59 +68,45 @@ async function applyPrePick(ruleText) {
 }
 
 async function applyPickFile(ruleText, { candidates = [] }) {
-  if (!candidates.length) return { file: null, reason: 'no candidates' };
-  // Mechanical default: lowest MAC (nulls treated as 0 → weakest tested first).
-  // …tie-broken towards the smaller file: same weakness, less mutant surface,
-  // so the round budget buys more of the gap
-  const ctor = (c) => (c.method === '<init>' || c.method === '<clinit>') ? 1 : 0;
-  const scored = candidates.slice().sort((a, b) => (a.mac ?? ((a.coverage ?? 0) * 0.01 * (a.mutation ?? 0))) - (b.mac ?? ((b.coverage ?? 0) * 0.01 * (b.mutation ?? 0)))
-    || ctor(a) - ctor(b)
-    || (b.executableLines ?? 0) - (a.executableLines ?? 0));
-  const fallback = { file: scored[0].path, reason: 'lowest MAC (mechanical pick)' };
-  if (!ruleText) return fallback;
+  // The candidates arrive already ranked weakest-first, with unreachable units removed
+  // (select.rankUnits). The model's job here is the TEAM RULE and nothing else: which
+  // candidates does it exclude? It used to choose outright, and chose the fifth-ranked
+  // unit — a private method three hops from any public entry — over three directly
+  // callable ones. Measurements choose; the rule vetoes.
+  if (!candidates.length) return choosePick([], []);
+  if (!ruleText) return choosePick(candidates, []);
+
   const table = candidates.slice(0, 80).map((c) =>
     `${c.path} | ${c.method ? 'method=' + c.method + '() ' : ''}coverage=${c.coverage ?? '?'}% `
-    + `mutation=${c.mutation ?? '?'}% mac=${c.mac ?? '?'} lines=${c.executableLines ?? c.lines ?? '?'} `
-    + `attempts=${c.attempts}`).join('\n');
+    + `mutation=${c.mutation ?? '?'}% mac=${c.mac ?? '?'} lines=${c.executableLines ?? c.lines ?? '?'}`).join('\n');
   const r = await chat({
-    system: 'You pick ONE UNIT OF WORK for automated Java test improvement. A unit is ONE METHOD, identified by the exact string "<source file>::<method>" as listed — reply with that whole string, never just the file. Honor the team rule strictly (e.g. exclusions). Prefer the weakest unit: lowest MAC (coverage x mutation score). IMPORTANT: "mutation=?" means the mutation score has NOT been measured yet — a method at 100% coverage may still assert nothing and lose every mutant, so those are PRIME candidates; high coverage is NOT a reason to skip. Prefer methods with real behaviour to kill mutants in (branches, arithmetic, parsing, state changes) over trivial getters, setters, toString and constructors that only assign fields. Reply ONLY with JSON: {"file": "<the unit string exactly as listed, including ::method>", "reason": "one line"}. Reply {"file": null, "reason": "..."} ONLY if the team rule excludes every candidate.',
-    prompt: `TEAM RULE (how to pick a file): ${ruleText}\n\nCANDIDATES (path | metrics):\n${table}`,
-    json: true, maxTokens: 800,
+    system: 'You apply ONE team rule to a list of candidate units for automated Java test improvement.'
+      + ' A unit is "<source file>::<method>". Do NOT choose which to work on — that is decided by measurements.'
+      + ' Your ONLY job: list the candidates the team rule EXCLUDES.'
+      + ' Reply ONLY with JSON: {"exclude": ["<exact unit string, or a source file path to exclude all its methods>", ...], "reason": "one line"}.'
+      + ' Exclude nothing unless the rule actually says so — an empty list is the normal answer for a rule that only expresses a preference.'
+      + ' Never exclude a unit merely for being small, well covered, or unmeasured.',
+    prompt: `TEAM RULE (how to pick a file): ${ruleText}\n\nCANDIDATES:\n${table}`,
+    json: true, maxTokens: 900, stage: 'picking_file',
   });
   const j = r.json;
-  if (j && j.file === null) {
-    // the rule itself excludes everything — terminal, no point retrying
-    state.pickFailures = 0;
-    return { file: null, retry: false, reason: j.reason || 'all candidates excluded by rule' };
+  if (!j || !Array.isArray(j.exclude)) {
+    // a transient model hiccup: retry rather than pick blind and risk violating the rule
+    state.pickFailures = (state.pickFailures || 0) + 1;
+    const retry = state.pickFailures < 3;
+    event('picking_file', `pick rule could not be applied (invalid LLM output, ${state.pickFailures}/3) — `
+      + (retry ? 'retrying' : 'giving up on this batch'));
+    return { file: null, retry, reason: 'pick rule could not be applied reliably; refusing a pick that might violate it' };
   }
-  if (j?.file && candidates.some((c) => c.path === j.file)) {
-    state.pickFailures = 0;
-    return { file: j.file, reason: j.reason || 'LLM pick' };
+  state.pickFailures = 0;
+  const decision = choosePick(candidates, j.exclude);
+  if (j.exclude.length) {
+    event('picking_file', `team rule excluded ${j.exclude.length} candidate(s)`
+      + (j.reason ? `: ${String(j.reason).slice(0, 160)}` : ''));
   }
-  // The model answered with a bare source file instead of a unit. That is a reasonable
-  // thing to say and used to kill the whole run ("unknown file"), so resolve it to that
-  // file's weakest method rather than throwing the pick away.
-  if (j?.file && !j.file.includes('::')) {
-    const inFile = scored.filter((c) => c.file === j.file);
-    if (inFile.length) {
-      state.pickFailures = 0;
-      event('picking_file', `pick named the file ${j.file}; resolved to its weakest method ${inFile[0].method}()`);
-      return { file: inFile[0].path, reason: (j.reason || 'LLM pick') + ` (resolved to ${inFile[0].method}())` };
-    }
-  }
-  // A team rule exists but the LLM pick is unusable: refuse a blind mechanical
-  // pick (it could select a file the rule excludes, e.g. "don't touch ui").
-  // This is usually a transient model hiccup, so ask the workflow to retry —
-  // but give up after a few consecutive failures instead of spinning.
-  state.pickFailures = (state.pickFailures || 0) + 1;
-  const retry = state.pickFailures < 3;
-  event('picking_file', `pick rule could not be applied (invalid LLM output, ${state.pickFailures}/3) — `
-    + (retry ? 'retrying with a fresh pick' : 'giving up on this batch'));
-  return {
-    file: null, retry,
-    reason: 'pick rule could not be applied reliably; refusing a mechanical pick that might violate team rules',
-  };
+  return decision;
 }
+
 
 async function applyCheckChanges(ruleText, ctx) {
   // Mechanical gate first: tests must be green and MAC must strictly improve.
