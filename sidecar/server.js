@@ -429,6 +429,10 @@ const routes = {
     // the reachability memo is keyed by repo-RELATIVE path, so it would answer for the
     // previous repo's file of the same name
     reachCache.clear();
+    // what this run learns about mutator kinds is about THIS repo and THIS run: carrying
+    // it over demotes a mutator in run B for misses that happened in run A
+    state.mutatorStats = {};
+    state.currentUnit = null;
     state.files = {};
     state.decisions = {};
     state.prs = [];
@@ -599,7 +603,16 @@ const routes = {
     // spending a whole run on such a class is how the first real-repo sweep produced
     // zero PRs across ten repositories.
     const minMutants = state.run.config.minMutantsPerClass ?? 3;
-    if (body.phase === 'baseline' && (r.totalMutants ?? 0) < minMutants) {
+    const verdict = roundsMod.classifyBaseline(r, minMutants);
+    if (body.phase === 'baseline' && verdict.kind === 'unmeasured') {
+      // not measuring is not measuring zero: record nothing, claim nothing
+      accrueSpent(file);
+      S.upsertFile(file, { status: 'failed', failure: verdict.reason });
+      S.event('improving_mutation', `${unitLabel(file)}: ${verdict.reason} — leaving its numbers unset`);
+      S.save();
+      return { ok: true, ...r, skip: true, unmeasured: true, reason: verdict.reason };
+    }
+    if (body.phase === 'baseline' && verdict.kind === 'no_mutants') {
       const spentSec = accrueSpent(file);
       // Skipping is FREE in both budgets. /api/iteration/start already charged an
       // iteration for this pick; give it back, or a couple of duds in a row end the run
@@ -609,8 +622,7 @@ const routes = {
       S.upsertFile(file, { status: 'no_mutants', coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac });
       recordMeasurement(file, { coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac, noMutants: true });
       ledger()[file] = { state: 'no_mutants', ts: Date.now(), metrics: { spentSec, totalMutants: r.totalMutants ?? 0 } };
-      S.event('improving_mutation', `${unitLabel(file)}: ${r.totalMutants ?? 0} mutants (min ${minMutants}) — `
-        + 'no meaningful mutation surface, skipping to the next method');
+      S.event('improving_mutation', `${unitLabel(file)}: ${verdict.reason}, skipping to the next method`);
       S.save();
       return { ok: true, ...r, skip: true, reason: 'too few mutants to improve' };
     }
@@ -855,7 +867,9 @@ const routes = {
         recordMeasurement(file, { attemptCoverage: coverageAfter, attemptMutation: st.score, attemptMac: macAfter });
       }
       const rounds = f.rounds || 0;
-      const maxRounds = state.run.config.maxRoundsPerFile || 5;
+      // 0 = uncapped (rounds.js honours that); `|| 5` silently made the documented
+      // "uncapped" setting a cap of five, and reported "round budget 5 spent"
+      const maxRounds = state.run.config.maxRoundsPerFile ?? 5;
       const elapsedSec = (f.spentSec || 0)
         + (f.attemptStartedAt ? Math.floor(Date.now() / 1000) - f.attemptStartedAt : 0);
       const { keepRound, continueRounds, gain, gapClosed, verdict } = roundsMod.decide({
@@ -909,8 +923,18 @@ const routes = {
     // throw away only this round's uncommitted test; every accepted round before it
     // stays committed on the branch
     await repo.discardUncommitted();
-    S.event('improving_mac', `dropped the round's test for ${unitLabel(file)} — moving to the next mutant`);
-    return { ok: true, file, continueRounds: !!f.continueRounds, rounds: f.rounds || 0 };
+    // Decide here. This used to echo f.continueRounds — the PREVIOUS round's answer — so a
+    // verify that failed to measure sent back a stale `true` and the workflow looped for
+    // ever, spending a suite, a JaCoCo run and a PIT run per cycle with nothing advancing.
+    const outcome = roundsMod.missOutcome({
+      consecutiveMisses: f.consecutiveMisses || 0,
+      maxMisses: state.run.config.maxConsecutiveMisses ?? 3,
+      survivorsLeft: (f.lastSurvived || []).length || null,
+    });
+    S.upsertFile(file, { consecutiveMisses: outcome.consecutiveMisses, continueRounds: outcome.continueRounds });
+    S.event('improving_mac', `dropped the round's test for ${unitLabel(file)} — ${outcome.verdict}`);
+    S.save();
+    return { ok: true, file, continueRounds: outcome.continueRounds, consecutiveMisses: outcome.consecutiveMisses, rounds: f.rounds || 0 };
   },
 
   'POST /api/round/accept': async (q, body) => {

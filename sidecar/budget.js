@@ -34,6 +34,9 @@ class Budget {
     return next;
   }
 
+  /** Would escalating from this ceiling actually buy room? */
+  grew(stage, current) { return Math.min(this.hardMax, current * 2) > current; }
+
   /** Feed back what a completion actually did. */
   record(stage, { finish, ceiling, completionTokens } = {}) {
     if (finish === 'length') { this.near[stage] = 0; this.escalate(stage, ceiling); return; }

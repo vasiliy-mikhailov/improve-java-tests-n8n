@@ -62,3 +62,12 @@ test('learning survives a restart', () => {
   const revived = new Budget(opts, b.toJSON());
   assert.equal(revived.ceiling('improving_mutation', 2500), 11000);
 });
+
+test('at the hard maximum there is nothing to escalate to, and the call is not repeated', () => {
+  // escalate() returns the same ceiling once capped, and llm.js re-issued a byte-identical
+  // request: another ~100-200 s for a deterministically identical truncated answer, with
+  // an event line claiming a bigger budget.
+  const b = new Budget(opts);
+  assert.equal(b.grew('improving_mutation', 16000), false, 'already at the cap');
+  assert.equal(b.grew('improving_mutation', 5500), true);
+});

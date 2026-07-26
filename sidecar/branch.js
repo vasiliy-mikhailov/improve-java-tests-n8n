@@ -42,4 +42,30 @@ function resolveBranch(configured, lsRemote) {
   };
 }
 
-module.exports = { resolveBranch };
+/**
+ * Whether to start a unit's branch afresh from the base, or continue on the branch that
+ * is already there.
+ *
+ * The branch is per FILE (that is what a PR is), but the unit of work is a METHOD. So the
+ * second method of a file lands on a branch that already carries the first method's
+ * accepted, committed — and possibly already PR'd — rounds. `git checkout -B <branch>
+ * <base>` moved that branch back to the base, and the later force-push rewrote the PR to
+ * contain only the second method's test. The first method's work disappeared from a pull
+ * request that had already been opened.
+ *
+ * A branch left behind by an EARLIER run is a different matter: its commits belong to a
+ * run that is over, the base may have moved, and starting from it would smuggle unmeasured
+ * changes into this run's baseline. Those are reset.
+ */
+function branchAction({ branch, owner, runId } = {}) {
+  if (owner && runId && owner === runId) {
+    return { action: 'reuse', branch, reason: 'this run already committed work for this file on that branch' };
+  }
+  return {
+    action: 'reset',
+    branch,
+    reason: owner ? 'the branch is left over from an earlier run' : 'no branch from this run yet',
+  };
+}
+
+module.exports = { resolveBranch, branchAction };

@@ -355,7 +355,25 @@ function killDifficulty(m) {
 }
 
 const MUTATION_RE = /<mutation\b([^>]*)>([\s\S]*?)<\/mutation>/g;
-const TAG = (body, name) => body.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1]?.trim() || '';
+
+/**
+ * XML entity decoding for values read out of the report.
+ *
+ * PIT escapes method names, so a constructor arrives as `&lt;init&gt;` (or `&#60;init&#62;`
+ * from older versions). Unit method names come from JaCoCo, which coverage.js already
+ * unescapes — so the two spellings never matched, and every constructor unit scoped to
+ * zero mutants and was written off as having no mutation surface.
+ */
+function unescapeXml(v) {
+  return String(v)
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+const TAG = (body, name) => unescapeXml(body.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1]?.trim() || '');
 
 function parseReport(reportAbs, fileRel, fqcn) {
   const xml = fs.readFileSync(reportAbs, 'utf8');
@@ -367,8 +385,11 @@ function parseReport(reportAbs, fileRel, fqcn) {
     const status = attrs.match(/status=['"]([^'"]+)['"]/)?.[1] || 'UNKNOWN';
     const detected = /detected=['"]true['"]/.test(attrs);
     const mutatedClass = TAG(body, 'mutatedClass');
-    // a PIT run can pull in inner classes; keep everything under the target class
-    if (mutatedClass && !mutatedClass.startsWith(fqcn)) continue;
+    // Inner and anonymous classes (a.B$Inner, a.B$1) belong to the target; a DIFFERENT
+    // class whose name merely begins with it (a.BFoo) does not. `startsWith` accepted
+    // both, and with the method filter matching on name alone, a.BFoo#run's kills were
+    // credited to a.B#run.
+    if (mutatedClass && mutatedClass !== fqcn && !mutatedClass.startsWith(fqcn + '$')) continue;
     mutants.push({
       status,
       detected,

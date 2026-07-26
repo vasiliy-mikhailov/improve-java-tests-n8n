@@ -8,11 +8,18 @@ const MIN_TEST_BYTES = 20;
 
 const usable = (t) => t && typeof t.content === 'string' && t.content.trim().length > MIN_TEST_BYTES;
 
-/** A generated file may only land inside the test tree, and never on the project's own test. */
+/**
+ * The round writes exactly one file, at the path the prompt demanded. Anything else is
+ * redirected there.
+ *
+ * The old check merely required the path to be inside src/test/java and not equal to the
+ * one existing test it knew about — so the model could name any OTHER real test file in
+ * the repo and have it overwritten with generated content. If the suite then went red,
+ * the workflow's Delete Broken Tests step removed the team's file from the repo.
+ */
 function safePath(raw, plan) {
   const p = typeof raw === 'string' ? raw.replace(/^\.?\//, '') : '';
-  const inTestTree = /(^|\/)src\/test\/java\/.+\.java$/.test(p) && !p.includes('..');
-  return !inTestTree || p === plan.projectTestPath ? plan.targetPath : p;
+  return p === plan.targetPath ? p : plan.targetPath;
 }
 
 /** javac refuses a public class whose name differs from the file name. */

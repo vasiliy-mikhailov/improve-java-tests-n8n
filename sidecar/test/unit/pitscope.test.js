@@ -80,3 +80,66 @@ test('constructors are addressable like any other method', () => {
   assert.equal(r.totalMutants, 1);
   assert.equal(r.survived.length, 1);
 });
+
+// ── parsing a real PIT report ─────────────────────────────────────────────
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { parseReport } = require('../../pit');
+
+function writeReport(mutations) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ijt-pit-'));
+  const file = path.join(dir, 'mutations.xml');
+  fs.writeFileSync(file, `<?xml version="1.0" encoding="UTF-8"?>\n<mutations>\n${mutations}\n</mutations>\n`);
+  return file;
+}
+const mutation = ({ cls = 'a.B', method = 'run', line = 10, detected = false, status = 'SURVIVED', mutator = 'MathMutator' }) =>
+  `<mutation detected='${detected}' status='${status}'>`
+  + `<sourceFile>B.java</sourceFile><mutatedClass>${cls}</mutatedClass><mutatedMethod>${method}</mutatedMethod>`
+  + `<lineNumber>${line}</lineNumber><mutator>org.pitest.mutationtest.engine.gregor.mutators.${mutator}</mutator>`
+  + `<description>mutated</description></mutation>`;
+
+test('a constructor arrives XML-escaped from PIT and must still be its own unit', () => {
+  // JaCoCo names give us "<init>"; PIT's report writer escapes it. Comparing the two
+  // matches nothing, so scopeToMethod returned 0 mutants and the unit was written off as
+  // having no mutation surface — for a constructor PIT had actually mutated.
+  const file = writeReport([
+    mutation({ method: '&lt;init&gt;', line: 5 }),
+    mutation({ method: '&lt;init&gt;', line: 6, detected: true, status: 'KILLED' }),
+    mutation({ method: 'run', line: 10 }),
+  ].join('\n'));
+  const parsed = parseReport(file, 'src/main/java/a/B.java', 'a.B');
+  assert.deepEqual([...new Set(parsed.all.map((m) => m.method))].sort(), ['<init>', 'run']);
+  const scoped = scopeToMethod(parsed, '<init>');
+  assert.equal(scoped.totalMutants, 2);
+  assert.equal(scoped.killed, 1);
+  assert.equal(scoped.empty, undefined === scoped.empty ? undefined : false);
+});
+
+test('the numeric escaping older PIT emits decodes too', () => {
+  const file = writeReport(mutation({ method: '&#60;init&#62;', line: 5 }));
+  const parsed = parseReport(file, 'src/main/java/a/B.java', 'a.B');
+  assert.equal(parsed.all[0].method, '<init>');
+});
+
+test('another class whose name merely starts with ours is not scored into the unit', () => {
+  // the filter was mutatedClass.startsWith(fqcn), so a.BFoo counted as a.B — and with a
+  // method filter by NAME only, a.BFoo#run was scored into a.B#run's result
+  const file = writeReport([
+    mutation({ cls: 'a.B', method: 'run', line: 10 }),
+    mutation({ cls: 'a.BFoo', method: 'run', line: 99, detected: true, status: 'KILLED' }),
+  ].join('\n'));
+  const parsed = parseReport(file, 'src/main/java/a/B.java', 'a.B');
+  assert.deepEqual(parsed.all.map((m) => m.line), [10], 'a.BFoo is a different class');
+  assert.equal(scopeToMethod(parsed, 'run').killed, 0, 'its kill must not be credited here');
+});
+
+test('an inner or anonymous class of the target still belongs to it', () => {
+  const file = writeReport([
+    mutation({ cls: 'a.B', method: 'run', line: 10 }),
+    mutation({ cls: 'a.B$Inner', method: 'run', line: 20 }),
+    mutation({ cls: 'a.B$1', method: 'run', line: 30 }),
+  ].join('\n'));
+  const parsed = parseReport(file, 'src/main/java/a/B.java', 'a.B');
+  assert.equal(parsed.all.length, 3);
+});

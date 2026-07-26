@@ -82,4 +82,51 @@ function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
     gapClosed: round2(gapClosed), effMinGain: round2(effMinGain), verdict };
 }
 
-module.exports = { decide, DEFAULTS };
+
+/**
+ * What a baseline PIT result means for a unit.
+ *
+ * `runPit` returns totalMutants null when it produced no usable result — the build broke,
+ * or no test ran. `(r.totalMutants ?? 0) < minMutants` turned that into a confident
+ * "0 mutants — no meaningful mutation surface", settled the unit for good and wrote the
+ * invented zero into both ledgers. Not measuring something is not the same as measuring
+ * nothing, and only one of the two may be recorded.
+ */
+function classifyBaseline(result, minMutants = 3) {
+  const total = result ? result.totalMutants : null;
+  if (total == null) {
+    return {
+      kind: 'unmeasured',
+      recordable: false,
+      reason: result && result.noTests
+        ? 'PIT ran no tests against this unit — its mutation score was not measured'
+        : 'PIT produced no usable result — this unit was not measured',
+    };
+  }
+  if (total < minMutants) {
+    return { kind: 'no_mutants', recordable: true, total, reason: `${total} mutant(s) (min ${minMutants}) — no meaningful mutation surface` };
+  }
+  return { kind: 'improvable', recordable: true, total };
+}
+
+/**
+ * A round that failed to kill its mutant. This decides whether another round follows —
+ * it must not be answered by echoing the previous round's `continueRounds`, which is what
+ * spun a run forever when verify stopped measuring: the stale `true` sent the workflow
+ * back for another round with nothing advancing.
+ */
+function missOutcome({ consecutiveMisses = 0, maxMisses = 3, survivorsLeft = null } = {}) {
+  const misses = consecutiveMisses + 1;
+  const workLeft = survivorsLeft == null || survivorsLeft > 0;
+  const missesLeft = maxMisses <= 0 || misses < maxMisses;
+  return {
+    consecutiveMisses: misses,
+    continueRounds: workLeft && missesLeft,
+    verdict: !workLeft ? 'MISS (no surviving mutants left — stop)'
+      : !missesLeft ? `MISS (${misses} in a row — stop)`
+        : `MISS (drop this round, try the next mutant — miss ${misses}/${maxMisses})`,
+  };
+}
+
+module.exports = {
+  classifyBaseline, missOutcome, decide, DEFAULTS };

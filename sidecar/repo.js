@@ -13,7 +13,7 @@ const path = require('node:path');
 const { run } = require('./exec');
 const { state, event, upsertFile, DATA_DIR } = require('./state');
 const { slugify, globsToMatcher } = require('./util');
-const { resolveBranch } = require('./branch');
+const { resolveBranch, branchAction } = require('./branch');
 const { generatedTestPaths, existingTestCandidates } = require('./testpaths');
 
 function repoDir() {
@@ -36,6 +36,10 @@ async function clone() {
   if (ls.code !== 0) throw new Error('cannot reach ' + cfg.repoUrl + ': ' + ls.stderr.slice(-300));
   const resolved = resolveBranch(cfg.repoBranch, ls.stdout);
   if (resolved.fellBack) event('cloning', resolved.reason);
+  // the PR base has to follow: it was frozen at the UNRESOLVED branch name, so on a repo
+  // whose default is not `main` every `gh pr create --base main` failed after the work
+  // had already been measured and committed
+  if (!cfg.prBase || cfg.prBase === cfg.repoBranch) cfg.prBase = resolved.branch;
   cfg.repoBranch = resolved.branch;
   if (fs.existsSync(path.join(dir, '.git'))) {
     event('cloning', 'repo exists, fetching latest');
@@ -372,11 +376,20 @@ function fqcnOf(rel) {
 async function createBranch(name) {
   const dir = repoDir();
   const cfg = state.run.config;
+  // A branch is per FILE — that is what a PR is — while a unit is a METHOD, so the second
+  // method of a file arrives at a branch already carrying the first method's committed
+  // (and possibly already PR'd) rounds. Resetting it there loses that work.
+  const owners = (state.run.branchOwners ||= {});
+  const decision = branchAction({ branch: name, owner: owners[name], runId: state.run.id });
   await run(['git', 'checkout', '-f', cfg.repoBranch], { cwd: dir, timeoutMs: 60000 });
   await run(['git', 'clean', '-fd'], { cwd: dir, timeoutMs: 60000 });
-  const r = await run(['git', 'checkout', '-B', name, cfg.repoBranch], { cwd: dir, timeoutMs: 60000 });
+  const argv = decision.action === 'reuse'
+    ? ['git', 'checkout', '-f', name]                       // continue on top of it
+    : ['git', 'checkout', '-B', name, cfg.repoBranch];      // start again from the base
+  const r = await run(argv, { cwd: dir, timeoutMs: 60000 });
   if (r.code !== 0) throw new Error('branch create failed: ' + r.stderr.slice(-300));
-  event('branching', 'working on branch ' + name);
+  owners[name] = state.run.id;
+  event('branching', `working on branch ${name} (${decision.action === 'reuse' ? 'continuing this run\'s work on it' : decision.reason})`);
   return name;
 }
 

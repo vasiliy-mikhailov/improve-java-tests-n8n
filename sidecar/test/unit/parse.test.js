@@ -65,3 +65,21 @@ test('repaired tests keep the original paths', () => {
   const r = parseRepairedTests({ ok: true, json: { tests: [{ path: 'wherever/It.java', content: body }] } }, prev);
   assert.equal(r.tests[0].path, plan.targetPath);
 });
+
+test("no answer may name a test file other than the one this round plans to write", () => {
+  // safePath only guarded plan.projectTestPath — the ONE existing test it knew about. Any
+  // other real test in the tree ("src/test/java/org/json/StringBuilderWriterTest.java")
+  // passed the check and was overwritten with generated content; if the suite then went
+  // red, Delete Broken Tests removed the team's file from the repo entirely.
+  const victim = 'src/test/java/org/json/StringBuilderWriterTest.java';
+  const r = parseGeneratedTests({ ok: true, json: { tests: [{ path: victim, content: body }] } }, plan);
+  assert.equal(r.tests[0].path, plan.targetPath);
+  assert.notEqual(r.tests[0].path, victim);
+});
+
+test('the planned path is the only path, however plausible the alternative looks', () => {
+  for (const p of ['src/test/java/a/BMacMutR2Test.java', 'src/test/java/a/Helper.java', plan.targetPath]) {
+    const r = parseGeneratedTests({ ok: true, json: { tests: [{ path: p, content: body }] } }, plan);
+    assert.equal(r.tests[0].path, plan.targetPath);
+  }
+});

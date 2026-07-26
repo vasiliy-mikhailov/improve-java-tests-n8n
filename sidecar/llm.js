@@ -64,7 +64,7 @@ async function chat(opts) {
     // formatting mistake — the model ran out of room mid-JSON, and asking it to "reply
     // with only the JSON" reruns the same wall for another minute or two. Give it room
     // instead; only a genuinely malformed answer gets the formatting nudge.
-    if (lastFinishReason === 'length') {
+    if (lastFinishReason === 'length' && budget.grew(stage, body.max_tokens || 4096)) {
       const bigger = budget.escalate(stage, body.max_tokens || 4096);
       state.llmBudget = budget.toJSON();
       save();
@@ -72,6 +72,12 @@ async function chat(opts) {
       const retry = await post({ ...body, max_tokens: bigger });
       parsed = extractJson(retry);
       if (parsed != null) return { text: retry, json: parsed };
+    }
+    if (parsed == null && lastFinishReason === 'length' && !budget.grew(stage, body.max_tokens || 4096)) {
+      // at the hard ceiling a retry is byte-identical: same request, same truncation,
+      // another two minutes. Say so instead of spending them.
+      event('llm', `response truncated at the maximum budget (${body.max_tokens} tokens) — not retrying an identical request`);
+      return { text, json: null };
     }
     if (parsed == null) {
       event('llm', 'JSON parse failed, retrying with repair nudge');
