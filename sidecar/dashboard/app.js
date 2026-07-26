@@ -23,31 +23,17 @@ const fmtDur = (sec) => {
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 };
 
+// The model exchanges belong IN the activity stream: read on their own they are just a
+// pile of prompts with no context, but interleaved with the events they sit between —
+// which mutant was chosen, which test was written, what PIT then said — they explain the
+// run. Cached here and merged into the feed at render time.
+let dialogCache = [];
 async function tickDialog() {
-  let d;
   try {
     const r = await fetch('api/llm/log', { cache: 'no-store' });
-    d = await r.json();
-  } catch { return; }
-  const el = $('llm-log');
-  const entries = d.entries || [];
-  $('llm-count').textContent = entries.length ? `(last ${entries.length} exchanges)` : '';
-  if (!entries.length) { el.innerHTML = '<span class="muted">no model calls yet</span>'; return; }
-  // keep whatever the reader has opened open across refreshes
-  const open = new Set([...el.querySelectorAll('details[open]')].map((n) => n.dataset.k));
-  el.innerHTML = entries.map((e) => {
-    const k = String(e.ts) + (e.stage || '');
-    const when = new Date(e.ts * 1000).toLocaleTimeString();
-    const unit = e.unit ? String(e.unit).replace(/^.*java\//, '') : '';
-    return `<details data-k="${esc(k)}"${open.has(k) ? ' open' : ''}>
-      <summary><span class="who">${esc(e.detail || e.stage || 'model call')}</span>
-        <span class="meta">${when} · ${e.secs}s${e.finish && e.finish !== 'stop' ? ' · ' + esc(e.finish) : ''}${unit ? ' · ' + esc(unit) : ''}</span></summary>
-      <div class="body">
-        <h4>system</h4><pre>${esc(e.system || '')}</pre>
-        <h4>prompt</h4><pre>${esc(e.prompt || '')}</pre>
-        <h4>response</h4><pre>${esc(e.response || '')}</pre>
-      </div></details>`;
-  }).join('');
+    const d = await r.json();
+    dialogCache = d.entries || [];
+  } catch { /* keep the previous copy */ }
 }
 
 async function tick() {
@@ -160,9 +146,32 @@ function render(m) {
     <details><summary><b>${esc(k)}</b> ${v.rule ? '· rule: “' + esc(v.rule).slice(0, 90) + '”' : '· (no rule set)'}</summary>
     <pre>${esc(JSON.stringify(v.result, null, 2)).slice(0, 2000)}</pre></details>`).join('') || '<span class="muted">none yet</span>';
 
-  $('events').innerHTML = (m.events || []).slice().reverse().map((e) => `
-    <div class="ev"><span class="ts">${new Date(e.ts * 1000).toLocaleTimeString()}</span>
-    <span class="badge b-stage">${esc(e.stage)}</span> ${esc(e.msg)}</div>`).join('');
+  // one chronological stream: plain events plus the model exchanges, newest first
+  const evs = (m.events || []).map((e) => ({ kind: 'ev', ts: e.ts, seq: e.seq, stage: e.stage, msg: e.msg }));
+  const dias = dialogCache.map((d, i) => ({ kind: 'llm', ts: d.ts, seq: 1e9 + i, d }));
+  const feed = evs.concat(dias).sort((a, b) => (b.ts - a.ts) || (b.seq - a.seq)).slice(0, 120);
+  $('llm-count').textContent = dialogCache.length ? `· ${dialogCache.length} model exchanges inline` : '';
+  const openKeys = new Set([...$('events').querySelectorAll('details[open]')].map((n) => n.dataset.k));
+  $('events').innerHTML = feed.map((it) => {
+    const when = new Date(it.ts * 1000).toLocaleTimeString();
+    if (it.kind === 'ev') {
+      return `<div class="ev"><span class="ts">${when}</span>
+        <span class="badge b-stage">${esc(it.stage)}</span> ${esc(it.msg)}</div>`;
+    }
+    const e = it.d;
+    const k = 'llm' + e.ts + (e.detail || '');
+    const unit = e.unit ? String(e.unit).replace(/^.*java\//, '') : '';
+    return `<details class="ev llm" data-k="${esc(k)}"${openKeys.has(k) ? ' open' : ''}>
+      <summary><span class="ts">${when}</span>
+        <span class="badge b-llm">model</span>
+        <span class="who">${esc(e.detail || e.stage || 'call')}</span>
+        <span class="meta">${e.secs}s${e.finish && e.finish !== 'stop' ? ' · ' + esc(e.finish) : ''}${unit ? ' · ' + esc(unit) : ''}</span></summary>
+      <div class="body">
+        <h4>system</h4><pre>${esc(e.system || '')}</pre>
+        <h4>prompt</h4><pre>${esc(e.prompt || '')}</pre>
+        <h4>response</h4><pre>${esc(e.response || '')}</pre>
+      </div></details>`;
+  }).join('');
 }
 
 tick();

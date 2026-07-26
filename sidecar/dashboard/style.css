@@ -60,7 +60,18 @@ details summary { cursor: pointer; padding: 4px 0; }
 .ev { padding: 3px 0; font-size: 12.5px; border-bottom: 1px solid #21262d; }
 .ev .ts { color: #8b949e; font-family: ui-monospace, monospace; margin-right: 8px; }
 
-/* live model dialog: what was asked and what came back, newest first */
+/* model exchanges, inline in the activity stream */
+.ev.llm { border: 1px solid #21262d; border-radius: 8px; background: #0f141a; margin: 4px 0; }
+.ev.llm summary { cursor: pointer; padding: 4px 8px; list-style: none; }
+.ev.llm summary::-webkit-details-marker { display: none; }
+.ev.llm summary:hover { background: #161b22; border-radius: 8px; }
+.ev.llm .who { color: #e6edf3; }
+.ev.llm .meta { color: #7d8590; margin-left: 8px; font-size: 12px; }
+.badge.b-llm { background: #1f2b3a; color: #79c0ff; }
+.ev.llm .body { padding: 0 12px 12px; }
+.ev.llm h4 { margin: 10px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #7d8590; }
+.ev.llm pre { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 10px;
+  max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
 .llmlog details { border: 1px solid #21262d; border-radius: 8px; margin-bottom: 8px; background: #0f141a; }
 .llmlog summary { cursor: pointer; padding: 8px 12px; font-size: 13px; }
 .llmlog summary .who { color: #79c0ff; font-weight: 600; }
