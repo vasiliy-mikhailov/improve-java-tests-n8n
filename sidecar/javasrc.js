@@ -118,7 +118,13 @@ function callersOf(source, method) {
     if (isDecl) {
       current = name === method
         ? null                                    // inside the target itself: not a caller
-        : { method: name, visibility: visibilityOf(line.slice(0, line.indexOf(name))) };
+        : {
+          method: name,
+          visibility: visibilityOf(line.slice(0, line.indexOf(name))),
+          // the DECLARATION, not just the name: a hint that says "call nextEntity()" when
+          // the method is nextEntity(char) produces a test that will not compile
+          signature: line.trim().replace(/\s*\{\s*$/, '').replace(/^(public|private|protected)\s+/, ''),
+        };
     }
     // a one-line method declares and calls on the same line, so check both, not either
     if (current && call.test(line) && !out.some((c) => c.method === current.method)) {

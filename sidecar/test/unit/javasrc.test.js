@@ -226,3 +226,32 @@ test('a cycle between private helpers does not hang the search', () => {
   assert.equal(route[0].method, 'entry');
   assert.equal(route[route.length - 1].method, 'target');
 });
+
+test('a route step carries the signature a test must actually call', () => {
+  // The hint printed "nextEntity()" — name and empty parens — so the model wrote exactly
+  // that and the test would not compile: "method nextEntity cannot be applied to given
+  // types". Six rounds on XMLTokener#isValidDecimal were lost to it.
+  const src = `public class T {
+    public Object nextEntity(char ampersand) throws JSONException {
+        return isValidDecimal(buffer);
+    }
+
+    private boolean isValidDecimal(StringBuilder sb) { return true; }
+}
+`;
+  const [route] = routesTo(src, 'isValidDecimal');
+  const entry = route[0];
+  assert.equal(entry.method, 'nextEntity');
+  assert.match(entry.signature, /nextEntity\(char ampersand\)/,
+    'the parameter list is what makes the call compile');
+});
+
+test('a no-argument route step still reads as a callable signature', () => {
+  const src = `public class T {
+    public void run() { helper(); }
+    private void helper() { }
+}
+`;
+  const [route] = routesTo(src, 'helper');
+  assert.match(route[0].signature, /run\(\s*\)/);
+});

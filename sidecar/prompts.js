@@ -63,8 +63,11 @@ function reachBlock(gaps) {
   if (!routes.length) return '';
   // the whole path, in the order a test travels it: public entry → private hops → target.
   // Naming only the direct caller pointed the model at another method it could not call.
+  // the full declaration of each hop, not just its name: "call nextEntity()" when the
+  // method is nextEntity(char) yields a test that does not compile, and six rounds on
+  // XMLTokener#isValidDecimal were spent that way
   const list = routes.slice(0, 3).map((r) => '- ' + r.map((step, i) =>
-    `${step.method}()${i === 0 ? ' [public — call this]' : ''}`).join(' → ')).join('\n');
+    `${step.signature || step.method + '()'}${i === 0 ? '  [public — call this]' : ''}`).join('\n    → ')).join('\n');
   return `\n\nREACHED VIA: ${gaps.method}() is ${vis}, so a test CANNOT call it directly and must NOT use reflection.`
     + ` Reach it along this path, choosing arguments that make execution flow all the way through:\n${list}`
     + `\nAssert on what the public call returns or changes — that is what distinguishes the real code from the mutation.`;
