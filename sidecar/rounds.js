@@ -120,7 +120,10 @@ function classifyBaseline(result, minMutants = 3) {
  * back for another round with nothing advancing.
  */
 function missOutcome({ consecutiveMisses = 0, maxMisses = 3, survivorsLeft = null } = {}) {
-  const misses = consecutiveMisses + 1;
+  // The count arrives ALREADY incremented by verify, which owns it. Incrementing again
+  // here made every missed round count twice — the log read "miss 2/3" and then "4 in a
+  // row — stop", ending units at half the configured budget.
+  const misses = consecutiveMisses;
   const workLeft = survivorsLeft == null || survivorsLeft > 0;
   const missesLeft = maxMisses <= 0 || misses < maxMisses;
   return {

@@ -396,6 +396,12 @@ async function createBranch(name) {
 /** Discard uncommitted changes on the current branch, keeping its commits. */
 async function discardUncommitted() {
   const dir = repoDir();
+  // `git reset` FIRST. Producing a diff for the dashboard runs `git add -N` on new test
+  // files so they appear in it, and an intent-to-add entry makes the file tracked as far
+  // as `git clean` is concerned — so a missed round's test survived the discard as a
+  // zero-byte file and rode into a prepared PR. Unstaging first costs nothing: accepted
+  // rounds are already committed.
+  await run(['git', 'reset', '--quiet'], { cwd: dir, timeoutMs: 60000 });
   await run(['git', 'checkout', '--', '.'], { cwd: dir, timeoutMs: 60000 });
   await run(['git', 'clean', '-fd'], { cwd: dir, timeoutMs: 60000 });
 }

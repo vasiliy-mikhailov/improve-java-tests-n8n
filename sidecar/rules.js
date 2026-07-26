@@ -141,8 +141,23 @@ async function applyMakePr(ruleText, ctx) {
   const dflt = { title: dfltTitle, body: dfltBody, labels: [] };
   if (!ruleText) return dflt;
   const r = await chat({
-    system: 'You prepare a GitHub pull request for automated test improvements, following the team rule for PR style. Reply ONLY with JSON: {"title": "...", "body": "markdown", "labels": ["..."]}. Include the before/after metrics table in the body.',
-    prompt: `TEAM RULE (how to make a PR): ${ruleText}\n\nREPO DOCS:\n${repoContextHead()}\n\nFILE: ${ctx.file}\nBRANCH: ${ctx.branch}\nMETRICS: coverage ${ctx.coverageBefore}%→${ctx.coverageAfter}%, mutation ${ctx.mutationBefore}%→${ctx.mutationAfter}%, MAC ${ctx.macBefore}→${ctx.macAfter}\nCHANGED TEST FILES: ${(ctx.changedFiles || []).join(', ')}`,
+    // The body may state ONLY what this run measured. A generated PR claimed "Tests pass
+    // on Java 1.6 - 25" for work verified on one JDK — the reviewer's trust in every other
+    // number on the page rests on none of them being invented.
+    system: 'You prepare a GitHub pull request for automated test improvements, following the team rule for PR style.'
+      + ' Reply ONLY with JSON: {"title": "...", "body": "markdown", "labels": ["..."]}.'
+      + ' Include the before/after metrics table in the body, with the numbers given to you and no others.'
+      + ' State ONLY what the facts below establish. Do NOT claim compatibility with JDKs, platforms or'
+      + ' versions that are not listed, do not claim the change is backward compatible, does not affect'
+      + ' performance, or was reviewed — none of that was measured. A checklist item you cannot support'
+      + ' from the facts below must be left out entirely rather than ticked.',
+    prompt: `TEAM RULE (how to make a PR): ${ruleText}\n\nREPO DOCS:\n${repoContextHead()}`
+      + `\n\nTHE FACTS — everything this run established, and the only things the body may assert:`
+      + `\nFILE: ${ctx.file}\nBRANCH: ${ctx.branch}`
+      + `\nMETRICS: coverage ${ctx.coverageBefore}%→${ctx.coverageAfter}%, mutation ${ctx.mutationBefore}%→${ctx.mutationAfter}%, MAC ${ctx.macBefore}→${ctx.macAfter}`
+      + `\nTEST SUITE: green after the change`
+      + `\nVERIFIED ON: JDK ${state.runner?.jdk?.chosen ?? '?'}, ${state.runner?.tool ?? '?'}, ${state.runner?.testFramework ?? '?'} — and no other configuration`
+      + `\nCHANGED TEST FILES: ${(ctx.changedFiles || []).join(', ')}`,
     json: true, maxTokens: 2000,
   });
   const j = r.json;

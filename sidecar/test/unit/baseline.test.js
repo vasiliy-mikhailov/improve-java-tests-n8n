@@ -34,20 +34,24 @@ test('an unmeasured unit is never recorded as a measurement', () => {
 });
 
 // ── what a missed round decides ───────────────────────────────────────────
-test('a miss counts, and the next round runs while misses remain', () => {
-  const r = missOutcome({ consecutiveMisses: 0, maxMisses: 3, survivorsLeft: 12 });
-  assert.equal(r.consecutiveMisses, 1);
+test('the next round runs while misses remain', () => {
+  const r = missOutcome({ consecutiveMisses: 1, maxMisses: 3, survivorsLeft: 12 });
   assert.equal(r.continueRounds, true);
 });
 
 test('the miss cap ends the unit', () => {
-  const r = missOutcome({ consecutiveMisses: 2, maxMisses: 3, survivorsLeft: 12 });
-  assert.equal(r.consecutiveMisses, 3);
-  assert.equal(r.continueRounds, false);
+  assert.equal(missOutcome({ consecutiveMisses: 3, maxMisses: 3, survivorsLeft: 12 }).continueRounds, false);
+});
+
+test('the count is read, never incremented here — verify already did that', () => {
+  // both verify and /api/round/miss incremented, so every missed round counted twice:
+  // the log said "miss 2/3" and then "4 in a row — stop", ending units at half the
+  // budget the operator configured
+  assert.equal(missOutcome({ consecutiveMisses: 2, maxMisses: 3, survivorsLeft: 12 }).consecutiveMisses, 2);
 });
 
 test('a miss with nothing left to attack ends the unit whatever the count says', () => {
-  assert.equal(missOutcome({ consecutiveMisses: 0, maxMisses: 3, survivorsLeft: 0 }).continueRounds, false);
+  assert.equal(missOutcome({ consecutiveMisses: 1, maxMisses: 3, survivorsLeft: 0 }).continueRounds, false);
 });
 
 test('the decision is made here, never echoed from the last round', () => {
