@@ -168,7 +168,10 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
   const pkg = fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '';
   const cls = fqcn.slice(fqcn.lastIndexOf('.') + 1);
   // the class's own tests, ours, and anything else named after it
-  const targetTests = pkg ? `${pkg}.${cls}*Test*` : `${cls}*Test*`;
+  // Leading wildcard on purpose: a project's tests frequently sit in a sibling package
+  // (org.json.junit.XMLTest for org.json.XML), and a package-anchored glob matches none
+  // of them.
+  const targetTests = `*${cls}*Test*`;
   const targetClasses = `${fqcn}*`;   // includes inner classes
 
   // Method scoping. PIT's cost is (mutants × suite time) and a class-wide run re-mutates
@@ -184,6 +187,13 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
     .map((u) => u.method);
   const known = siblings.length ? siblings : Object.keys(f.methodStats?.byMethod || {});
   const excluded = onlyMethod ? [...new Set(known)].filter((m) => m !== onlyMethod) : [];
+
+  // Delete any previous report FIRST. findReport() falls back to "newest mutations.xml
+  // anywhere", so when a run produces nothing it used to return the PREVIOUS unit's
+  // report; parseReport then filtered it by this class, found none of its mutants and
+  // reported "0 mutants" — a real method with 25 mutants was written off as having no
+  // mutation surface and skipped. A missing report must read as a failure, never as zero.
+  for (const stale of findAllReports(dir)) { try { fs.unlinkSync(stale); } catch { } }
 
   let r;
   if (state.runner.tool === 'maven') {
@@ -249,6 +259,23 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
     + `${parsed.totalMutants} mutants, ${parsed.killed} killed, `
     + `${parsed.survived.length} survived+nocov, score ${parsed.score}%`);
   return parsed;
+}
+
+/** Every mutations.xml under the repo — used to clear stale reports before a run. */
+function findAllReports(dir) {
+  const out = [];
+  const walk = (d, depth) => {
+    if (depth > 7) return;
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const ent of entries) {
+      const p = path.join(d, ent.name);
+      if (ent.isDirectory()) { if (ent.name !== '.git') walk(p, depth + 1); }
+      else if (ent.name === 'mutations.xml') out.push(p);
+    }
+  };
+  walk(dir, 0);
+  return out;
 }
 
 function findReport(dir, moduleRel) {
