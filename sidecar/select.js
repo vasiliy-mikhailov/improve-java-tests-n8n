@@ -1,0 +1,45 @@
+'use strict';
+// Which surviving mutant to attack next.
+//
+// The order comes from PIT's own data — mutator kind, SURVIVED before NO_COVERAGE, both
+// folded into `difficulty` by pit.js — and from what has actually died in THIS run. It
+// never comes from asking the model which mutant it fancies: that judgement was
+// confidently wrong on four consecutive rounds, every time naming a RemoveConditional
+// mutant it then could not distinguish.
+
+const attemptKey = (m) => `${m.mutator}@${m.line}`;
+
+/**
+ * How badly this run's evidence argues against a mutator kind. 0 = no objection.
+ *
+ * The first version was `tried >= 2 && killed === 0 ? 1 : 0`, which let a single early
+ * kill immunise a kind permanently: ConditionalsBoundary killed once at line 73, then
+ * missed at 164, 191 and 234 while staying at the top of the queue every round. Kill
+ * RATE decides now, and a kind that has never killed anything is still the worst bet.
+ */
+function penalty(st) {
+  if (!st || st.tried < 2) return 0;          // one miss is noise, not evidence
+  if (st.killed === 0) return 2;              // repeatedly attacked, never once died
+  const rate = st.killed / st.tried;
+  if (rate < 0.4) return 1;                   // mostly missing → behind the untried kinds
+  // evidence cuts both ways: a kind this run keeps killing is a better bet than one we
+  // have never tried, even where PIT rates them equally hard
+  return rate >= 0.6 ? -1 : 0;
+}
+
+/** Survivors we have not already attacked and failed to kill. */
+function eligible(list, attempted) {
+  const tried = new Set(attempted || []);
+  return (list || []).filter((m) => !tried.has(attemptKey(m)));
+}
+
+/** Best bet first. Stable and deterministic: same input, same round, same choice. */
+function rankSurvivors(list, stats) {
+  const st = stats || {};
+  return (list || []).slice().sort((a, b) =>
+    penalty(st[a.mutator]) - penalty(st[b.mutator])
+    || (a.difficulty ?? 1) - (b.difficulty ?? 1)
+    || (a.line || 0) - (b.line || 0));
+}
+
+module.exports = { rankSurvivors, eligible, penalty, attemptKey };

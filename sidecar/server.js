@@ -16,6 +16,7 @@ const timesheet = require('./timesheet');
 const roundsMod = require('./rounds');
 const prompts = require('./prompts');
 const parse = require('./parse');
+const select = require('./select');
 const { run } = require('./exec');
 const { mac, fileSlug, round2, clamp, slugify } = require('./util');
 
@@ -95,22 +96,8 @@ function refreshTotals() {
   state.run.measuredFiles = files.length;
 }
 
-/**
- * Re-rank survivors using this run's evidence: a mutator kind we have attacked twice
- * without a single kill is demoted below everything else, whatever its static difficulty
- * says. The pipeline learns which mutants are worth its time from its own results.
- */
-function rankSurvivors(list) {
-  const stats = state.mutatorStats || {};
-  return list.slice().sort((a, b) => {
-    const pa = penalty(stats[a.mutator]), pb = penalty(stats[b.mutator]);
-    return pa - pb || (a.difficulty ?? 1) - (b.difficulty ?? 1) || (a.line || 0) - (b.line || 0);
-  });
-}
-function penalty(st) {
-  if (!st || st.tried < 2) return 0;
-  return st.killed > 0 ? 0 : 1;      // tried repeatedly, never killed → last resort
-}
+/** Ranking and eligibility live in sidecar/select.js under unit test. */
+const rankSurvivors = (list) => select.rankSurvivors(list, state.mutatorStats || {});
 
 function metricsPayload() {
   refreshTotals();
@@ -300,8 +287,7 @@ function gapsFor(p) {
     // re-measures, so the list is fresh — a kill often takes neighbours with it and
     // those simply disappear — but a survivor we already attacked and left alive is a
     // known dead end for this approach, and re-picking it burns the round.
-    survived: rankSurvivors((f.lastSurvived || []).filter((m) =>
-      !(f.attemptedMutants || []).includes(`${m.mutator}@${m.line}`))),
+    survived: rankSurvivors(select.eligible(f.lastSurvived || [], f.attemptedMutants || [])),
     attemptedMutants: (f.attemptedMutants || []).length,
     targetMethod: f.targetMethod || null,
     fqcn,
@@ -643,7 +629,7 @@ const routes = {
     if (body.targetMutant && state.currentUnit) {
       const u = state.files[state.currentUnit] || {};
       const tried = (u.attemptedMutants || []).slice();
-      const key = `${body.targetMutant.mutator}@${body.targetMutant.line}`;
+      const key = select.attemptKey(body.targetMutant);
       if (body.targetMutant.line && !tried.includes(key)) tried.push(key);
       S.upsertFile(state.currentUnit, { targetMutant: body.targetMutant, attemptedMutants: tried });
     }
