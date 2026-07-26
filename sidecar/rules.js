@@ -71,7 +71,10 @@ async function applyPickFile(ruleText, { candidates = [] }) {
   // Mechanical default: lowest MAC (nulls treated as 0 → weakest tested first).
   // …tie-broken towards the smaller file: same weakness, less mutant surface,
   // so the round budget buys more of the gap
-  const scored = candidates.slice().sort((a, b) => (a.mac ?? ((a.coverage ?? 0) * 0.01 * (a.mutation ?? 0))) - (b.mac ?? ((b.coverage ?? 0) * 0.01 * (b.mutation ?? 0))) || (a.coverage ?? 0) - (b.coverage ?? 0) || (a.lines ?? 0) - (b.lines ?? 0));
+  const ctor = (c) => (c.method === '<init>' || c.method === '<clinit>') ? 1 : 0;
+  const scored = candidates.slice().sort((a, b) => (a.mac ?? ((a.coverage ?? 0) * 0.01 * (a.mutation ?? 0))) - (b.mac ?? ((b.coverage ?? 0) * 0.01 * (b.mutation ?? 0)))
+    || ctor(a) - ctor(b)
+    || (b.executableLines ?? 0) - (a.executableLines ?? 0));
   const fallback = { file: scored[0].path, reason: 'lowest MAC (mechanical pick)' };
   if (!ruleText) return fallback;
   const table = candidates.slice(0, 80).map((c) =>
@@ -79,7 +82,7 @@ async function applyPickFile(ruleText, { candidates = [] }) {
     + `mutation=${c.mutation ?? '?'}% mac=${c.mac ?? '?'} lines=${c.executableLines ?? c.lines ?? '?'} `
     + `attempts=${c.attempts}`).join('\n');
   const r = await chat({
-    system: 'You pick ONE UNIT OF WORK for automated Java test improvement. A unit is ONE METHOD, identified by the exact string "<source file>::<method>" as listed — reply with that whole string, never just the file. Honor the team rule strictly (e.g. exclusions). Prefer the weakest unit: lowest MAC (coverage x mutation score). IMPORTANT: "mutation=?" means the mutation score has NOT been measured yet — a method at 100% coverage may still assert nothing and lose every mutant, so those are PRIME candidates; high coverage is NOT a reason to skip. Prefer methods with real behaviour to kill mutants in (branches, arithmetic, parsing, state changes) over trivial getters, setters and toString. Reply ONLY with JSON: {"file": "<the unit string exactly as listed, including ::method>", "reason": "one line"}. Reply {"file": null, "reason": "..."} ONLY if the team rule excludes every candidate.',
+    system: 'You pick ONE UNIT OF WORK for automated Java test improvement. A unit is ONE METHOD, identified by the exact string "<source file>::<method>" as listed — reply with that whole string, never just the file. Honor the team rule strictly (e.g. exclusions). Prefer the weakest unit: lowest MAC (coverage x mutation score). IMPORTANT: "mutation=?" means the mutation score has NOT been measured yet — a method at 100% coverage may still assert nothing and lose every mutant, so those are PRIME candidates; high coverage is NOT a reason to skip. Prefer methods with real behaviour to kill mutants in (branches, arithmetic, parsing, state changes) over trivial getters, setters, toString and constructors that only assign fields. Reply ONLY with JSON: {"file": "<the unit string exactly as listed, including ::method>", "reason": "one line"}. Reply {"file": null, "reason": "..."} ONLY if the team rule excludes every candidate.',
     prompt: `TEAM RULE (how to pick a file): ${ruleText}\n\nCANDIDATES (path | metrics):\n${table}`,
     json: true, maxTokens: 800,
   });

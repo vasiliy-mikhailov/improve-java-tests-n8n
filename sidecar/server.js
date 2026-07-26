@@ -229,6 +229,8 @@ function expandFilesIntoMethodUnits(classes) {
   S.save();
 }
 
+const isCtor = (m) => m === '<init>' || m === '<clinit>';
+
 function candidates() {
   const cfg = state.run.config;
   const maxAttempts = cfg.maxAttemptsPerFile || 3;
@@ -254,9 +256,14 @@ function candidates() {
       attempts: f.attempts, lines: f.lines ?? null, mutants: f.totalMutants ?? null,
       executableLines: f.executableLines ?? null,
     }))
-    // weakest first, and among equally weak classes the one with the MOST executable
-    // code: that is where the mutants — and therefore the achievable gain — are
+    // Weakest first; among equally weak units the one with the MOST executable code,
+    // because that is where the mutants — and the achievable gain — are. Constructors
+    // sort last within a tie: they are usually field assignment with nothing to assert,
+    // and they kept winning the pick on real repos (Cookie#<init>, Assertions#<init>).
+    // Not excluded, though — a constructor with validation logic is a fair target once
+    // the genuinely behavioural methods are done.
     .sort((a, b) => (a.mac ?? (a.coverage ?? 0) / 2) - (b.mac ?? (b.coverage ?? 0) / 2)
+      || (isCtor(a.method) ? 1 : 0) - (isCtor(b.method) ? 1 : 0)
       || (b.executableLines ?? b.lines ?? 0) - (a.executableLines ?? a.lines ?? 0));
   let done = false, reason = '';
   if (cfg.maxIterations > 0 && state.run.iteration >= cfg.maxIterations) { done = true; reason = `max iterations (${cfg.maxIterations}) reached`; }
