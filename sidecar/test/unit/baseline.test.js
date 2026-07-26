@@ -129,3 +129,21 @@ test("a new attempt at a unit inherits no target from the previous one", () => {
   assert.deepEqual(targetForRound({ mutator: 'NullReturnValsMutator', line: 416, round: 1, attempt: 3 }, 1, 3),
     { mutator: 'NullReturnValsMutator', line: 416, round: 1, attempt: 3 });
 });
+
+test('a round that had nothing to ask for ends the unit, it does not count as a miss', () => {
+  // XML#isStringAllWhiteSpace is private with no public route, so the mutation prompt
+  // correctly skips — but each skip was counted as a MISS, so the unit burned three
+  // rounds, settled, and was re-picked twice more: nine empty rounds, each paying for a
+  // PIT run and a coverage run. A miss means a test was written and failed to kill;
+  // nothing was written here.
+  const r = missOutcome({ consecutiveMisses: 1, maxMisses: 3, survivorsLeft: 5, nothingToAsk: true });
+  assert.equal(r.continueRounds, false);
+  assert.equal(r.settle, true);
+  assert.match(r.verdict, /nothing to ask|no work/i);
+});
+
+test('an ordinary miss is unaffected', () => {
+  const r = missOutcome({ consecutiveMisses: 1, maxMisses: 3, survivorsLeft: 5 });
+  assert.equal(r.continueRounds, true);
+  assert.notEqual(r.settle, true);
+});

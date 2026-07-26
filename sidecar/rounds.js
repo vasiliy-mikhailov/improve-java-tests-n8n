@@ -137,7 +137,19 @@ function classifyBaseline(result, minMutants = 3) {
  * spun a run forever when verify stopped measuring: the stale `true` sent the workflow
  * back for another round with nothing advancing.
  */
-function missOutcome({ consecutiveMisses = 0, maxMisses = 3, survivorsLeft = null } = {}) {
+function missOutcome({ consecutiveMisses = 0, maxMisses = 3, survivorsLeft = null, nothingToAsk = false } = {}) {
+  // A round where BOTH phases skipped wrote no test at all — there was nothing to ask the
+  // model for. Counting that as a miss made a unit with no reachable route burn three
+  // rounds, settle, and come back for two more attempts: nine rounds, each paying for a
+  // PIT run and a coverage run, to re-learn the same thing.
+  if (nothingToAsk) {
+    return {
+      consecutiveMisses,
+      continueRounds: false,
+      settle: true,
+      verdict: 'NOTHING TO ASK (no work this round could do — settling the unit)',
+    };
+  }
   // The count arrives ALREADY incremented by verify, which owns it. Incrementing again
   // here made every missed round count twice — the log read "miss 2/3" and then "4 in a
   // row — stop", ending units at half the configured budget.
