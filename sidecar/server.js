@@ -17,6 +17,7 @@ const roundsMod = require('./rounds');
 const prompts = require('./prompts');
 const parse = require('./parse');
 const select = require('./select');
+const cleanupMod = require('./cleanup');
 const measure = require('./measure');
 const javasrc = require('./javasrc');
 const { run } = require('./exec');
@@ -746,14 +747,17 @@ const routes = {
           prompt: original,
           maxTokens: 9000, temperature: 0.1,
         });
-        const cleaned = (r.text || '').replace(/^[\s\S]*?<\/think>/, '')
-          .replace(/^```[a-z]*\s*\n?/m, '').replace(/```\s*$/m, '').trim() + '\n';
-        const plausible = cleaned.length > 200 && /\b(it|test|describe)\s*\(/.test(cleaned)
-          && cleaned.length >= original.length * 0.2 && cleaned.length <= original.length * 1.2;
-        if (!plausible || cleaned === original) {
-          results.push({ path: p, kept: 'original', reason: !plausible ? 'implausible cleanup output' : 'no changes' });
+        const cleaned = cleanupMod.extractCleanedFile(r.text);
+        // the gate used to ask whether the result contained `it(` / `describe(` — vitest
+        // shapes no Java file has, so every cleanup on a Java repo was rejected unread
+        const verdict = cleanupMod.plausibleCleanup(original, cleaned);
+        if (!verdict.ok) {
+          S.event('preparing_pr', `cleanup of ${p} not applied: ${verdict.reason}`);
+          results.push({ path: p, kept: 'original', reason: verdict.reason });
           continue;
         }
+        S.event('preparing_pr', `cleanup of ${p}: ${verdict.testsBefore} test(s) → ${verdict.testsAfter}, `
+          + `${original.length}→${cleaned.length} bytes (pending re-measurement)`);
         repo.writeTestFile(p, cleaned);
         results.push({ path: p, kept: 'cleaned', bytesBefore: original.length, bytesAfter: cleaned.length, _original: original });
       } catch (e) { results.push({ path: p, kept: 'original', reason: e.message.slice(0, 200) }); }
