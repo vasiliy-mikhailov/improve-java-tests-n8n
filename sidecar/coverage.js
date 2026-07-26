@@ -37,6 +37,7 @@ async function runCoverage() {
   const dir = repo.repoDir();
   const build = state.runner;
   if (!build?.tool) throw new Error('build not detected — call /api/repo/prepare first');
+  clearStaleCoverage(dir);
   let r;
   if (build.tool === 'maven') {
     const g = `org.jacoco:jacoco-maven-plugin:${JACOCO_VERSION}`;
@@ -105,6 +106,51 @@ async function runCoverage() {
   }
   event('coverage', `total line coverage ${totalPct}% over ${reports.length} JaCoCo report(s) (build exit ${r.code})`);
   return { totalPct, files: byPath, exitCode: r.code, reports: reports.length, classes: merged.classes };
+}
+
+/**
+ * Delete last run's exec data and reports. Belt and braces: the enumerated paths cover
+ * Maven and Gradle in every module we know about, and any jacoco XML still on disk
+ * afterwards is removed too — findReports() would otherwise read it as this run's result.
+ */
+function clearStaleCoverage(dir) {
+  const modules = [...new Set(Object.values(state.files).map((f) => f.module).filter(Boolean))];
+  let removed = 0;
+  for (const rel of staleCoverageArtifacts(modules.length ? modules : ['.'])) {
+    try { fs.unlinkSync(path.join(dir, rel)); removed += 1; } catch { /* not there */ }
+  }
+  for (const abs of findReports(dir)) {
+    try { fs.unlinkSync(abs); removed += 1; } catch { /* ignore */ }
+  }
+  if (removed) event('coverage', `cleared ${removed} stale JaCoCo artefact(s) — exec data accumulates across runs, and a leftover report reads exactly like a fresh one`);
+}
+
+/**
+ * Coverage artefacts that MUST be deleted before a run.
+ *
+ * JaCoCo's Maven plugin appends to jacoco.exec, and `target/` is gitignored, so
+ * `git clean -fd` (no -x) leaves it in place. On JSON-java the file reached 10 MB, and
+ * JSONArray#getNumber measured 0% covered in one run and 100% in the next — the 100% was
+ * produced by a generated test that had already been deleted. The XML report matters just
+ * as much: a stale one parses exactly like a fresh one, which is how a stale mutations.xml
+ * once reported "0 mutants" for a 25-mutant method.
+ */
+function staleCoverageArtifacts(modules) {
+  const mods = (modules && modules.length ? modules : ['.'])
+    // never name anything outside the repo for deletion
+    .map((m) => String(m || '.').replace(/^\.\//, ''))
+    .filter((m) => m === '.' || (!m.startsWith('/') && !m.split('/').includes('..')));
+  const perModule = [
+    'target/jacoco.exec',
+    'target/site/jacoco/jacoco.xml',
+    'build/jacoco/test.exec',
+    'build/reports/jacoco/test/jacocoTestReport.xml',
+  ];
+  const out = new Set();
+  for (const m of mods) {
+    for (const rel of perModule) out.add(m === '.' ? rel : `${m}/${rel}`);
+  }
+  return [...out];
 }
 
 /** Every jacoco XML report under the repo (one per module). */
@@ -245,4 +291,5 @@ function uncoveredLines(rel) {
   };
 }
 
-module.exports = { runCoverage, uncoveredLines, JACOCO_VERSION, mergeReport, lineCounter, unesc };
+module.exports = {
+  staleCoverageArtifacts, runCoverage, uncoveredLines, JACOCO_VERSION, mergeReport, lineCounter, unesc };

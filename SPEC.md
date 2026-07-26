@@ -114,6 +114,7 @@ measured**. The guards that exist because of it:
 
 | guard | the failure it prevents |
 |---|---|
+| JaCoCo exec data and reports deleted before every coverage run | `jacoco.exec` is APPENDED to and `target/` is gitignored, so `git clean -fd` leaves it: on JSON-java it reached 10 MB and `JSONArray#getNumber` measured 0 % covered in one run and 100 % in the next — the 100 % produced by a generated test that had already been deleted |
 | stale `mutations.xml` deleted before every PIT run | a failed run parsed the previous unit's report and recorded "0 mutants" for a 25-mutant method |
 | a missing report is a failure, never a zero | same |
 | PIT "no tests" + JaCoCo coverage > 0 → **UNMEASURED**, not 0 | a tested class reported as 0 % mutation |
