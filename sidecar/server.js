@@ -457,7 +457,10 @@ const routes = {
     }
     const f = state.files[file] || S.upsertFile(file, {});
     const fileMac = mac(f.coverage, r.score);
-    S.upsertFile(file, { mutation: r.score, mac: fileMac, totalMutants: r.totalMutants, lastSurvived: (r.survived || []).slice(0, 10) });
+    // keep as many survivors as the model is offered to choose from, or it silently
+    // picks from a shorter list than MUTANT_CHOICES promises
+    const keepSurvivors = Math.max(10, state.run.config.mutantChoices ?? 20);
+    S.upsertFile(file, { mutation: r.score, mac: fileMac, totalMutants: r.totalMutants, lastSurvived: (r.survived || []).slice(0, keepSurvivors) });
     // Nothing to mutate → nothing to improve, and MAC is pinned at 0 for ever. Constants
     // holders, marker interfaces and annotations land here. Settle the file immediately
     // WITHOUT charging it to the batch's file quota, and let the workflow pick another:
@@ -687,7 +690,7 @@ const routes = {
       const macAfter = mac(coverageAfter, st.score);
       S.upsertFile(file, {
         mutation: st.score, mac: macAfter, macAfter, coverageAfter, mutationAfter: st.score,
-        lastSurvived: (st.survived || []).slice(0, 10),
+        lastSurvived: (st.survived || []).slice(0, Math.max(10, state.run.config.mutantChoices ?? 20)),
       });
       state.run.result.coveragePct = cov.totalPct;
       refreshTotals();
