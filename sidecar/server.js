@@ -93,6 +93,23 @@ function refreshTotals() {
   state.run.measuredFiles = files.length;
 }
 
+/**
+ * Re-rank survivors using this run's evidence: a mutator kind we have attacked twice
+ * without a single kill is demoted below everything else, whatever its static difficulty
+ * says. The pipeline learns which mutants are worth its time from its own results.
+ */
+function rankSurvivors(list) {
+  const stats = state.mutatorStats || {};
+  return list.slice().sort((a, b) => {
+    const pa = penalty(stats[a.mutator]), pb = penalty(stats[b.mutator]);
+    return pa - pb || (a.difficulty ?? 1) - (b.difficulty ?? 1) || (a.line || 0) - (b.line || 0);
+  });
+}
+function penalty(st) {
+  if (!st || st.tried < 2) return 0;
+  return st.killed > 0 ? 0 : 1;      // tried repeatedly, never killed → last resort
+}
+
 function metricsPayload() {
   refreshTotals();
   const files = Object.values(state.files).sort((a, b) => (a.mac ?? 999) - (b.mac ?? 999));
@@ -535,12 +552,15 @@ const routes = {
       method: f.method || null,
       methodLine: f.methodLine || null,
       rounds: f.rounds || 0,
+      // Ordering comes from PIT's own data (mutator kind, SURVIVED vs NO_COVERAGE) and
+      // from what has ACTUALLY been killed in this run — never from the model's opinion
+      // about what it can kill, which was confidently wrong four rounds running.
       // Never offer a mutant we have already tried and failed to kill. Each round
       // re-measures, so the list is fresh — a kill often takes neighbours with it and
       // those simply disappear — but a survivor we already attacked and left alive is a
       // known dead end for this approach, and re-picking it burns the round.
-      survived: (f.lastSurvived || []).filter((m) =>
-        !(f.attemptedMutants || []).includes(`${m.mutator}@${m.line}`)),
+      survived: rankSurvivors((f.lastSurvived || []).filter((m) =>
+        !(f.attemptedMutants || []).includes(`${m.mutator}@${m.line}`))),
       attemptedMutants: (f.attemptedMutants || []).length,
       targetMethod: f.targetMethod || null,
       fqcn,
@@ -722,6 +742,15 @@ const routes = {
           + (killedNow > 1 ? ` — and took ${killedNow - 1} other mutant(s) with it` : '')
           + (st.testsRun ? ` (${st.testsRun} tests ran)` : ''));
         S.upsertFile(file, { lastTargetKilled: !stillAlive });
+        const ms = (state.mutatorStats ||= {});
+        const e = (ms[tm.mutator] ||= { tried: 0, killed: 0 });
+        e.tried += 1;
+        if (!stillAlive) e.killed += 1;
+        if (e.tried >= 2 && e.killed === 0) {
+          S.event('improving_mac', `${tm.mutator} has survived ${e.tried} attempts in this run — `
+            + 'demoting that mutator kind behind everything else');
+        }
+        S.save();
       }
       const coverageAfter = state.files[file].coverage;
       const macAfter = mac(coverageAfter, st.score);

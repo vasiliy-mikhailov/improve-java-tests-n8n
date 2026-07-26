@@ -104,3 +104,28 @@ test('thresholds are configurable', () => {
   const loose = decide({ ...base, macBase: 0, macAfter: 0.38, minGapFrac: 0, minGain: 0 });
   assert.equal(loose.continueRounds, true);
 });
+
+// ── mutant selection comes from PIT's data, not from anyone's judgement ──────
+const { killDifficulty } = require('../pit');
+
+test('value-returning and arithmetic mutants rank ahead of conditional removal', () => {
+  // Empirical, from JSON-java: four consecutive rounds targeted
+  // RemoveConditionalMutator_EQUAL_ELSE on the model's confident reasoning and every one
+  // survived. A changed return value is settled by one assertion; a removed equality
+  // guard often leaves behaviour nothing short can distinguish.
+  const easy = killDifficulty({ mutator: 'ReturnValsMutator', status: 'SURVIVED' });
+  const math = killDifficulty({ mutator: 'MathMutator', status: 'SURVIVED' });
+  const hard = killDifficulty({ mutator: 'RemoveConditionalMutator_EQUAL_ELSE', status: 'SURVIVED' });
+  assert.ok(easy < hard && math < hard);
+});
+
+test('a covered mutant always ranks ahead of an uncovered one of the same kind', () => {
+  const covered = killDifficulty({ mutator: 'MathMutator', status: 'SURVIVED' });
+  const uncovered = killDifficulty({ mutator: 'MathMutator', status: 'NO_COVERAGE' });
+  assert.ok(covered < uncovered, 'SURVIVED needs only an assertion; NO_COVERAGE needs the path reached');
+});
+
+test('even an easy mutator ranks behind a covered hard one when uncovered', () => {
+  assert.ok(killDifficulty({ mutator: 'RemoveConditionalMutator', status: 'SURVIVED' })
+    < killDifficulty({ mutator: 'ReturnValsMutator', status: 'NO_COVERAGE' }));
+});

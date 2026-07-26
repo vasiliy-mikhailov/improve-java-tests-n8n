@@ -138,10 +138,7 @@ const resp = $json;
 const plan = $('${B('Build Prompt')}').first().json;
 let tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];
 const offered = $('Mut: Build Prompt').first().json.offered || [];
-const picked = (resp.json && resp.json.mutant != null) ? offered[Number(resp.json.mutant) - 1] : null;
-const chosen = (resp.json && resp.json.mutant != null)
-  ? { n: resp.json.mutant, why: String(resp.json.why || '').slice(0, 160),
-      line: picked && picked.line, mutator: picked && picked.mutator } : null;
+const chosen = offered[0] ? { line: offered[0].line, mutator: offered[0].mutator } : null;
 tests = tests
   .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)
   .slice(0, 1)
@@ -161,7 +158,7 @@ tests = tests
     return { path: p, content };
   });
 return [{ json: { tests, paths: tests.map(t => t.path), count: tests.length, chosen } }];`);
-  Http(B('Write Tests'), { path: '/api/test/write-many', body: `={{ { tests: $json.tests, stage: '${stage}', note: $json.chosen ? ('model chose mutant #' + $json.chosen.n + ' — ' + $json.chosen.why) : null, targetMutant: $json.chosen || null } }}` });
+  Http(B('Write Tests'), { path: '/api/test/write-many', body: `={{ { tests: $json.tests, stage: '${stage}', note: $json.chosen ? ('targeting ' + $json.chosen.mutator + ' at line ' + $json.chosen.line) : null, targetMutant: $json.chosen || null } }}` });
   Http(B('Run Tests'), { path: '/api/test/run', body: `={{ { stage: '${stage}' } }}`, timeout: 3600000 });
   IfNum(B('Green?'), '={{ $json.passed ? 1 : 0 }}', 'equal', 1);
   IfNum(B('Wrote Any?'), `={{ $('${B('Parse Tests')}').first().json.count }}`, 'larger', 0);
@@ -257,8 +254,13 @@ const allSurvived = (gaps.survived && gaps.survived.length) ? gaps.survived : ($
 // drags neighbouring mutants down with it, where the mechanical order only knows
 // NO_COVERAGE before SURVIVED. It picks and writes in the same call, so choosing costs no
 // extra round-trip, and the choice and its reason are recorded.
+// The TARGET is chosen from PIT's data (mutator kind, SURVIVED before NO_COVERAGE, and
+// this run's actual kill record), not by asking the model which one it fancies — that
+// judgement was confidently wrong on four consecutive rounds, every time picking a
+// RemoveConditional mutant it could not distinguish. The survivor list arrives ranked;
+// the model's job is to write the test for the one at the front.
 const single = (gaps.mutantsPerRound || 1) === 1;
-const choices = allSurvived.slice(0, single ? (gaps.mutantChoices || 20) : (gaps.mutantsPerRound || 1));
+const choices = allSurvived.slice(0, single ? 1 : (gaps.mutantsPerRound || 1));
 if (!choices.length) return [{ json: { skip: true, reason: gaps.attemptedMutants
   ? ('every remaining survivor has already been attempted (' + gaps.attemptedMutants + ' tried)')
   : 'no surviving mutants', targetPath, projectTestPath: gaps.projectTestPath } }];
@@ -269,9 +271,7 @@ const mutantsTxt = choices.map((m, i) =>
 const RULES = ${JSON.stringify(COMMON_TEST_RULES)};
 const PLAYBOOK = ${JSON.stringify(MUTATOR_PLAYBOOK)};
 const framework = gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5';
-const replyShape = single
-  ? '{"mutant": 3, "why": "one line", "tests":[{"path":"...","content":"full test file content"}]} — where "mutant" is the NUMBER of the mutant you chose (a bare integer, no angle brackets, no text)'
-  : '{"tests":[{"path":"...","content":"full test file content"}]}';
+const replyShape = '{"tests":[{"path":"...","content":"full test file content"}]}';
 const system = 'You are an expert Java test engineer killing surviving PIT mutants of ONE METHOD, one at a time, writing ' + framework + ' tests. A mutant is killed when at least one test FAILS on the mutated code while PASSING on the real code — so the test must assert something that DISTINGUISHES the two. Reply ONLY with JSON: ' + replyShape + '. Create a NEW test class only. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES + PLAYBOOK
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
 // the METHOD, not the whole class: prompt size drives latency, and the rest of a
@@ -293,7 +293,9 @@ const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', mo
 // small answers arrive sooner and compile far more often than sprawling ones
 return [{ json: { system, prompt, json: true, maxTokens: single ? 2500 : 5000, temperature: 0.25,
   stage: 'improving_mutation',
-  stageDetail: single ? ('choosing among ' + choices.length + ' surviving mutants') : 'writing mutant-killing tests',
+  stageDetail: single && choices[0]
+    ? ('killing ' + choices[0].mutator + ' at line ' + choices[0].line)
+    : 'writing mutant-killing tests',
   offered: choices.map(m => ({ line: m.line, mutator: m.mutator, status: m.status })),
   targetPath, projectTestPath: gaps.projectTestPath } }];`,
   covDone);

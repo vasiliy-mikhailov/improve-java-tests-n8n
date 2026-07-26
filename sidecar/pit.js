@@ -312,6 +312,29 @@ function findReport(dir, moduleRel) {
   return all.map((p) => ({ p, m: fs.statSync(p).mtimeMs })).sort((a, b) => b.m - a.m)[0].p;
 }
 
+/**
+ * How hard a mutant is to kill, from ITS OWN PROPERTIES — not from anyone's opinion.
+ * Lower is easier, and the order is what the pipeline attacks first.
+ *
+ * The ranking is empirical. Watching JSON-java, four consecutive rounds picked
+ * RemoveConditionalMutator_EQUAL_ELSE on the model's confident reasoning and every one
+ * survived: removing an equality guard usually leaves behaviour that a short test cannot
+ * distinguish, and often nothing can (an equivalent mutant). Value-returning and
+ * arithmetic mutants are the opposite — the method returns a different value, so one
+ * assertion on the return value settles it.
+ *
+ * SURVIVED beats NO_COVERAGE at every difficulty: the line already executes, so only an
+ * assertion is missing rather than a whole path to reach.
+ */
+function killDifficulty(m) {
+  const k = String(m.mutator || '');
+  const easy = /(ReturnVals|PrimitiveReturns|BooleanTrueReturn|BooleanFalseReturn|EmptyObjectReturn|NullReturn|Math|Increments|InlineConstant|ConditionalsBoundary|NegateConditionals|Switch)/;
+  const hard = /(RemoveConditional|VoidMethodCall|ConstructorCall|NonVoidMethodCall|MemberVariable|RemoveIncrements)/;
+  let d = easy.test(k) ? 0 : hard.test(k) ? 2 : 1;
+  if (m.status !== 'SURVIVED') d += 3;      // NO_COVERAGE needs the path reached first
+  return d;
+}
+
 const MUTATION_RE = /<mutation\b([^>]*)>([\s\S]*?)<\/mutation>/g;
 const TAG = (body, name) => body.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1]?.trim() || '';
 
@@ -350,17 +373,10 @@ function parseReport(reportAbs, fileRel, fqcn) {
     e.total += 1;
     if (m.detected) e.killed += 1; else e.survived += 1;
   }
-  // SURVIVED first, NO_COVERAGE last — the opposite of the intuition, and of what this
-  // code used to do. A SURVIVED mutant sits on a line the suite ALREADY executes: only an
-  // assertion is missing, which a short test can supply. A NO_COVERAGE mutant sits on a
-  // line nothing reaches, and on a method that is already well covered those are the hard
-  // leftovers — error paths and edge branches needing elaborate inputs. Offering those
-  // first is why four consecutive rounds on JSON-java killed nothing: the model dutifully
-  // picked NO_COVERAGE every time and could not reach the code.
   const survived = scored.filter((x) => !x.detected)
-    .sort((a, b) => (a.status === 'SURVIVED' ? 0 : 1) - (b.status === 'SURVIVED' ? 0 : 1)
-      || (a.line || 0) - (b.line || 0));
+    .map((m) => ({ ...m, difficulty: killDifficulty(m) }))
+    .sort((a, b) => a.difficulty - b.difficulty || (a.line || 0) - (b.line || 0));
   return { file: fileRel, fqcn, totalMutants: total, killed, score, survived, byMethod, report: path.basename(reportAbs) };
 }
 
-module.exports = { runPit, ensureMavenWiring, parseReport, platformVersionFor, PIT_VERSION, MUTATORS };
+module.exports = { runPit, ensureMavenWiring, parseReport, platformVersionFor, killDifficulty, PIT_VERSION, MUTATORS };
