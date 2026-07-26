@@ -23,6 +23,33 @@ const fmtDur = (sec) => {
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 };
 
+async function tickDialog() {
+  let d;
+  try {
+    const r = await fetch('api/llm/log', { cache: 'no-store' });
+    d = await r.json();
+  } catch { return; }
+  const el = $('llm-log');
+  const entries = d.entries || [];
+  $('llm-count').textContent = entries.length ? `(last ${entries.length} exchanges)` : '';
+  if (!entries.length) { el.innerHTML = '<span class="muted">no model calls yet</span>'; return; }
+  // keep whatever the reader has opened open across refreshes
+  const open = new Set([...el.querySelectorAll('details[open]')].map((n) => n.dataset.k));
+  el.innerHTML = entries.map((e) => {
+    const k = String(e.ts) + (e.stage || '');
+    const when = new Date(e.ts * 1000).toLocaleTimeString();
+    const unit = e.unit ? String(e.unit).replace(/^.*java\//, '') : '';
+    return `<details data-k="${esc(k)}"${open.has(k) ? ' open' : ''}>
+      <summary><span class="who">${esc(e.detail || e.stage || 'model call')}</span>
+        <span class="meta">${when} · ${e.secs}s${e.finish && e.finish !== 'stop' ? ' · ' + esc(e.finish) : ''}${unit ? ' · ' + esc(unit) : ''}</span></summary>
+      <div class="body">
+        <h4>system</h4><pre>${esc(e.system || '')}</pre>
+        <h4>prompt</h4><pre>${esc(e.prompt || '')}</pre>
+        <h4>response</h4><pre>${esc(e.response || '')}</pre>
+      </div></details>`;
+  }).join('');
+}
+
 async function tick() {
   let m;
   try {
@@ -140,3 +167,5 @@ function render(m) {
 
 tick();
 setInterval(tick, 2000);
+tickDialog();
+setInterval(tickDialog, 5000);

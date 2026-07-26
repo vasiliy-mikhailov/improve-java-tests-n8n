@@ -124,6 +124,9 @@ const state = {
   measureLedger: {},
   // unit the pipeline is improving right now — token usage is attributed to it
   currentUnit: null,
+  // the last few model exchanges, so the dashboard can show what is actually being
+  // asked and answered rather than only that a call is in flight
+  llmLog: [],
 };
 
 function load() {
@@ -181,6 +184,14 @@ function setProgress(line, elapsed) {
  * Called from llm.js for every completion, including retries and repairs — the cost of a
  * unit is everything spent getting there, not just the successful call.
  */
+const LLM_LOG_MAX = 12;
+/** Record one model exchange for the dashboard's live dialog. */
+function addLlmExchange(entry) {
+  state.llmLog.push({ ...entry, ts: nowSec(), unit: state.currentUnit || null });
+  if (state.llmLog.length > LLM_LOG_MAX) state.llmLog.splice(0, state.llmLog.length - LLM_LOG_MAX);
+  save();
+}
+
 function addTokens(inTok, outTok) {
   if (!state.run) return;
   const t = (state.run.tokens ||= { in: 0, out: 0, calls: 0 });
@@ -207,4 +218,4 @@ function upsertFile(p, patch) {
   return f;
 }
 
-module.exports = { state, load, save, event, setStage, setProgress, upsertFile, addTokens, freshRun, envConfig, DATA_DIR };
+module.exports = { state, load, save, event, setStage, setProgress, upsertFile, addTokens, addLlmExchange, freshRun, envConfig, DATA_DIR };

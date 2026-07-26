@@ -59,3 +59,13 @@ details summary { cursor: pointer; padding: 4px 0; }
 .events { max-height: 420px; overflow-y: auto; background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 10px 14px; }
 .ev { padding: 3px 0; font-size: 12.5px; border-bottom: 1px solid #21262d; }
 .ev .ts { color: #8b949e; font-family: ui-monospace, monospace; margin-right: 8px; }
+
+/* live model dialog: what was asked and what came back, newest first */
+.llmlog details { border: 1px solid #21262d; border-radius: 8px; margin-bottom: 8px; background: #0f141a; }
+.llmlog summary { cursor: pointer; padding: 8px 12px; font-size: 13px; }
+.llmlog summary .who { color: #79c0ff; font-weight: 600; }
+.llmlog summary .meta { color: #7d8590; margin-left: 8px; font-size: 12px; }
+.llmlog .body { padding: 0 12px 12px; }
+.llmlog h4 { margin: 10px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #7d8590; }
+.llmlog pre { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 10px;
+  max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }

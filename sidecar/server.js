@@ -278,6 +278,8 @@ const routes = {
   'GET /api/health': async () => ({ ok: true, service: 'ijt-sidecar', stage: state.stage.name, ts: Date.now() }),
   'GET /api/state': async () => state,
   'GET /api/metrics': async () => metricsPayload(),
+  // the live model dialog, served separately so the 2-second metrics poll stays small
+  'GET /api/llm/log': async () => ({ entries: (state.llmLog || []).slice().reverse() }),
   'GET /api/rules': async () => ({ rules: state.run?.config?.rules || S.envConfig().rules, decisions: state.decisions }),
   'GET /api/events': async (q) => {
     const after = parseInt(q.get('after') || '0', 10);
@@ -614,6 +616,7 @@ const routes = {
     try {
       const r = await llm.chat({
         system: body.system, prompt: body.prompt, messages: body.messages,
+        stage: body.stage, stageDetail: body.stageDetail,
         maxTokens: clamp(parseInt(body.maxTokens || '4096', 10), 64, 12000),
         temperature: body.temperature, json: !!body.json,
       });

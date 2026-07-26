@@ -1,7 +1,7 @@
 'use strict';
 // OpenAI-compatible chat client for the vLLM endpoint (qwen), zero-dep via global fetch.
 const { extractJson } = require('./util');
-const { event, addTokens, setProgress } = require('./state');
+const { event, addTokens, setProgress, addLlmExchange } = require('./state');
 
 const BASE = (process.env.LLM_BASE_URL || '').replace(/\/$/, '');
 const KEY = process.env.LLM_API_KEY || '';
@@ -30,7 +30,19 @@ async function chat(opts) {
     temperature: opts.temperature ?? 0.3,
     chat_template_kwargs: { enable_thinking: ENABLE_THINKING },
   };
+  const started = Date.now();
   const text = await post(body);
+  // the exchange itself, for the dashboard's live dialog — truncated, since a prompt can
+  // carry a whole method and an answer a whole test file
+  addLlmExchange({
+    stage: opts.stage || null,
+    detail: opts.stageDetail || null,
+    system: String(opts.system || '').slice(0, 1200),
+    prompt: String(opts.prompt || (messages[messages.length - 1] || {}).content || '').slice(0, 4000),
+    response: String(text || '').slice(0, 4000),
+    secs: Math.round((Date.now() - started) / 1000),
+    finish: lastFinishReason,
+  });
   if (!opts.json) return { text };
   let parsed = extractJson(text);
   if (parsed == null) {
