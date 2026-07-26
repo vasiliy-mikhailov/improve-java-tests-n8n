@@ -635,6 +635,13 @@ const routes = {
     // zero PRs across ten repositories.
     const minMutants = state.run.config.minMutantsPerClass ?? 3;
     const verdict = roundsMod.classifyBaseline(r, minMutants);
+    if (body.phase === 'baseline' && verdict.kind === 'untested') {
+      // nothing tests it yet: that is a starting point, not a failure. Leave its numbers
+      // unset and let the coverage phase write the first test.
+      S.event('improving_mutation', `${unitLabel(file)}: ${verdict.reason}`);
+      S.save();
+      return { ok: true, ...r, untested: true, reason: verdict.reason };
+    }
     if (body.phase === 'baseline' && verdict.kind === 'unmeasured') {
       // not measuring is not measuring zero: record nothing, claim nothing
       accrueSpent(file);

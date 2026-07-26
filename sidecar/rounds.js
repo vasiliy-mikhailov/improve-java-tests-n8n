@@ -99,6 +99,18 @@ function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
 function classifyBaseline(result, minMutants = 3) {
   const total = result ? result.totalMutants : null;
   if (total == null) {
+    // pit.js draws a line these two must not blur: no tests AND some coverage means our
+    // targetTests glob is broken; no tests AND no coverage means nothing tests the method
+    // yet — an ordinary starting point, and what the coverage phase exists for. Treating
+    // the second as a measurement failure marks every untested method `failed`, and ten
+    // failures end the run blaming the repo.
+    if (result && result.noTests && !result.unmeasured) {
+      return {
+        kind: 'untested',
+        recordable: false,
+        reason: 'no test exercises this method yet — nothing to score until one does',
+      };
+    }
     return {
       kind: 'unmeasured',
       recordable: false,

@@ -22,8 +22,11 @@ test('a result PIT could not measure is never announced as "0 mutants"', () => {
   assert.match(r.reason, /not measured|unmeasured/i);
 });
 
-test('a run where no test executed is unmeasured, not a zero', () => {
-  const r = classifyBaseline({ totalMutants: null, noTests: true }, 3);
+test('a covered method PIT could not run tests for is unmeasured, not a zero', () => {
+  // `noTests` alone does not decide it — pit.js sets `unmeasured` only when JaCoCo saw
+  // coverage, which is what makes "no tests ran" a broken glob rather than an untested
+  // method. This fixture originally omitted the flag and so described neither case.
+  const r = classifyBaseline({ totalMutants: null, noTests: true, unmeasured: true }, 3);
   assert.equal(r.kind, 'unmeasured');
   assert.match(r.reason, /no tests/i);
 });
@@ -91,4 +94,28 @@ test('a target left over from an earlier round is not this round\'s achievement'
 test('an unstamped target is not attributed to any round', () => {
   assert.equal(targetForRound({ mutator: 'MathMutator', line: 120 }, 4), null);
   assert.equal(targetForRound(null, 4), null);
+});
+
+test('no tests ran AND no coverage is an untested method, not a failure to measure', () => {
+  // pit.js separates these deliberately: coverage>0 with no tests means our targetTests
+  // glob is broken (UNMEASURED); coverage 0 means nothing tests the method yet, which is
+  // an ordinary starting point and precisely what the coverage phase is for. Collapsing
+  // them marked every untested method `failed`, and ten failures end a run with "the repo
+  // or its toolchain is the problem" — on exactly the under-tested repos this tool exists
+  // to improve.
+  const r = classifyBaseline({ totalMutants: null, noTests: true, score: 0 }, 3);
+  assert.equal(r.kind, 'untested');
+  assert.equal(r.recordable, false, 'nothing was measured, so nothing is recorded');
+  assert.match(r.reason, /no test/i);
+});
+
+test('no tests ran but the method IS covered is a broken measurement', () => {
+  const r = classifyBaseline({ totalMutants: null, noTests: true, unmeasured: true, score: null }, 3);
+  assert.equal(r.kind, 'unmeasured');
+});
+
+test('an untested method is still worked on — it is not settled', () => {
+  const r = classifyBaseline({ totalMutants: null, noTests: true, score: 0 }, 3);
+  assert.notEqual(r.kind, 'no_mutants');
+  assert.notEqual(r.kind, 'unmeasured');
 });
