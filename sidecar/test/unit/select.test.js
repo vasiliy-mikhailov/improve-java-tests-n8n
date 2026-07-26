@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { rankSurvivors, eligible, penalty } = require('../../select');
+const { rankSurvivors, eligible, penalty, rankUnits } = require('../../select');
 
 const m = (mutator, difficulty, line, extra = {}) => ({ mutator, difficulty, line, status: 'SURVIVED', ...extra });
 const order = (list, stats) => rankSurvivors(list, stats).map((x) => `${x.mutator}@${x.line}`);
@@ -62,4 +62,46 @@ test('an already-attempted mutant is never offered again', () => {
 test('the attempt key pins mutator AND line — same kind elsewhere is fair game', () => {
   const list = [m('Math', 0, 90), m('Math', 0, 91)];
   assert.deepEqual(eligible(list, ['Math@90']).map((x) => x.line), [91]);
+});
+
+// ── which unit to work on next ────────────────────────────────────────────
+const u = (over) => ({ path: 'F.java::m', method: 'm', mac: 0, executableLines: 10, reach: 'public', ...over });
+
+test('the weakest unit comes first — that is where the gap is', () => {
+  const r = rankUnits([u({ path: 'a', mac: 40 }), u({ path: 'b', mac: 5 }), u({ path: 'c', mac: 20 })]);
+  assert.deepEqual(r.units.map((x) => x.path), ['b', 'c', 'a']);
+});
+
+test('a unit no public path reaches is dropped, not queued', () => {
+  // the model is told to write a test for it, correctly refuses, the round changes
+  // nothing, and the unit is abandoned after 3 misses — four PIT runs to learn what the
+  // call graph already said.
+  const r = rankUnits([u({ path: 'live', reach: 'route' }), u({ path: 'dead', reach: 'none' })]);
+  assert.deepEqual(r.units.map((x) => x.path), ['live']);
+  assert.equal(r.unreachable, 1);
+});
+
+test('at equal weakness, a method a test can call outright beats one behind private hops', () => {
+  const r = rankUnits([u({ path: 'hidden', reach: 'route' }), u({ path: 'callable', reach: 'public' })]);
+  assert.deepEqual(r.units.map((x) => x.path), ['callable', 'hidden']);
+});
+
+test('constructors still sort last among equals', () => {
+  const r = rankUnits([u({ path: 'ctor', method: '<init>' }), u({ path: 'real', method: 'compute' })]);
+  assert.deepEqual(r.units.map((x) => x.path), ['real', 'ctor']);
+});
+
+test('among equals, the unit with the most code to mutate goes first', () => {
+  const r = rankUnits([u({ path: 'small', executableLines: 3 }), u({ path: 'big', executableLines: 40 })]);
+  assert.deepEqual(r.units.map((x) => x.path), ['big', 'small']);
+});
+
+test('a unit not yet measured is ranked on what is known, not treated as perfect', () => {
+  const r = rankUnits([u({ path: 'measured', mac: 50 }), u({ path: 'unknown', mac: null, coverage: 0 })]);
+  assert.equal(r.units[0].path, 'unknown');
+});
+
+test('ranking is total: the same input always yields the same order', () => {
+  const list = [u({ path: 'x' }), u({ path: 'y' }), u({ path: 'z' })];
+  assert.deepEqual(rankUnits(list).units.map((x) => x.path), rankUnits(list.slice().reverse()).units.map((x) => x.path));
 });

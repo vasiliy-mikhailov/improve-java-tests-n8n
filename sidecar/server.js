@@ -243,6 +243,28 @@ function expandFilesIntoMethodUnits(classes) {
 const isCtor = (m) => m === '<init>' || m === '<clinit>';
 
 /**
+ * Can a test get at this method, and how easily? Memoised per file per run: the analysis
+ * reads the whole class, and a repo has hundreds of units spread over a few dozen files.
+ */
+const reachCache = new Map();
+function reachOf(srcPath, method) {
+  if (!method || isCtor(method)) return 'public';
+  const key = `${srcPath}::${method}`;
+  if (reachCache.has(key)) return reachCache.get(key);
+  let reach = 'public';
+  try {
+    let src = reachCache.get(srcPath);
+    if (src === undefined) { src = repo.readFileSafe(srcPath, 2000000) || ''; reachCache.set(srcPath, src); }
+    const vis = javasrc.methodVisibility(src, method);
+    // unknown visibility (not declared in this file — inherited, generated, or a lambda)
+    // is treated as reachable: a guess must never silently drop a real unit
+    reach = !vis || vis === 'public' ? 'public' : (javasrc.routesTo(src, method).length ? 'route' : 'none');
+  } catch { reach = 'public'; }
+  reachCache.set(key, reach);
+  return reach;
+}
+
+/**
  * Everything the model needs to know about one unit (`path::method`): the method's source,
  * what is uncovered, the ranked survivors, the target test paths, the team's constraints.
  * Read fresh on every call — a prompt built from a stale copy asks for a mutant that the
@@ -336,7 +358,7 @@ function candidates() {
   const processed = all.filter((f) => ['improved', 'no_improvement'].includes(f.status) && !f.fromLedger).length;
   const failed = all.filter((f) => f.status === 'failed' && !f.fromLedger).length;
   const maxFailures = cfg.maxFailures || 10;
-  const list = all
+  const candidateUnits = all
     .filter((f) => f.status === 'candidate' && f.attempts < maxAttempts)
     // a class JaCoCo reports no executable lines for cannot be tested or mutated
     .filter((f) => f.executableLines == null || f.executableLines > 0)
@@ -349,20 +371,23 @@ function candidates() {
       attempts: f.attempts, lines: f.lines ?? null, mutants: f.totalMutants ?? null,
       executableLines: f.executableLines ?? null,
     }))
-    // Weakest first; among equally weak units the one with the MOST executable code,
-    // because that is where the mutants — and the achievable gain — are. Constructors
-    // sort last within a tie: they are usually field assignment with nothing to assert,
-    // and they kept winning the pick on real repos (Cookie#<init>, Assertions#<init>).
-    // Not excluded, though — a constructor with validation logic is a fair target once
-    // the genuinely behavioural methods are done.
-    .sort((a, b) => (a.mac ?? (a.coverage ?? 0) / 2) - (b.mac ?? (b.coverage ?? 0) / 2)
-      || (isCtor(a.method) ? 1 : 0) - (isCtor(b.method) ? 1 : 0)
-      || (b.executableLines ?? b.lines ?? 0) - (a.executableLines ?? a.lines ?? 0));
+    .map((f) => ({ ...f, reach: reachOf(f.file, f.method) }));
+  // Weakest first, constructors last among equals (usually field assignment with nothing
+  // to assert — they kept winning the pick on real repos), a directly callable method
+  // ahead of one behind private hops, and the most executable code to break the rest.
+  // Units no public path reaches are dropped: see select.rankUnits.
+  const ranked = select.rankUnits(candidateUnits);
+  const list = ranked.units;
   let done = false, reason = '';
   if (cfg.maxIterations > 0 && state.run.iteration >= cfg.maxIterations) { done = true; reason = `max iterations (${cfg.maxIterations}) reached`; }
   else if (cfg.scopeLimit > 0 && processed >= cfg.scopeLimit) { done = true; reason = `scope limit (${cfg.scopeLimit} units) reached`; }
   else if (failed >= maxFailures) { done = true; reason = `${failed} units failed to measure (limit ${maxFailures}) — the repo or its toolchain is the problem, not the units`; }
-  else if (!list.length) { done = true; reason = 'no remaining candidate files'; }
+  else if (!list.length) { done = true; reason = 'no remaining candidate units'; }
+  if (ranked.unreachable && ranked.unreachable !== state.run.reportedUnreachable) {
+    // say it once per change, not once per pick
+    state.run.reportedUnreachable = ranked.unreachable;
+    S.event('picking_file', `${ranked.unreachable} unit(s) skipped: private with no public path into them, so no test can execute them`);
+  }
   return { done, reason, iteration: state.run.iteration, processed, failed, candidates: list.slice(0, 100) };
 }
 
@@ -400,6 +425,9 @@ const routes = {
     }
     if (active) S.event('starting', `taking over stale/forced run ${state.run.id} (idle ${idleSec}s)`);
     state.run = S.freshRun(body);
+    // the reachability memo is keyed by repo-RELATIVE path, so it would answer for the
+    // previous repo's file of the same name
+    reachCache.clear();
     state.files = {};
     state.decisions = {};
     state.prs = [];

@@ -42,4 +42,31 @@ function rankSurvivors(list, stats) {
     || (a.line || 0) - (b.line || 0));
 }
 
-module.exports = { rankSurvivors, eligible, penalty, attemptKey };
+const isCtor = (m) => m === '<init>' || m === '<clinit>';
+
+/** How hard it is for a test to get at this unit at all. */
+const REACH_COST = { public: 0, route: 1, none: Infinity };
+
+/**
+ * Which unit to work on next.
+ *
+ * Weakest first, because that is where the MAC gap is — but a unit no public path reaches
+ * is dropped rather than queued: the prompt correctly refuses to write a test for it, the
+ * round changes nothing, and the unit is abandoned after three misses, having spent four
+ * PIT runs to learn what the call graph already said. Among equally weak units, one a test
+ * can call outright is worth more per round than one behind three private hops.
+ */
+function rankUnits(list) {
+  const all = list || [];
+  const units = all.filter((x) => REACH_COST[x.reach ?? 'public'] !== Infinity);
+  units.sort((a, b) =>
+    // a unit with no MAC yet is not a perfect one — rank it on the coverage we do have
+    (a.mac ?? (a.coverage ?? 0) / 2) - (b.mac ?? (b.coverage ?? 0) / 2)
+    || (isCtor(a.method) ? 1 : 0) - (isCtor(b.method) ? 1 : 0)
+    || REACH_COST[a.reach ?? 'public'] - REACH_COST[b.reach ?? 'public']
+    || (b.executableLines ?? b.lines ?? 0) - (a.executableLines ?? a.lines ?? 0)
+    || String(a.path).localeCompare(String(b.path)));
+  return { units, unreachable: all.length - units.length };
+}
+
+module.exports = { rankSurvivors, eligible, penalty, attemptKey, rankUnits };
