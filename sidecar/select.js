@@ -65,12 +65,23 @@ const REACH_COST = { public: 0, route: 1, none: 2 };
  * PIT runs to learn what the call graph already said. Among equally weak units, one a test
  * can call outright is worth more per round than one behind three private hops.
  */
+/**
+ * Has the run itself proved it cannot execute this unit? Two or more attempts in which
+ * coverage never moved off zero is evidence no static analysis can offer: JSONObject's
+ * isRecordStyleAccessor sits behind `if (isRecordType && ...)` and needs a real Java
+ * record, which a test compiled at the project's source level cannot declare. The call
+ * graph says reachable; the runs say otherwise, and the runs are measurements.
+ */
+const provenUnexecutable = (x) => (x.misses || 0) >= 2 && x.everReached === false;
+
 function rankUnits(list) {
   const all = list || [];
   const units = all.slice();
   units.sort((a, b) =>
+    // evidence of unexecutability outranks everything: it is measured, not guessed
+    (provenUnexecutable(a) ? 1 : 0) - (provenUnexecutable(b) ? 1 : 0)
     // a unit with no MAC yet is not a perfect one — rank it on the coverage we do have
-    (a.mac ?? (a.coverage ?? 0) / 2) - (b.mac ?? (b.coverage ?? 0) / 2)
+    || (a.mac ?? (a.coverage ?? 0) / 2) - (b.mac ?? (b.coverage ?? 0) / 2)
     || (isCtor(a.method) ? 1 : 0) - (isCtor(b.method) ? 1 : 0)
     || REACH_COST[a.reach ?? 'public'] - REACH_COST[b.reach ?? 'public']
     || (b.executableLines ?? b.lines ?? 0) - (a.executableLines ?? a.lines ?? 0)

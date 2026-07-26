@@ -142,3 +142,32 @@ test('behind a private chain still beats no known route at all', () => {
   const r = rankUnits([u({ path: 'none', reach: 'none' }), u({ path: 'route', reach: 'route' })]);
   assert.deepEqual(r.units.map((x) => x.path), ['route', 'none']);
 });
+
+test('a unit repeatedly proven unexecutable sinks, on evidence rather than guesswork', () => {
+  // JSONObject#isRecordStyleAccessor is guarded by `if (isRecordType && ...)`: reaching it
+  // needs a real Java record, which a test compiled at this project's source level cannot
+  // declare. Static analysis sees a valid route; only the runs show the truth — three
+  // attempts, coverage never off zero. It keeps winning rank 1 on 14 mutants and 0 MAC,
+  // burning three rounds each time it is picked.
+  const r = rankUnits([
+    u({ path: 'proven-dead', reach: 'route', misses: 3, everReached: false }),
+    u({ path: 'ordinary', reach: 'route' }),
+  ]);
+  assert.deepEqual(r.units.map((x) => x.path), ['ordinary', 'proven-dead']);
+});
+
+test('one failed attempt is not proof — only a repeated one', () => {
+  const r = rankUnits([
+    u({ path: 'unlucky', reach: 'public', misses: 1, everReached: false }),
+    u({ path: 'ordinary', reach: 'route' }),
+  ]);
+  assert.deepEqual(r.units.map((x) => x.path), ['unlucky', 'ordinary'], 'still ahead: it is directly callable');
+});
+
+test('a unit that HAS been reached is never demoted for missing', () => {
+  const r = rankUnits([
+    u({ path: 'reached', reach: 'route', misses: 5, everReached: true }),
+    u({ path: 'untried', reach: 'none' }),
+  ]);
+  assert.deepEqual(r.units.map((x) => x.path), ['reached', 'untried']);
+});

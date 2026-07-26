@@ -416,6 +416,10 @@ function candidates() {
       coverage: f.coverage, mutation: f.mutation, mac: f.mac,
       attempts: f.attempts, lines: f.lines ?? null, mutants: f.totalMutants ?? null,
       executableLines: f.executableLines ?? null,
+      // what the RUNS have shown about getting at this unit, as opposed to what the call
+      // graph promises: rounds that wrote a passing test and still executed none of it
+      misses: f.missesEver || 0,
+      everReached: f.everReached ?? null,
     }))
     .map((f) => ({ ...f, reach: reachOf(f.file, f.method) }));
   // Weakest first, constructors last among equals (usually field assignment with nothing
@@ -882,6 +886,10 @@ const routes = {
         S.save();
       }
       const coverageAfter = state.files[file].coverage;
+      // Did this round's test execute the method at all? Cheap to record here and
+      // impossible to infer later — a unit can look perfectly reachable and never run.
+      if ((coverageAfter ?? 0) > 0) S.upsertFile(file, { everReached: true });
+      else S.upsertFile(file, { everReached: f.everReached === true, missesEver: (f.missesEver || 0) + 1 });
       const macAfter = mac(coverageAfter, st.score);
       S.upsertFile(file, {
         mutation: st.score, mac: macAfter, macAfter, coverageAfter, mutationAfter: st.score,
