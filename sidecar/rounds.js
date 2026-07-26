@@ -161,9 +161,14 @@ function missOutcome({ consecutiveMisses = 0, maxMisses = 3, survivorsLeft = nul
  * "targeted mutant X at line N: KILLED" for a round that wrote nothing — and credited
  * that mutator with a second kill in the ranking statistics.
  */
-function targetForRound(targetMutant, round) {
+function targetForRound(targetMutant, round, attempt) {
   if (!targetMutant || targetMutant.round == null) return null;
-  return targetMutant.round === round ? targetMutant : null;
+  if (targetMutant.round !== round) return null;
+  // The round number alone is not unique: a re-picked unit starts again at round 1, so
+  // attempt 3's first round matched the target attempt 2 left behind, and a round that
+  // targeted nothing was credited with someone else's mutant.
+  if (attempt !== undefined && targetMutant.attempt !== attempt) return null;
+  return targetMutant;
 }
 
 module.exports = {

@@ -369,7 +369,7 @@ function gapsFor(p) {
     targetMethod: f.targetMethod || null,
     // the mutant this round is aiming at, so a repair does not flip an assertion and
     // abandon the very thing the test was written for
-    targetMutant: roundsMod.targetForRound(f.targetMutant, (f.rounds || 0) + 1),
+    targetMutant: roundsMod.targetForRound(f.targetMutant, (f.rounds || 0) + 1, f.attempts || 0),
     // whether the last round's test even executed this method — a missed round whose
     // coverage never moved off zero was never about the assertion
     lastRound: f.lastTargetKilled === false || f.consecutiveMisses
@@ -741,7 +741,7 @@ const routes = {
       if (body.targetMutant.line && !tried.includes(key)) tried.push(key);
       // stamp the round: a later round that targets nothing must not inherit this one
       S.upsertFile(state.currentUnit, {
-        targetMutant: { ...body.targetMutant, round: (u.rounds || 0) + 1 },
+        targetMutant: { ...body.targetMutant, round: (u.rounds || 0) + 1, attempt: u.attempts || 0 },
         attemptedMutants: tried,
       });
     }
@@ -880,7 +880,7 @@ const routes = {
       // Did the mutant this round aimed at actually die? An unchanged score says the
       // round achieved nothing but not WHY; this distinguishes "the test never ran",
       // "the test ran but does not distinguish the mutation" and "it worked".
-      const tm = roundsMod.targetForRound(f.targetMutant, (f.rounds || 0) + 1);
+      const tm = roundsMod.targetForRound(f.targetMutant, (f.rounds || 0) + 1, f.attempts || 0);
       if (tm && tm.line) {
         const stillAlive = (st.survived || []).some((m) => m.line === tm.line && m.mutator === tm.mutator);
         const killedNow = (st.killed ?? 0) - (f.mutation != null && f.totalMutants

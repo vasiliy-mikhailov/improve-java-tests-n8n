@@ -119,3 +119,13 @@ test('an untested method is still worked on — it is not settled', () => {
   assert.notEqual(r.kind, 'no_mutants');
   assert.notEqual(r.kind, 'unmeasured');
 });
+
+test("a new attempt at a unit inherits no target from the previous one", () => {
+  // The stamp is the round number, and a fresh attempt restarts at round 1 — so attempt
+  // 3 round 1 matched the target left by attempt 2 round 1. The log then announced
+  // "targeted mutant NullReturnVals at line 416" for a round whose prompt had skipped,
+  // and mutatorStats recorded an attempt nobody made.
+  assert.equal(targetForRound({ mutator: 'NullReturnValsMutator', line: 416, round: 1, attempt: 2 }, 1, 3), null);
+  assert.deepEqual(targetForRound({ mutator: 'NullReturnValsMutator', line: 416, round: 1, attempt: 3 }, 1, 3),
+    { mutator: 'NullReturnValsMutator', line: 416, round: 1, attempt: 3 });
+});
