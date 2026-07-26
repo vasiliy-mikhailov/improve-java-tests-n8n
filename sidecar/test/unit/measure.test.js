@@ -122,3 +122,13 @@ test('a unit that once failed to measure is offered again, not blacklisted for e
   assert.equal(plan.settle.length, 0, 'a failure measured nothing, so it settles nothing');
   assert.equal(plan.retryable, 1);
 });
+
+test('what the runs learned about reaching a unit survives a restart', () => {
+  // The demotion for "proved unexecutable" needs two observed misses. That evidence lived
+  // only in run state, so every restart forgot it and the unit went back to rank 1 to
+  // burn the same three rounds again — on a run that restarts whenever anything ships.
+  const m = { 'src/main/java/org/json/XML.java::parse': stamp({ coverageBefore: 0, everReached: false, missesEver: 3 }) };
+  const plan = planReplay({}, m, has);
+  assert.equal(plan.restore[0].entry.everReached, false);
+  assert.equal(plan.restore[0].entry.missesEver, 3);
+});

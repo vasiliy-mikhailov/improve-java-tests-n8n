@@ -266,6 +266,8 @@ function replayLedgers() {
       coverageBefore: entry.coverageBefore, mutationBefore: entry.mutationBefore, macBefore: entry.macBefore,
       attemptCoverage: entry.attemptCoverage, attemptMutation: entry.attemptMutation, attemptMac: entry.attemptMac,
       failure: entry.failure,
+      // what earlier runs learned about whether a test can execute this unit at all
+      everReached: entry.everReached, missesEver: entry.missesEver,
     });
   }
   if (plan.settle.length || plan.restore.length || plan.stale) {
@@ -888,8 +890,13 @@ const routes = {
       const coverageAfter = state.files[file].coverage;
       // Did this round's test execute the method at all? Cheap to record here and
       // impossible to infer later — a unit can look perfectly reachable and never run.
-      if ((coverageAfter ?? 0) > 0) S.upsertFile(file, { everReached: true });
-      else S.upsertFile(file, { everReached: f.everReached === true, missesEver: (f.missesEver || 0) + 1 });
+      const reachEvidence = (coverageAfter ?? 0) > 0
+        ? { everReached: true }
+        : { everReached: f.everReached === true, missesEver: (f.missesEver || 0) + 1 };
+      S.upsertFile(file, reachEvidence);
+      // persist it: this is the only evidence that a unit cannot be executed at all, and
+      // it took whole rounds to obtain — losing it on every restart means paying again
+      recordMeasurement(file, reachEvidence);
       const macAfter = mac(coverageAfter, st.score);
       S.upsertFile(file, {
         mutation: st.score, mac: macAfter, macAfter, coverageAfter, mutationAfter: st.score,
