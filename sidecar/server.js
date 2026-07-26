@@ -645,7 +645,13 @@ const routes = {
     if (body.phase === 'baseline' && verdict.kind === 'unmeasured') {
       // not measuring is not measuring zero: record nothing, claim nothing
       accrueSpent(file);
-      S.upsertFile(file, { status: 'failed', failure: verdict.reason });
+      // Do not retry it. A unit whose measurement is broken — PIT finding no tests for a
+      // class JaCoCo says is covered — fails the same way every time, and each attempt
+      // costs a coverage run, a PIT run and a model call. Property#<init> spent three.
+      S.upsertFile(file, {
+        status: 'failed', failure: verdict.reason,
+        attempts: state.run.config.maxAttemptsPerFile || 3,
+      });
       S.event('improving_mutation', `${unitLabel(file)}: ${verdict.reason} — leaving its numbers unset`);
       S.save();
       return { ok: true, ...r, skip: true, unmeasured: true, reason: verdict.reason };

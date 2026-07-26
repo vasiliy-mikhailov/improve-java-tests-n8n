@@ -32,7 +32,11 @@ function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
   consecutiveMisses = 0, maxMisses = 3, survivorsLeft = null } = {}) {
   const base = macBase ?? 0;
   const after = macAfter ?? 0;
-  const keepRound = !!improvedAny && !degradedAny;
+  // A round can only be judged against numbers. When the mutation score could not be
+  // measured at all, macAfter is null — and `?? 0` turned that into a comparison that
+  // reported "PROGRESS but MARGINAL (+0 MAC)" for a unit whose score does not exist.
+  const unmeasured = macAfter == null;
+  const keepRound = !unmeasured && !!improvedAny && !degradedAny;
   const gain = round2(after - base);
   const gapLeft = 100 - base;
   const gapClosed = gapLeft > 0 ? gain / gapLeft : 0;
@@ -63,9 +67,11 @@ function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
   // out of time, or reaching 100.
   const missesLeft = maxMisses <= 0 || consecutiveMisses < maxMisses;
   const workLeft = survivorsLeft == null || survivorsLeft > 0;
-  const continueRounds = roundsLeft && !perfect && !outOfTime && workLeft && missesLeft
+  const continueRounds = !unmeasured && roundsLeft && !perfect && !outOfTime && workLeft && missesLeft
     && (keepRound ? !marginal : true);
-  const verdict = !keepRound
+  const verdict = unmeasured
+    ? 'UNMEASURED (this unit\'s mutation score could not be measured — nothing to compare, stop)'
+    : !keepRound
     ? (degradedAny ? `DEGRADED (drop this round${continueRounds ? ', try the next mutant' : ', stop)'}`
       : !continueRounds
         ? (!workLeft ? 'MISS (no un-attempted survivors left — stop)'

@@ -175,3 +175,20 @@ test('a kept round that ends the unit does not announce another one', () => {
   assert.doesNotMatch(d.verdict, /another round/i);
   assert.match(d.verdict, /PROGRESS/);
 });
+
+test('a round with nothing to compare is not "PROGRESS"', () => {
+  // Property#<init> is 100% covered but PIT finds no tests for it, so its mutation score
+  // is UNMEASURED and macAfter is null. decide() compared null against undefined, found
+  // no degradation, and announced "PROGRESS but MARGINAL (+0 MAC)" — then the unit was
+  // discarded for not improving. Arithmetic over undefined is not a measurement.
+  const d = decide({ improvedAny: true, macBase: undefined, macAfter: null, rounds: 0, survivorsLeft: 5 });
+  assert.equal(d.keepRound, false);
+  assert.equal(d.continueRounds, false);
+  assert.match(d.verdict, /unmeasured|not measured/i);
+  assert.doesNotMatch(d.verdict, /PROGRESS/);
+});
+
+test('a measured zero is still a real measurement', () => {
+  const d = decide({ improvedAny: true, macBase: 0, macAfter: 12, rounds: 0, survivorsLeft: 5 });
+  assert.equal(d.keepRound, true);
+});
