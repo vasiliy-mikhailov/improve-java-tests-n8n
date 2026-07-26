@@ -248,6 +248,34 @@ function expandFilesIntoMethodUnits(classes) {
 const isCtor = (m) => m === '<init>' || m === '<clinit>';
 
 /**
+ * Fold what previous runs established into this one: units already settled are not
+ * re-picked, and measurements still valid under the current semantics are restored.
+ * Must run AFTER expandFilesIntoMethodUnits — see measure.planReplay.
+ */
+function replayLedgers() {
+  const plan = measure.planReplay(ledger(), measured(), (k) => !!state.files[k]);
+  for (const { key, record } of plan.settle) {
+    S.upsertFile(key, record.state === 'improved'
+      ? { status: 'improved', fromLedger: true, prUrl: record.prUrl || null, prPatch: record.patchPath || null, ...(record.metrics || {}) }
+      : { status: record.state === 'failed' ? 'failed' : record.state === 'no_mutants' ? 'no_mutants' : 'no_improvement',
+        fromLedger: true, attempts: state.run.config.maxAttemptsPerFile || 3, ...(record.metrics || {}) });
+  }
+  for (const { key, entry } of plan.restore) {
+    S.upsertFile(key, {
+      coverageBefore: entry.coverageBefore, mutationBefore: entry.mutationBefore, macBefore: entry.macBefore,
+      attemptCoverage: entry.attemptCoverage, attemptMutation: entry.attemptMutation, attemptMac: entry.attemptMac,
+      failure: entry.failure,
+    });
+  }
+  if (plan.settle.length || plan.restore.length || plan.stale) {
+    S.event('measuring_baseline', `ledger: ${plan.settle.length} unit(s) already settled in previous runs — skipping them; `
+      + `${plan.restore.length} restored earlier measurements`
+      + (plan.stale ? `; ${plan.stale} discarded as measured under older semantics (v<${measure.MEASURE_VERSION})` : ''));
+  }
+  S.save();
+}
+
+/**
  * Can a test get at this method, and how easily? Memoised per file per run: the analysis
  * reads the whole class, and a repo has hundreds of units spread over a few dozen files.
  */
@@ -467,40 +495,7 @@ const routes = {
     S.setStage('installing', 'installing dependencies + tooling');
     const det = await repo.install();
     const files = await repo.listScopeFiles();
-    // replay measurements first: every file we ever measured keeps its numbers,
-    // whether or not it was ever improved (status is untouched here)
-    let remeasured = 0, stale = 0;
-    for (const [rawKey, m] of Object.entries(measured())) {
-      const p = measure.normalizeUnitKey(rawKey);
-      if (!state.files[p]) continue;
-      // a number produced by older semantics describes something else now — measure again
-      if (!measure.restorable(m, p)) { stale += 1; continue; }
-      S.upsertFile(p, {
-        coverageBefore: m.coverageBefore, mutationBefore: m.mutationBefore, macBefore: m.macBefore,
-        attemptCoverage: m.attemptCoverage, attemptMutation: m.attemptMutation, attemptMac: m.attemptMac,
-        failure: m.failure,
-      });
-      remeasured += 1;
-    }
-    // Replay the persistent ledger so finished units are not re-picked. Unlike the
-    // measurement ledger above, this is a record of what HAPPENED — a PR was prepared,
-    // with the numbers measured at the time — so it is not invalidated by a later change
-    // to measurement semantics; it seeds no new decision.
-    let replayed = 0;
-    for (const [rawKey, rec] of Object.entries(ledger())) {
-      const p = measure.normalizeUnitKey(rawKey);
-      if (!state.files[p]) continue;
-      S.upsertFile(p, rec.state === 'improved'
-        ? { status: 'improved', fromLedger: true, prUrl: rec.prUrl || null, prPatch: rec.patchPath || null, ...(rec.metrics || {}) }
-        : { status: rec.state === 'failed' ? 'failed' : 'no_improvement', fromLedger: true, attempts: state.run.config.maxAttemptsPerFile || 3, ...(rec.metrics || {}) });
-      replayed += 1;
-    }
-    if (replayed || remeasured || stale) {
-      S.event('installing', `ledger: ${replayed} unit(s) already settled in previous runs — skipping them; `
-        + `${remeasured} restored earlier measurements`
-        + (stale ? `; ${stale} discarded as measured under older semantics (v<${measure.MEASURE_VERSION}) and will be re-measured` : ''));
-    }
-    return { ok: true, runner: det, scopeFiles: files.length, settledFromLedger: replayed, measurementsRestored: remeasured };
+    return { ok: true, runner: det, scopeFiles: files.length };
   },
 
   'POST /api/coverage/run': async (q, body) => {
@@ -510,6 +505,9 @@ const routes = {
     if (body.phase === 'baseline') {
       state.run.baseline.coveragePct = r.totalPct;
       expandFilesIntoMethodUnits(r.classes || {});
+      // only now do `path::method` units exist — replaying the ledgers any earlier could
+      // only ever match FILE keys, so every settled unit came back as a fresh candidate
+      replayLedgers();
       // per-unit mac recompute
       for (const f of Object.values(state.files)) f.mac = mac(f.coverage, f.mutation);
     }

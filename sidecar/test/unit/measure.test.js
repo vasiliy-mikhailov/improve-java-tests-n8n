@@ -53,3 +53,49 @@ test('a file-level key from the old unit model is not a unit and is not restored
   assert.equal(restorable({ coverageBefore: 83.33, v: MEASURE_VERSION }, 'src/main/java/org/json/XML.java'), false);
   assert.equal(restorable({ coverageBefore: 83.33, v: MEASURE_VERSION }, 'src/main/java/org/json/XML.java::parse'), true);
 });
+
+// ── replaying ledgers into a run ──────────────────────────────────────────
+const { planReplay } = require('../../measure');
+
+const UNITS = new Set([
+  'src/main/java/org/json/XML.java::parse',
+  'src/main/java/org/json/XML.java::toString',
+  'src/main/java/org/json/Property.java::<init>',
+]);
+const has = (k) => UNITS.has(k);
+
+test('a settled unit is replayed so the run does not redo it', () => {
+  // The replay ran in /api/repo/prepare, which is BEFORE baseline coverage expands
+  // classes into method units — so state.files held FILE keys and every unit-keyed
+  // ledger entry missed. An already-improved, already-PR'd unit came back as a fresh
+  // candidate and was re-measured, re-improved and re-PR'd.
+  const plan = planReplay({ 'src/main/java/org/json/XML.java::parse': { state: 'improved' } }, {}, has);
+  assert.deepEqual(plan.settle.map((x) => x.key), ['src/main/java/org/json/XML.java::parse']);
+});
+
+test('a measurement of a unit in scope is restored, one from old semantics is not', () => {
+  const m = {
+    'src/main/java/org/json/XML.java::toString': stamp({ coverageBefore: 80 }),
+    'src/main/java/org/json/XML.java::parse': { coverageBefore: 88, v: MEASURE_VERSION - 1 },
+  };
+  const plan = planReplay({}, m, has);
+  assert.deepEqual(plan.restore.map((x) => x.key), ['src/main/java/org/json/XML.java::toString']);
+  assert.equal(plan.stale, 1);
+});
+
+test('a file-keyed entry from before the unit model never matches a unit', () => {
+  const plan = planReplay({ 'src/main/java/org/json/XML.java': { state: 'improved' } }, {}, has);
+  assert.deepEqual(plan.settle, []);
+  assert.equal(plan.unknown, 1);
+});
+
+test('an entry for a unit outside this run scope is simply not applicable', () => {
+  const plan = planReplay({ 'src/main/java/org/json/Gone.java::method': { state: 'improved' } }, {}, has);
+  assert.deepEqual(plan.settle, []);
+  assert.equal(plan.unknown, 1);
+});
+
+test('an escaped constructor key still finds its unit', () => {
+  const plan = planReplay({ 'src/main/java/org/json/Property.java::&lt;init&gt;': { state: 'improved' } }, {}, has);
+  assert.deepEqual(plan.settle.map((x) => x.key), ['src/main/java/org/json/Property.java::<init>']);
+});

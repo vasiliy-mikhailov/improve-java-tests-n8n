@@ -42,4 +42,34 @@ function restorable(entry, key) {
   return true;
 }
 
-module.exports = { MEASURE_VERSION, stamp, restorable, normalizeUnitKey };
+/**
+ * What of the persisted ledgers applies to the units this run actually has.
+ *
+ * This must be decided AFTER classes are expanded into `path::method` units. It used to
+ * run in /api/repo/prepare, before that expansion, when `state.files` still held FILE
+ * keys — so every unit-keyed entry missed, and a unit that had already been improved and
+ * PR'd in an earlier batch came back as a fresh candidate to be measured, improved and
+ * PR'd all over again.
+ *
+ * @param {object} improved  the improvement ledger (unit key → record)
+ * @param {object} measurements  the measurement ledger (unit key → measurement)
+ * @param {(key:string)=>boolean} hasUnit  does this run have that unit?
+ */
+function planReplay(improved, measurements, hasUnit) {
+  const settle = [], restore = [];
+  let stale = 0, unknown = 0;
+  for (const [rawKey, record] of Object.entries(improved || {})) {
+    const key = normalizeUnitKey(rawKey);
+    if (!hasUnit(key)) { unknown += 1; continue; }
+    settle.push({ key, record });
+  }
+  for (const [rawKey, entry] of Object.entries(measurements || {})) {
+    const key = normalizeUnitKey(rawKey);
+    if (!hasUnit(key)) { unknown += 1; continue; }
+    if (!restorable(entry, key)) { stale += 1; continue; }
+    restore.push({ key, entry });
+  }
+  return { settle, restore, stale, unknown };
+}
+
+module.exports = { MEASURE_VERSION, stamp, restorable, normalizeUnitKey, planReplay };
