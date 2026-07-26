@@ -130,6 +130,9 @@ measured**. The guards that exist because of it:
 | the branch resolved against `git ls-remote` | `REPO_BRANCH=main` against a repo whose default is `master` ended the run at its first step |
 | a non-public target's route named, an uncallable one skipped | the model was handed a private method plus "call only the public API, never use reflection" — an unsatisfiable pair — and wrote a passing test that executed none of it |
 | mutator kinds ranked on observed kill **rate** | "tried twice, never killed" let one lucky kill immunise a kind: `ConditionalsBoundary` stayed top of the queue through misses at lines 164, 191 and 234 |
+| units no public path reaches are dropped from the queue | a private method with no route in costs a pick, a PIT run, a model call and three misses — ~25 min to learn what the call graph already said |
+| among equally weak units, a directly callable one first | `isRecordStyleAccessor` (5 hops of private calls) outranked three callable methods on weakness alone |
+| the team rule **excludes**; the ranking **chooses** | asked to choose, the model took the fifth-ranked unit over three callable ones on the strength of "high potential" — the same judgement that lost 0-4 to PIT's data on mutant selection |
 | per-stage token ceilings learned from `finish_reason` | 4 of 12 completions were truncated mid-JSON and re-run whole at ~100 s each, and nothing remembered it |
 
 ### How this is kept true
