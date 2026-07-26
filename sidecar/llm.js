@@ -9,6 +9,9 @@ const MODEL = process.env.LLM_MODEL || 'qwen-3.6-27b-fp8';
 const ENABLE_THINKING = String(process.env.LLM_ENABLE_THINKING || 'false') === 'true';
 // thinking consumes completion tokens before any visible output — give it headroom
 const THINKING_EXTRA = ENABLE_THINKING ? parseInt(process.env.LLM_THINKING_BUDGET || '3000', 10) : 0;
+// why the last completion stopped — 'length' means truncated, which needs a bigger
+// budget rather than a scolding about JSON formatting
+let lastFinishReason = null;
 
 /**
  * chat({system, prompt, messages, maxTokens, temperature, json})
@@ -31,11 +34,24 @@ async function chat(opts) {
   if (!opts.json) return { text };
   let parsed = extractJson(text);
   if (parsed == null) {
-    event('llm', 'JSON parse failed, retrying with repair nudge');
-    messages.push({ role: 'assistant', content: text.slice(0, 4000) });
-    messages.push({ role: 'user', content: 'Your previous answer was not valid JSON. Reply again with ONLY the JSON, no prose, no markdown fences.' });
-    const retry = await post({ ...body, messages, temperature: 0.1 });
-    parsed = extractJson(retry);
+    // Diagnose before retrying. A truncated answer (finish_reason=length) is not a
+    // formatting mistake — the model ran out of room mid-JSON, and asking it to "reply
+    // with only the JSON" reruns the same wall for another minute or two. Give it room
+    // instead; only a genuinely malformed answer gets the formatting nudge.
+    if (lastFinishReason === 'length') {
+      const bigger = Math.min((body.max_tokens || 4096) * 2, 16000);
+      event('llm', `response hit the token limit mid-JSON — retrying with ${bigger} tokens instead of ${body.max_tokens}`);
+      const retry = await post({ ...body, max_tokens: bigger });
+      parsed = extractJson(retry);
+      if (parsed != null) return { text: retry, json: parsed };
+    }
+    if (parsed == null) {
+      event('llm', 'JSON parse failed, retrying with repair nudge');
+      messages.push({ role: 'assistant', content: text.slice(0, 4000) });
+      messages.push({ role: 'user', content: 'Your previous answer was not valid JSON. Reply again with ONLY the JSON object, no prose, no markdown fences, no placeholders in angle brackets.' });
+      const retry = await post({ ...body, messages, temperature: 0.1 });
+      parsed = extractJson(retry);
+    }
   }
   return { text, json: parsed };
 }
@@ -70,12 +86,14 @@ async function post(body, attempt = 0) {
       throw new Error(`LLM HTTP ${res.status}: ${errText}`);
     }
     const data = await res.json();
+    lastFinishReason = data.choices?.[0]?.finish_reason || null;
     // token accounting: every call's prompt/completion usage is attributed to the unit
     // currently being worked on, so the dashboard can report what the improvement cost
     const u = data.usage || {};
     addTokens(u.prompt_tokens || 0, u.completion_tokens || 0);
     const secs = Math.round((Date.now() - started) / 1000);
-    setProgress(`${label}: ${u.prompt_tokens || 0} in / ${u.completion_tokens || 0} out tokens in ${secs}s`, secs);
+    setProgress(`${label}: ${u.prompt_tokens || 0} in / ${u.completion_tokens || 0} out tokens in ${secs}s`
+      + (lastFinishReason && lastFinishReason !== 'stop' ? ` [${lastFinishReason}]` : ''), secs);
     return data.choices?.[0]?.message?.content || '';
   } catch (e) {
     if (attempt < 2 && /abort|network|fetch failed|ECONN/i.test(String(e.message))) {

@@ -266,7 +266,7 @@ const RULES = ${JSON.stringify(COMMON_TEST_RULES)};
 const PLAYBOOK = ${JSON.stringify(MUTATOR_PLAYBOOK)};
 const framework = gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5';
 const replyShape = single
-  ? '{"mutant": <the # you chose>, "why": "one line", "tests":[{"path":"...","content":"full test file content"}]}'
+  ? '{"mutant": 3, "why": "one line", "tests":[{"path":"...","content":"full test file content"}]} — where "mutant" is the NUMBER of the mutant you chose (a bare integer, no angle brackets, no text)'
   : '{"tests":[{"path":"...","content":"full test file content"}]}';
 const system = 'You are an expert Java test engineer killing surviving PIT mutants of ONE METHOD, one at a time, writing ' + framework + ' tests. A mutant is killed when at least one test FAILS on the mutated code while PASSING on the real code — so the test must assert something that DISTINGUISHES the two. Reply ONLY with JSON: ' + replyShape + '. Create a NEW test class only. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES + PLAYBOOK
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
