@@ -12,9 +12,9 @@ do (most were forced by a defect found while running).
    ┌─────────────────────────────────┴──────────────────────────────────┐
    │  one container (ijtn8n)                                            │
    │                                                                    │
-   │   n8n — 65 nodes, native only ──HTTP──▶ sidecar :3000 (zero-dep)   │
-   │     Trigger / HTTP Request / Code / IF / NoOp     ├─ git, gh        │
-   │     no shell, no Python, no fs in Code nodes      ├─ Maven | Gradle │
+   │   n8n — 66 nodes, native only ──HTTP──▶ sidecar :3000 (zero-dep)   │
+   │     Trigger / HTTP Request / IF / NoOp            ├─ git, gh        │
+   │     zero Code nodes: no logic outside tested files├─ Maven | Gradle │
    │                                                   ├─ JDK 8/11/17/21 │
    │   dashboard /dashboard ◀── /api/metrics (2 s)     ├─ JaCoCo         │
    │                        ◀── /api/llm/log  (5 s)    ├─ PIT            │
@@ -24,9 +24,15 @@ do (most were forced by a defect found while running).
 
 The workflow owns orchestration and rules; the sidecar owns everything that touches the OS.
 That split is what keeps the workflow editable in the n8n UI while the Java toolchain stays
-real. The generator (`n8n/generate-workflows.mjs`) refuses to emit a workflow that contains
-a non-native node, a Code node referencing `child_process`/`fs`, or a Code node that fails
-to **parse or execute** against stubbed n8n globals.
+real. The generator (`n8n/generate-workflows.mjs`) refuses to emit a workflow containing a
+non-native node, or an HTTP node pointing at a route `sidecar/server.js` does not define —
+a path typo used to surface as a 404 an hour into a run.
+
+Logic that once lived as JavaScript strings inside Code nodes (prompt building, answer
+parsing) now lives in `sidecar/prompts.js` and `sidecar/parse.js` behind unit tests. A
+string in a JSON file has no compiler and no test: one shipped an identifier that was never
+defined, and an edit that silently matched nothing left the deployed prompt asking the model
+to choose a mutant days after that decision had moved into the pipeline.
 
 ## 2. The unit of work
 
@@ -115,8 +121,30 @@ measured**. The guards that exist because of it:
 | JaCoCo parsed by splitting on class boundaries | a self-closing `<class/>` swallowed the classes after it |
 | method names XML-unescaped | constructors arrived as the literal `&lt;init&gt;` |
 | test glob `*Class*Test*` | tests in a sibling package (`org.json.junit`) matched nothing, so PIT ran none and everything "survived" |
-| Code nodes executed at build time | a half-applied edit left an identifier undefined: it parsed, then threw mid-run |
 | round floors clamped to one mutant's worth | a floor above the measurement's granularity stops the loop on its first success |
+| PIT reports scoped to the unit's own method before anything reads them | `excludedMethods` let 5 of `toString()`'s mutants into `isRecordStyleAccessor`'s report: its score was computed over them (15.79 % with 3 kills that were all `toString`'s — really 0 %), and a SURVIVED stray outranked every real candidate, so a whole round wrote a `toString` test and was then scored against a method it never touched |
+| stray mutants reported, not dropped quietly | a silent filter is indistinguishable from a scope that worked |
+| a method with no mutants of its own scores 0, not 100 | nothing was proven about it |
+| measurements stamped with the semantics that produced them | the ledger seeds each run's baseline and still held per-**file** numbers from before the unit became `path::method`, and per-method scores from before scoping — replayed, they give a run a baseline it can only "improve" by luck |
+| one canonical unit key (XML entities unescaped) | the ledger held both `Property.java::&lt;init&gt;` and `Property.java::<init>`, so a measurement written under one was invisible under the other |
+| the branch resolved against `git ls-remote` | `REPO_BRANCH=main` against a repo whose default is `master` ended the run at its first step |
+| a non-public target's route named, an uncallable one skipped | the model was handed a private method plus "call only the public API, never use reflection" — an unsatisfiable pair — and wrote a passing test that executed none of it |
+| mutator kinds ranked on observed kill **rate** | "tried twice, never killed" let one lucky kill immunise a kind: `ConditionalsBoundary` stayed top of the queue through misses at lines 164, 191 and 234 |
+| per-stage token ceilings learned from `finish_reason` | 4 of 12 completions were truncated mid-JSON and re-run whole at ~100 s each, and nothing remembered it |
+
+### How this is kept true
+
+Two kinds of test, and they answer different questions:
+
+- **unit tests** (`sidecar/test/unit/`, `npm test`) cover the code the workflow's nodes call.
+  Every case is a defect that actually shipped; the table above is, row by row, an
+  assertion in that suite.
+- **e2e** is a straight-through run against a real repo — hundreds of methods, real Maven,
+  real PIT, real model. It is what *finds* the defects: observe the failure, root-cause it,
+  write the unit test, watch it go red, fix it, watch it go green, run e2e again.
+
+The workflow itself holds **no logic to test**: it has zero Code nodes, and its 44 HTTP
+nodes are checked at build time against the routes `sidecar/server.js` actually defines.
 
 ## 5. Configuration
 

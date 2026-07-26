@@ -100,9 +100,15 @@ are ever committed):
 
 ### Adapting the workflow
 
-The workflow is pure native n8n — open it in the editor and edit prompts (Code nodes) or rewire
-stages. It never shells out; the sidecar API surface is documented in `sidecar/server.js`
-(routes table).
+The workflow is pure native n8n — open it in the editor to rewire stages, change a branch
+condition or point a step somewhere else. It never shells out; the sidecar API surface is the
+routes table in `sidecar/server.js`.
+
+It deliberately holds no logic: there are zero Code nodes. **Prompts live in
+`sidecar/prompts.js`** (served to the workflow by `/api/prompt/*`) and answer handling in
+`sidecar/parse.js`, both covered by `npm test` — edit them there, where a mistake fails a test
+instead of an hour-long run. Per-stage team rules stay configuration (`RULES_*` above) and need
+no code change at all.
 
 `PR_MODE=github` opens real PRs via `gh`; `PR_MODE=local` (for repos you don't own) records the
 branch, patch and PR payload under `/data/prs/`.
