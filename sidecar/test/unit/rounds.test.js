@@ -163,3 +163,15 @@ test('a kept round still stops at the time budget', () => {
   assert.equal(d.keepRound, true);
   assert.equal(d.continueRounds, false);
 });
+
+test('a kept round that ends the unit does not announce another one', () => {
+  // decide() returned {keepRound:true, continueRounds:false, verdict:'PROGRESS (another
+  // round)'}, and server.js writes that verdict verbatim into the activity stream — so
+  // the log promised a round that never came.
+  const d = decide({ improvedAny: true, macBase: 0, macAfter: 60, rounds: 0, maxRounds: 0,
+    consecutiveMisses: 0, maxMisses: 3, survivorsLeft: 0 });
+  assert.equal(d.keepRound, true);
+  assert.equal(d.continueRounds, false);
+  assert.doesNotMatch(d.verdict, /another round/i);
+  assert.match(d.verdict, /PROGRESS/);
+});

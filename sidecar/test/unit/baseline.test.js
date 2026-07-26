@@ -67,3 +67,24 @@ test('an uncapped miss budget still stops when the work runs out', () => {
 test('an unknown survivor count is not treated as "nothing left"', () => {
   assert.equal(missOutcome({ consecutiveMisses: 0, maxMisses: 3, survivorsLeft: null }).continueRounds, true);
 });
+
+// ── crediting a round for what it actually did ────────────────────────────
+const { targetForRound } = require('../../rounds');
+
+test('a mutant targeted in THIS round is the one the round is judged on', () => {
+  const tm = { mutator: 'MathMutator', line: 120, round: 4 };
+  assert.deepEqual(targetForRound(tm, 4), tm);
+});
+
+test('a target left over from an earlier round is not this round\'s achievement', () => {
+  // when the mutation phase skipped, verify still read f.targetMutant from the previous
+  // round, found the mutant already dead and announced "targeted mutant MathMutator at
+  // line 120: KILLED" for a round that attacked nothing and wrote nothing — and counted
+  // a second kill for that mutator in the ranking stats.
+  assert.equal(targetForRound({ mutator: 'MathMutator', line: 120, round: 3 }, 4), null);
+});
+
+test('an unstamped target is not attributed to any round', () => {
+  assert.equal(targetForRound({ mutator: 'MathMutator', line: 120 }, 4), null);
+  assert.equal(targetForRound(null, 4), null);
+});

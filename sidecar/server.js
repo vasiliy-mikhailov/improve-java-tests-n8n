@@ -90,7 +90,11 @@ function accrueSpent(file) {
  */
 function refreshTotals() {
   if (!state.run) return;
-  const files = Object.values(state.files).filter((f) => f.mutationBefore != null);
+  // A unit with no mutation surface has no mutation score — averaging its 0 % into the
+  // repo's headline says the repo is weaker than it is, on the strength of methods that
+  // cannot be mutated at all.
+  const files = Object.values(state.files)
+    .filter((f) => f.mutationBefore != null && f.status !== 'no_mutants');
   if (!files.length) return;
   const avg = (xs) => round2(xs.reduce((s, x) => s + x, 0) / xs.length);
   const before = avg(files.map((f) => f.mutationBefore));
@@ -539,8 +543,13 @@ const routes = {
     needRun();
     const file = body.file;
     if (!file || !state.files[file]) throw new Error('unknown file: ' + file);
-    if (state.run.iteration === 0) {
-      // first pick of this batch: everything before it was setup overhead
+    if (!state.run.overheadCharged) {
+      // First pick of this batch: everything before it was setup overhead. Keyed on a
+      // flag, not on `iteration === 0` — a unit skipped for having no mutation surface
+      // REFUNDS its iteration, so the counter returned to 0 and the next pick charged the
+      // whole elapsed time again, growing each round. Three skips in a row reported
+      // roughly three times the real setup cost as machine hours.
+      state.run.overheadCharged = true;
       const slug = slugify(state.run.config.repoUrl);
       state.overheadLedger[slug] = (state.overheadLedger[slug] || 0)
         + Math.max(0, Math.floor(Date.now() / 1000) - state.run.startedAt);
@@ -695,7 +704,11 @@ const routes = {
       const tried = (u.attemptedMutants || []).slice();
       const key = select.attemptKey(body.targetMutant);
       if (body.targetMutant.line && !tried.includes(key)) tried.push(key);
-      S.upsertFile(state.currentUnit, { targetMutant: body.targetMutant, attemptedMutants: tried });
+      // stamp the round: a later round that targets nothing must not inherit this one
+      S.upsertFile(state.currentUnit, {
+        targetMutant: { ...body.targetMutant, round: (u.rounds || 0) + 1 },
+        attemptedMutants: tried,
+      });
     }
     const written = [], errors = [];
     for (const t of (body.tests || []).slice(0, 5)) {
@@ -821,7 +834,7 @@ const routes = {
       // Did the mutant this round aimed at actually die? An unchanged score says the
       // round achieved nothing but not WHY; this distinguishes "the test never ran",
       // "the test ran but does not distinguish the mutation" and "it worked".
-      const tm = f.targetMutant;
+      const tm = roundsMod.targetForRound(f.targetMutant, (f.rounds || 0) + 1);
       if (tm && tm.line) {
         const stillAlive = (st.survived || []).some((m) => m.line === tm.line && m.mutator === tm.mutator);
         const killedNow = (st.killed ?? 0) - (f.mutation != null && f.totalMutants
@@ -851,7 +864,10 @@ const routes = {
       refreshTotals();
       S.save();
       const diff = await pr.diffAgainstBase();
-      const changed = await pr.changedFiles();
+      // Test files only. `changedFiles()` includes the pom.xml this pipeline injects PIT
+      // and JaCoCo into, so `changed.length > 0` was true in every round — and a round
+      // that wrote no test at all could be credited with measurement noise.
+      const changed = await pr.changedTestFiles();
       // round criterion: keep the round iff ≥1 metric improves AND none degrades
       const rb = f.roundBase || { coverage: f.coverageBefore, mutation: f.mutationBefore, mac: f.macBefore };
       const improvedAny = changed.length > 0 && ((coverageAfter ?? 0) > (rb.coverage ?? 0)

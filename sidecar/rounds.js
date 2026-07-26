@@ -77,7 +77,11 @@ function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
       : !roundsLeft ? `PROGRESS (round budget ${maxRounds} spent — keep and stop)`
       : marginal ? `PROGRESS but MARGINAL (+${gain} MAC = ${round2(gapClosed * 100)}% of the remaining gap; `
         + `floors ${round2(minGapFrac * 100)}% / +${minGain}) — keep and stop`
-        : 'PROGRESS (another round)';
+        // the verdict must describe what is about to happen: continueRounds can be
+        // false here for a reason none of the branches above covers (no survivors
+        // left, the miss cap), and the log promised a round that never came
+        : continueRounds ? 'PROGRESS (another round)'
+          : 'PROGRESS (nothing left to attack — keep and stop)';
   return { keepRound, continueRounds, marginal, perfect, outOfTime, workLeft, missesLeft, gain,
     gapClosed: round2(gapClosed), effMinGain: round2(effMinGain), verdict };
 }
@@ -128,5 +132,18 @@ function missOutcome({ consecutiveMisses = 0, maxMisses = 3, survivorsLeft = nul
   };
 }
 
+/**
+ * The mutant THIS round aimed at, or null.
+ *
+ * The target was read straight off the unit, so a round whose mutation phase skipped
+ * inherited the previous round's target, found it already dead, and announced
+ * "targeted mutant X at line N: KILLED" for a round that wrote nothing — and credited
+ * that mutator with a second kill in the ranking statistics.
+ */
+function targetForRound(targetMutant, round) {
+  if (!targetMutant || targetMutant.round == null) return null;
+  return targetMutant.round === round ? targetMutant : null;
+}
+
 module.exports = {
-  classifyBaseline, missOutcome, decide, DEFAULTS };
+  classifyBaseline, missOutcome, targetForRound, decide, DEFAULTS };
