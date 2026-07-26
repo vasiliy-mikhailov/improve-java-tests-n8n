@@ -130,3 +130,64 @@ The projection under-counted by 6.25 points and the final measurement corrected 
 method but never revive them, so the projection is conservative and the committed number is
 measured, never inferred. Mutation work for the class: 37 method-scoped mutants + 2
 class-wide runs, against 192 mutant-runs before. `PIT_SCOPE=class` restores the old behaviour.
+
+## Iteration 3 — 2026-07-26 — the unit becomes the mutant, and four measurement bugs
+
+First scored reward: **0.4292** (DoD 0.9231 × implementation_performance 0.465). Seven of
+eleven repos scored exactly 0.4 — completion 1, improvement 0 — so the whole headroom was
+in repos that finish without improving anything.
+
+### Structural change: file → method → mutant
+
+Driven by the user: PIT is slow, so mutate a method, not a class; then, so the candidate
+list should be methods; then, pick the most promising mutant with the LLM and repeat PIT on
+the method. The pipeline now works like that end to end:
+
+```
+pick a method (units are <path>::<method>, enumerated free from JaCoCo's per-method counters)
+  └─ PIT on the method  → survivors
+     └─ the MODEL picks the most promising survivor from 20 and says why
+        └─ writes ONE short test for that mutant (2500 tokens)
+           └─ suite → PIT on the method → new score → repeat
+```
+
+MAC is now method coverage × method mutation score, both measured on the same method — the
+projection and its end-of-rounds reconciliation are gone. Prompts carry the target method,
+its class header and sibling signatures instead of the whole class (12k characters of
+XML.java to write a 400-byte test).
+
+This required fixing the round-stop rule, which would otherwise have defeated it: killing
+one mutant of N moves MAC by coverage/N — 0.29 points on XML#parse — under the 0.5 floor.
+**A floor above the measurement's own granularity is a bug**, so both floors are clamped to
+what one mutant is worth.
+
+### Four bugs where the pipeline reported numbers it had not measured
+
+- **B10 — skips consumed the iteration budget.** A mutant-less class was exempt from the
+  file quota but not from `maxIterations`, so two duds ended a run before any improvable
+  unit was attempted. Iterations are unlimited now; scope and time bound a run, and a unit
+  we could not measure no longer consumes the quota either (bounded by `MAX_FAILURES`).
+- **B11 — PIT_VERSION was pinned to 1.15.2 in the server .env**, overriding the 1.25.8
+  default I had "deployed". Changing a default is not deploying it.
+- **B12 — JaCoCo method names arrived HTML-escaped** (`&lt;init&gt;`), so constructors got
+  that literal string as their name, in unit keys and in PIT's excludedMethods where it can
+  never match.
+- **B13 — a stale mutations.xml was read as a real result.** pit.js never deleted the
+  previous report and `findReport()` falls back to "newest anywhere", so a failed run
+  parsed the PREVIOUS unit's report, filtered it by the current class, found nothing and
+  recorded "0 mutants". Five substantial methods (JSONObject#quote has 25 mutants,
+  #convertValue 38) were written off as having no mutation surface.
+
+B13 also produced a false result I reported as a win: PIT "history" appearing to cut a
+measurement from 43s to 3s. That run had failed — PIT 1.25 moved history behind the
+commercial arcmutate plugin — and the byte-identical numbers came from the stale report.
+A failed run reading a stale report is indistinguishable from a fast successful one.
+
+### The recurring lesson
+
+Every serious bug this iteration was the pipeline stating a number it had not measured:
+coverage 0 % beside mutation 100 %, a baseline of 0 for a tested class, "no mutants" for a
+25-mutant method, an instant re-measurement that never ran. Guards added accordingly: a
+missing report is a failure not a zero, PIT "no tests" against non-zero coverage is recorded
+as UNMEASURED, and the workflow generator now EXECUTES every Code node at build time (a
+half-applied edit left an identifier undefined — it parsed fine and threw at runtime).
