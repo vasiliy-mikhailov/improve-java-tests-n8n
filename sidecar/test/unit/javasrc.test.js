@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { methodVisibility, callersOf } = require('../../javasrc');
+const { methodVisibility, callersOf, stripNonCode, routesTo } = require('../../javasrc');
 
 const SRC = `package org.json;
 
@@ -88,4 +88,141 @@ test('a method past the prompt clip is still found — analysis needs the whole 
   assert.ok(big.length > 24000, `fixture must exceed the prompt clip (was ${big.length})`);
   assert.equal(methodVisibility(big, 'target'), 'private');
   assert.deepEqual(callersOf(big, 'target').map((c) => c.method), ['entryPoint']);
+});
+
+test('braces inside strings, chars and comments do not shift the nesting depth', () => {
+  // JSONObject.java writes JSON, so it is full of '{' and "}" in literals and javadoc.
+  // Counting those as real braces drifted its depth to -4 by end of file; no line after
+  // the drift ever looked like it sat at class level, so callersOf returned nothing for a
+  // method with an obvious caller — and the prompt reported "no caller in this class, no
+  // test can execute it" for a method that populateMap() calls directly.
+  // The drift must therefore come BEFORE the caller, as it does in the real file.
+  const src = `package org.json;
+
+public class Writer {
+    /** Javadoc with an unbalanced brace: } and another } for good measure. */
+    public void drift() {
+        sb.append('}');
+        sb.append("}}");   // and a comment brace }
+    }
+
+    public void write(StringBuilder sb) {
+        final String name = sb.toString();
+        if (name.isEmpty()) {
+            return;
+        }
+        check(name);
+    }
+
+    private boolean check(String s) {
+        return s.isEmpty();
+    }
+}
+`;
+  assert.equal(methodVisibility(src, 'check'), 'private');
+  assert.deepEqual(callersOf(src, 'check').map((c) => c.method), ['write']);
+});
+
+test('an escaped quote does not run the string on to the end of the file', () => {
+  const src = `package a;
+
+public class B {
+    public void drift() {
+        String s = "he said \\"}}}}\\" and left";
+    }
+
+    public void run() {
+        int n = 1;
+        n = n + 1;
+        helper();
+    }
+
+    private void helper() { }
+}
+`;
+  assert.deepEqual(callersOf(src, 'helper').map((c) => c.method), ['run']);
+});
+
+test('code is kept, literals and comments are blanked, line numbers survive', () => {
+  const src = [
+    'class A {',
+    '    String s = "a { b } c";  // trailing } comment',
+    '    /* block } comment */',
+    "    char c = '{';",
+    '}',
+  ].join('\n');
+  const out = stripNonCode(src);
+  assert.equal(out.split('\n').length, 5, 'line count must be preserved');
+  assert.equal((out.match(/\{/g) || []).length, 1, 'only the class brace is real');
+  assert.equal((out.match(/\}/g) || []).length, 1);
+  assert.match(out, /String s =/, 'code outside the literal is untouched');
+});
+
+// ── routes from public API to a hidden method ─────────────────────────────
+const CHAIN = `package org.json;
+
+public class JSONObject {
+    public JSONObject(Object bean) {
+        this.populateMap(bean);
+    }
+
+    private void populateMap(Object bean) {
+        String k = getKeyNameFromMethod(m);
+        map.put(k, v);
+    }
+
+    private static String getKeyNameFromMethod(Method method) {
+        if (isRecordType && isRecordStyleAccessor(name, method)) {
+            return name;
+        }
+        return null;
+    }
+
+    private static boolean isRecordStyleAccessor(String methodName, Method method) {
+        return true;
+    }
+
+    private void deadHelper() {
+        onlyDead();
+    }
+
+    private void onlyDead() {
+    }
+}
+`;
+
+test('the route to a hidden method starts at public API and ends at the method', () => {
+  // JSONObject#isRecordStyleAccessor is three private hops from the nearest public entry.
+  // Listing only its direct caller told the model to call another private method — no more
+  // use than telling it nothing.
+  const [route] = routesTo(CHAIN, 'isRecordStyleAccessor');
+  assert.deepEqual(route.map((s) => s.method),
+    ['JSONObject', 'populateMap', 'getKeyNameFromMethod', 'isRecordStyleAccessor']);
+  assert.equal(route[0].visibility, 'public', 'a test can only start from something public');
+});
+
+test('a method with a direct public caller gets the short route', () => {
+  const [route] = routesTo(CHAIN, 'populateMap');
+  assert.deepEqual(route.map((s) => s.method), ['JSONObject', 'populateMap']);
+});
+
+test('private code no public path reaches has no route at all', () => {
+  assert.deepEqual(routesTo(CHAIN, 'onlyDead'), []);
+});
+
+test('a public method needs no route', () => {
+  assert.deepEqual(routesTo(CHAIN, 'JSONObject'), []);
+});
+
+test('a cycle between private helpers does not hang the search', () => {
+  const cyclic = `public class C {
+    public void entry() { a(); }
+    private void a() { b(); }
+    private void b() { a(); target(); }
+    private void target() { }
+}
+`;
+  const [route] = routesTo(cyclic, 'target');
+  assert.equal(route[0].method, 'entry');
+  assert.equal(route[route.length - 1].method, 'target');
 });

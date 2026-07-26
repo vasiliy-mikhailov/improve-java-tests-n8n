@@ -281,7 +281,8 @@ function gapsFor(p) {
     // a test cannot call a private method, so the prompt has to name the public route in
     // — and a private method with no caller at all is not worth a round
     visibility: f.method ? javasrc.methodVisibility(whole, f.method) : null,
-    callers: f.method ? javasrc.callersOf(whole, f.method) : [],
+    // the path a test must travel from public API to this method, when it is not public
+    routes: f.method ? javasrc.routesTo(whole, f.method) : [],
     uncovered: coverage.uncoveredLines(p),
     coverage: f.coverage ?? null,
     missedLines: f.missedLines ?? null,

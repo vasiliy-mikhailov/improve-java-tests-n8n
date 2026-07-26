@@ -93,10 +93,11 @@ const PRIVATE_GAPS = {
   ...gaps,
   method: 'isRecordStyleAccessor',
   visibility: 'private',
-  callers: [
-    { method: 'populateMap', visibility: 'private' },
+  routes: [[
     { method: 'JSONObject', visibility: 'public' },
-  ],
+    { method: 'populateMap', visibility: 'private' },
+    { method: 'isRecordStyleAccessor', visibility: 'private' },
+  ]],
   survived: [{ status: 'NO_COVERAGE', mutator: 'BooleanTrueReturnValsMutator', line: 2072, method: 'isRecordStyleAccessor' }],
   uncovered: { lines: 'all' },
 };
@@ -125,13 +126,13 @@ test('reflection stays forbidden — the route is public API, not a back door', 
 });
 
 test('a public target gets no routing section to wade through', () => {
-  const r = mutationPrompt({ ...PRIVATE_GAPS, visibility: 'public', callers: [] });
+  const r = mutationPrompt({ ...PRIVATE_GAPS, visibility: 'public', routes: [] });
   assert.doesNotMatch(r.prompt, /REACHED VIA|cannot be called directly/i);
 });
 
 test('a private method nothing calls is reported as unreachable, not attempted', () => {
   // dead private code: no test can execute it, so the round can only waste a call
-  const r = mutationPrompt({ ...PRIVATE_GAPS, callers: [] });
+  const r = mutationPrompt({ ...PRIVATE_GAPS, routes: [] });
   assert.equal(r.skip, true);
-  assert.match(r.reason, /no caller|unreachable/i);
+  assert.match(r.reason, /no public method|unreachable/i);
 });

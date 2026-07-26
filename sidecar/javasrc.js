@@ -11,6 +11,47 @@
 // Regex over Java source is approximate by nature. Both functions only ENRICH a prompt,
 // never decide a number, so a miss costs a hint and never a false measurement.
 
+/**
+ * Blank out string literals, char literals and comments, keeping every newline so line
+ * numbers still line up. Java source that WRITES Java or JSON — which is most of what this
+ * pipeline is pointed at — is full of braces in literals: counting them drifted
+ * JSONObject.java's nesting depth to -4 by end of file, and once depth never rises above
+ * class level again, the code below loses track of which method it is inside. That is how
+ * a method with an obvious caller was reported as having none, and skipped as unreachable.
+ */
+function stripNonCode(source) {
+  const src = String(source || '');
+  let out = '';
+  let i = 0;
+  const keepNewlines = (text) => text.replace(/[^\n]/g, ' ');
+  while (i < src.length) {
+    const c = src[i], next = src[i + 1];
+    if (c === '/' && next === '/') {
+      const end = src.indexOf('\n', i);
+      const stop = end === -1 ? src.length : end;
+      out += keepNewlines(src.slice(i, stop)); i = stop;
+    } else if (c === '/' && next === '*') {
+      const end = src.indexOf('*/', i + 2);
+      const stop = end === -1 ? src.length : end + 2;
+      out += keepNewlines(src.slice(i, stop)); i = stop;
+    } else if (c === '"' || c === "'") {
+      // text blocks (""") behave like a long string for our purposes
+      const triple = c === '"' && src.startsWith('"""', i);
+      let j = i + (triple ? 3 : 1);
+      while (j < src.length) {
+        if (src[j] === '\\') { j += 2; continue; }          // escape: skip the pair
+        if (triple ? src.startsWith('"""', j) : src[j] === c) { j += triple ? 3 : 1; break; }
+        if (!triple && src[j] === '\n') break;              // unterminated: do not run on
+        j += 1;
+      }
+      out += keepNewlines(src.slice(i, j)); i = j;
+    } else {
+      out += c; i += 1;
+    }
+  }
+  return out;
+}
+
 const CONTROL = /\b(?:if|while|for|switch|catch|do|else|synchronized)\s*\(/;
 
 const escape = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -55,7 +96,7 @@ const depthOf = (line) => (line.match(/\{/g) || []).length - (line.match(/\}/g) 
 /** `public` | `private` | `protected` | `package-private`, or null if not declared here. */
 function methodVisibility(source, method) {
   if (!source || !method) return null;
-  for (const line of String(source).split('\n')) {
+  for (const line of stripNonCode(source).split('\n')) {
     if (declares(line, method)) return visibilityOf(line.slice(0, line.indexOf(method)));
   }
   return null;
@@ -68,7 +109,7 @@ function methodVisibility(source, method) {
 function callersOf(source, method) {
   if (!source || !method) return [];
   const call = new RegExp(`(?:^|[^\\w.$])(?:this\\.|super\\.)?${escape(method)}\\s*\\(`);
-  const lines = String(source).split('\n');
+  const lines = stripNonCode(source).split('\n');
   const out = [];
   let current = null, depth = 0;
   for (const line of lines) {
@@ -89,4 +130,40 @@ function callersOf(source, method) {
   return out;
 }
 
-module.exports = { methodVisibility, callersOf };
+/**
+ * How a test can get to a method it cannot call. Walks callers outward until it reaches
+ * something public, and returns the path in the order a test would travel it:
+ * `[public entry, …private hops…, target]`.
+ *
+ * Listing only DIRECT callers was not enough on the case that motivated this:
+ * JSONObject#isRecordStyleAccessor is called by getKeyNameFromMethod, which is itself
+ * private — so the hint named another method the test could not call either. The nearest
+ * public entry is three hops out, the constructor JSONObject(Object bean).
+ *
+ * Returns [] for a method that is already public, and for private code no public path
+ * reaches — that one is dead, and a round spent on it can only fail.
+ */
+function routesTo(source, method, maxHops = 6) {
+  const code = stripNonCode(source);
+  if (!method || methodVisibility(code, method) === 'public') return [];
+  const routes = [];
+  const seen = new Set([method]);
+  // breadth-first, so the SHORTEST route to public API is found first
+  let frontier = [[{ method, visibility: methodVisibility(code, method) }]];
+  for (let hop = 0; hop < maxHops && frontier.length && !routes.length; hop++) {
+    const next = [];
+    for (const path of frontier) {
+      for (const caller of callersOf(code, path[0].method)) {
+        if (seen.has(caller.method)) continue;      // a cycle between helpers must not loop
+        const extended = [caller, ...path];
+        if (caller.visibility === 'public') routes.push(extended);
+        else next.push(extended);
+      }
+    }
+    next.forEach((p) => seen.add(p[0].method));
+    frontier = next;
+  }
+  return routes;
+}
+
+module.exports = { methodVisibility, callersOf, stripNonCode, routesTo };

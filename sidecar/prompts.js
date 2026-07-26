@@ -58,20 +58,21 @@ function signatureBlock(gaps) {
 function reachBlock(gaps) {
   const vis = gaps.visibility;
   if (!vis || vis === 'public') return '';
-  // every caller, not just the public ones: the route is often a chain (a public
-  // constructor → a private helper → the target), and the model needs to see it
-  const list = (gaps.callers || [])
-    .map((c) => `- ${c.method}()${c.visibility === 'public' ? ' [public — a test can call this]' : ` [${c.visibility}, reachable only through one of the others]`}`)
-    .join('\n');
+  const routes = gaps.routes || [];
+  if (!routes.length) return '';
+  // the whole path, in the order a test travels it: public entry → private hops → target.
+  // Naming only the direct caller pointed the model at another method it could not call.
+  const list = routes.slice(0, 3).map((r) => '- ' + r.map((step, i) =>
+    `${step.method}()${i === 0 ? ' [public — call this]' : ''}`).join(' → ')).join('\n');
   return `\n\nREACHED VIA: ${gaps.method}() is ${vis}, so a test CANNOT call it directly and must NOT use reflection.`
-    + ` Reach it by calling one of these, choosing arguments that make execution flow into ${gaps.method}():\n${list}`
-    + `\nAssert on what that public call returns or changes — that is what distinguishes the real code from the mutation.`;
+    + ` Reach it along this path, choosing arguments that make execution flow all the way through:\n${list}`
+    + `\nAssert on what the public call returns or changes — that is what distinguishes the real code from the mutation.`;
 }
 
 /** A private method nothing calls cannot be executed by any test. */
 function unreachable(gaps) {
   const vis = gaps.visibility;
-  return vis && vis !== 'public' && !(gaps.callers || []).length;
+  return vis && vis !== 'public' && !(gaps.routes || []).length;
 }
 
 function constraintBlock(gaps) {
@@ -100,7 +101,7 @@ function coveragePrompt(gaps) {
   }
 
   if (unreachable(gaps)) {
-    return { ...base, skip: true, reason: `${gaps.method}() is ${gaps.visibility} and has no caller in this class — no test can execute it, so there is nothing to write` };
+    return { ...base, skip: true, reason: `${gaps.method}() is ${gaps.visibility} and no public method of this class reaches it — no test can execute it, so there is nothing to write` };
   }
 
   const testClass = targetPath.split('/').pop().replace(/\.java$/, '');
@@ -135,7 +136,7 @@ function mutationPrompt(gaps) {
   const base = { targetPath, projectTestPath: gaps.projectTestPath || null };
 
   if (unreachable(gaps)) {
-    return { ...base, skip: true, reason: `${gaps.method}() is ${gaps.visibility} and has no caller in this class — no test can execute it, so there is nothing to write` };
+    return { ...base, skip: true, reason: `${gaps.method}() is ${gaps.visibility} and no public method of this class reaches it — no test can execute it, so there is nothing to write` };
   }
   if (!choices.length) {
     return {
