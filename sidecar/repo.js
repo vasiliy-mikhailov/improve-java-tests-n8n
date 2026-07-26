@@ -14,6 +14,7 @@ const { run } = require('./exec');
 const { state, event, upsertFile, DATA_DIR } = require('./state');
 const { slugify, globsToMatcher } = require('./util');
 const { resolveBranch } = require('./branch');
+const { generatedTestPaths, existingTestCandidates } = require('./testpaths');
 
 function repoDir() {
   const cfg = state.run?.config;
@@ -436,24 +437,10 @@ function deleteTestFile(rel) {
  */
 function guessTestPath(srcRel, round = 1) {
   const dir = repoDir();
-  const cls = path.basename(srcRel, '.java');
-  const testRoot = srcRel.replace(/src\/main\/java\//, 'src/test/java/');
-  const testDir = path.dirname(testRoot);
-  const suffix = round > 1 ? `R${round}Test.java` : 'Test.java';
-  const generated = (phase) => `${testDir}/${cls}Mac${phase}${suffix}`;
-  const candidates = [
-    testRoot.replace(/\.java$/, 'Test.java'),
-    testRoot.replace(/\.java$/, 'Tests.java'),
-    `${testDir}/Test${cls}.java`,
-    testRoot.replace(/\.java$/, 'TestCase.java'),
-  ];
+  // naming rules (Surefire-includable, one class per round) live in testpaths.js under test
+  const candidates = existingTestCandidates(srcRel);
   const own = candidates.find((c) => fs.existsSync(path.join(dir, c)));
-  return {
-    path: own || candidates[0],
-    exists: !!own,
-    covPath: generated('Cov'),
-    mutPath: generated('Mut'),
-  };
+  return { path: own || candidates[0], exists: !!own, ...generatedTestPaths(srcRel, round) };
 }
 
 /**

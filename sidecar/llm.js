@@ -1,7 +1,8 @@
 'use strict';
 // OpenAI-compatible chat client for the vLLM endpoint (qwen), zero-dep via global fetch.
 const { extractJson } = require('./util');
-const { event, addTokens, setProgress, addLlmExchange } = require('./state');
+const { state, event, addTokens, setProgress, addLlmExchange, save } = require('./state');
+const { Budget } = require('./budget');
 
 const BASE = (process.env.LLM_BASE_URL || '').replace(/\/$/, '');
 const KEY = process.env.LLM_API_KEY || '';
@@ -12,6 +13,13 @@ const THINKING_EXTRA = ENABLE_THINKING ? parseInt(process.env.LLM_THINKING_BUDGE
 // why the last completion stopped — 'length' means truncated, which needs a bigger
 // budget rather than a scolding about JSON formatting
 let lastFinishReason = null;
+let lastCompletionTokens = 0;
+// Per-stage ceilings, learned from what actually happened and persisted with the run:
+// a stage that once ran out of room starts wider next time instead of paying for the
+// same truncated call again.
+const budget = new Budget(
+  { thinkingReserve: THINKING_EXTRA, hardMax: parseInt(process.env.LLM_MAX_TOKENS_HARD || '16000', 10) },
+  state.llmBudget || null);
 
 /**
  * chat({system, prompt, messages, maxTokens, temperature, json})
@@ -23,15 +31,18 @@ async function chat(opts) {
     if (opts.system) messages.push({ role: 'system', content: opts.system });
     messages.push({ role: 'user', content: opts.prompt || '' });
   }
+  const stage = opts.stage || 'default';
   const body = {
     model: MODEL,
     messages,
-    max_tokens: (opts.maxTokens || 4096) + THINKING_EXTRA,
+    max_tokens: budget.ceiling(stage, opts.maxTokens),
     temperature: opts.temperature ?? 0.3,
     chat_template_kwargs: { enable_thinking: ENABLE_THINKING },
   };
   const started = Date.now();
   const text = await post(body);
+  budget.record(stage, { finish: lastFinishReason, ceiling: body.max_tokens, completionTokens: lastCompletionTokens });
+  state.llmBudget = budget.toJSON();
   // the exchange itself, for the dashboard's live dialog — truncated, since a prompt can
   // carry a whole method and an answer a whole test file
   addLlmExchange({
@@ -54,7 +65,9 @@ async function chat(opts) {
     // with only the JSON" reruns the same wall for another minute or two. Give it room
     // instead; only a genuinely malformed answer gets the formatting nudge.
     if (lastFinishReason === 'length') {
-      const bigger = Math.min((body.max_tokens || 4096) * 2, 16000);
+      const bigger = budget.escalate(stage, body.max_tokens || 4096);
+      state.llmBudget = budget.toJSON();
+      save();
       event('llm', `response hit the token limit mid-JSON — retrying with ${bigger} tokens instead of ${body.max_tokens}`);
       const retry = await post({ ...body, max_tokens: bigger });
       parsed = extractJson(retry);
@@ -110,6 +123,7 @@ async function post(body, attempt = 0) {
     }
     const data = await res.json();
     lastFinishReason = data.choices?.[0]?.finish_reason || null;
+    lastCompletionTokens = data.usage?.completion_tokens || 0;
     // token accounting: every call's prompt/completion usage is attributed to the unit
     // currently being worked on, so the dashboard can report what the improvement cost
     const u = data.usage || {};

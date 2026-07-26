@@ -256,8 +256,17 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
     }
     throw new Error(`PIT produced no report (exit ${r.code}): ` + out.slice(-800));
   }
-  const parsed = parseReport(reportAbs, fileRel, fqcn);
+  // excludedMethods is best-effort — when it misses one, another method's mutants come
+  // back in the report and would be scored and attacked as if they were this unit's
+  const whole = parseReport(reportAbs, fileRel, fqcn);
+  const parsed = scopeToMethod(whole, onlyMethod);
   parsed.scope = onlyMethod || 'class';
+  const strays = whole.totalMutants - parsed.totalMutants;
+  if (onlyMethod && strays > 0) {
+    // excludedMethods let another method through; say so rather than quietly dropping it
+    event('pit', `${strays} mutant(s) from other methods came back in the report and were `
+      + `excluded from ${onlyMethod}()'s score and target list`);
+  }
   // PIT prints how many tests it ran; if our freshly written test is not in that number
   // the round cannot possibly kill anything, and we should say so rather than report an
   // unchanged score as if the test had simply been ineffective
@@ -376,7 +385,38 @@ function parseReport(reportAbs, fileRel, fqcn) {
   const survived = scored.filter((x) => !x.detected)
     .map((m) => ({ ...m, difficulty: killDifficulty(m) }))
     .sort((a, b) => a.difficulty - b.difficulty || (a.line || 0) - (b.line || 0));
-  return { file: fileRel, fqcn, totalMutants: total, killed, score, survived, byMethod, report: path.basename(reportAbs) };
+  return { file: fileRel, fqcn, totalMutants: total, killed, score, survived, byMethod,
+    all: scored, report: path.basename(reportAbs) };
 }
 
-module.exports = { runPit, ensureMavenWiring, parseReport, platformVersionFor, killDifficulty, PIT_VERSION, MUTATORS };
+/**
+ * Narrow a class-wide report to ONE method — the unit of work.
+ *
+ * PIT has no "mutate only this method" switch; we approximate it with excludedMethods,
+ * built from the methods we know about. When that list is incomplete, mutants from other
+ * methods come back in the report, and the consequences were not subtle: a SURVIVED
+ * MathMutator in toString() outranked every NO_COVERAGE mutant of the actual unit, so a
+ * whole round wrote a toString test that was then scored against isRecordStyleAccessor —
+ * a guaranteed miss — while the unit's "mutation score" was computed over another
+ * method's mutants as well. Excluding is best-effort; this filter is not.
+ */
+function scopeToMethod(parsed, method) {
+  if (!method) return parsed;
+  const mine = (parsed.all || []).filter((m) => m.method === method);
+  const killed = mine.filter((m) => m.detected).length;
+  return {
+    ...parsed,
+    totalMutants: mine.length,
+    killed,
+    // no mutants for this method is 0, never 100: nothing was proven about it
+    score: mine.length ? round2((killed * 100) / mine.length) : 0,
+    empty: mine.length === 0,
+    survived: (parsed.survived || []).filter((m) => m.method === method),
+    all: mine,
+    // byMethod stays whole — it is bytecode truth about the class, and the exclusion
+    // list for the next run is built from it
+    byMethod: parsed.byMethod,
+  };
+}
+
+module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor, killDifficulty, PIT_VERSION, MUTATORS };
