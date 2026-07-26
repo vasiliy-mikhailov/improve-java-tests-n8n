@@ -37,9 +37,12 @@ async function chat(opts) {
   addLlmExchange({
     stage: opts.stage || null,
     detail: opts.stageDetail || null,
-    system: String(opts.system || '').slice(0, 1200),
-    prompt: String(opts.prompt || (messages[messages.length - 1] || {}).content || '').slice(0, 4000),
-    response: String(text || '').slice(0, 4000),
+    system: clip(String(opts.system || ''), 900, 400),
+    // head AND tail: the instruction and the mutant to kill sit at the END of the prompt,
+    // after the source, so clipping to the first N characters removed precisely the part
+    // worth reading
+    prompt: clip(String(opts.prompt || (messages[messages.length - 1] || {}).content || ''), 1500, 3000),
+    response: clip(String(text || ''), 3000, 1000),
     secs: Math.round((Date.now() - started) / 1000),
     finish: lastFinishReason,
   });
@@ -66,6 +69,14 @@ async function chat(opts) {
     }
   }
   return { text, json: parsed };
+}
+
+/** Keep the beginning and the end; elide the middle, saying how much was dropped. */
+function clip(text, head, tail) {
+  if (text.length <= head + tail + 40) return text;
+  return text.slice(0, head)
+    + `\n\n… [${text.length - head - tail} characters elided] …\n\n`
+    + text.slice(-tail);
 }
 
 async function post(body, attempt = 0) {
