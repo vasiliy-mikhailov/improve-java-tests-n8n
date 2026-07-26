@@ -43,20 +43,21 @@ async function chat(opts) {
   const text = await post(body);
   budget.record(stage, { finish: lastFinishReason, ceiling: body.max_tokens, completionTokens: lastCompletionTokens });
   state.llmBudget = budget.toJSON();
-  // the exchange itself, for the dashboard's live dialog — truncated, since a prompt can
-  // carry a whole method and an answer a whole test file
-  addLlmExchange({
+  // Every attempt reaches the live dialog, not just the first. A truncated answer that
+  // was then retried used to be shown as THE answer for that round — an empty response
+  // and a duration a third of what the round really spent in the model.
+  const logExchange = (t, note) => addLlmExchange({
     stage: opts.stage || null,
-    detail: opts.stageDetail || null,
+    detail: (opts.stageDetail || null) && note ? `${opts.stageDetail} — ${note}` : (note || opts.stageDetail || null),
     system: clip(String(opts.system || ''), 900, 400),
-    // head AND tail: the instruction and the mutant to kill sit at the END of the prompt,
-    // after the source, so clipping to the first N characters removed precisely the part
-    // worth reading
     prompt: clip(String(opts.prompt || (messages[messages.length - 1] || {}).content || ''), 1500, 3000),
-    response: clip(String(text || ''), 3000, 1000),
+    response: clip(String(t || ''), 3000, 1000),
     secs: Math.round((Date.now() - started) / 1000),
     finish: lastFinishReason,
   });
+  // the exchange itself, for the dashboard's live dialog — truncated, since a prompt can
+  // carry a whole method and an answer a whole test file
+  logExchange(text);
   if (!opts.json) return { text };
   let parsed = extractJson(text);
   if (parsed == null) {
@@ -70,6 +71,7 @@ async function chat(opts) {
       save();
       event('llm', `response hit the token limit mid-JSON — retrying with ${bigger} tokens instead of ${body.max_tokens}`);
       const retry = await post({ ...body, max_tokens: bigger });
+      logExchange(retry, `retry with ${bigger} tokens`);
       parsed = extractJson(retry);
       if (parsed != null) return { text: retry, json: parsed };
     }
@@ -84,6 +86,7 @@ async function chat(opts) {
       messages.push({ role: 'assistant', content: text.slice(0, 4000) });
       messages.push({ role: 'user', content: 'Your previous answer was not valid JSON. Reply again with ONLY the JSON object, no prose, no markdown fences, no placeholders in angle brackets.' });
       const retry = await post({ ...body, messages, temperature: 0.1 });
+      logExchange(retry, 'retry after invalid JSON');
       parsed = extractJson(retry);
     }
   }

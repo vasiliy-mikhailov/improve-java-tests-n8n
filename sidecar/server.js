@@ -554,6 +554,10 @@ const routes = {
       state.overheadLedger[slug] = (state.overheadLedger[slug] || 0)
         + Math.max(0, Math.floor(Date.now() / 1000) - state.run.startedAt);
     }
+    // A re-picked unit starts its miss budget again. It used to carry the previous
+    // attempt's count, so an attempt that began at 3/3 was finalised after a single
+    // successful round however much was left to kill.
+    S.upsertFile(file, { consecutiveMisses: 0 });
     // close any stopwatch left running by a previous, abandoned attempt
     for (const other of Object.values(state.files)) {
       if (other.attemptStartedAt && other.path !== file) accrueSpent(other.path);
