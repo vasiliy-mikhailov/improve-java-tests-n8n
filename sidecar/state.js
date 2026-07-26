@@ -18,7 +18,13 @@ function envConfig() {
     scopeLimit: parseInt(e.SCOPE_LIMIT || '0', 10),
     maxIterations: parseInt(e.MAX_ITERATIONS || '0', 10), // 0 = unlimited
     maxMutantsPerFile: parseInt(e.MAX_MUTANTS_PER_FILE || '5', 10),
-    maxRoundsPerFile: parseInt(e.MAX_ROUNDS_PER_FILE || '5', 10),
+    maxRoundsPerFile: parseInt(e.MAX_ROUNDS_PER_FILE || '12', 10),
+    // Mutants shown to the model per round. 1 = write ONE test for the single most
+    // promising survivor, re-measure, repeat: tiny prompts, fast answers, and every
+    // round is independently verified instead of betting a big test on many mutants.
+    mutantsPerRound: parseInt(e.MUTANTS_PER_ROUND || '1', 10),
+    // rounds are cheap now, but a mutant-dense method still needs a ceiling
+    unitBudgetSec: parseInt(e.UNIT_BUDGET_SEC || '2400', 10),
     maxAttemptsPerFile: parseInt(e.MAX_ATTEMPTS_PER_FILE || '3', 10),
     // diminishing-returns stop: a further round is only worth its ~10 min of
     // machine time if the last one closed a real share of the remaining MAC gap
@@ -61,7 +67,7 @@ function freshRun(overrides = {}) {
   const o = overrides && typeof overrides === 'object' ? overrides : {};
   for (const k of ['repoUrl', 'repoBranch', 'scopeGlob', 'scopeLimit', 'maxIterations',
     'maxMutantsPerFile', 'maxRoundsPerFile', 'maxAttemptsPerFile', 'minRoundGapFrac',
-    'minRoundGain', 'minMutantsPerClass', 'pitScope', 'minUnitLines', 'maxFailures', 'covPhaseMaxPct', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
+    'minRoundGain', 'mutantsPerRound', 'unitBudgetSec', 'minMutantsPerClass', 'pitScope', 'minUnitLines', 'maxFailures', 'covPhaseMaxPct', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
     if (o[k] !== undefined && o[k] !== null && o[k] !== '') cfg[k] = o[k];
   }
   if (o.rules && typeof o.rules === 'object') {
@@ -70,7 +76,9 @@ function freshRun(overrides = {}) {
   cfg.scopeLimit = parseInt(cfg.scopeLimit, 10) || 0;
   cfg.maxIterations = Math.max(0, parseInt(cfg.maxIterations, 10) || 0); // 0 = unlimited
   cfg.maxMutantsPerFile = parseInt(cfg.maxMutantsPerFile, 10) || 5;
-  cfg.maxRoundsPerFile = parseInt(cfg.maxRoundsPerFile, 10) || 5;
+  cfg.maxRoundsPerFile = parseInt(cfg.maxRoundsPerFile, 10) || 12;
+  cfg.mutantsPerRound = Math.max(1, parseInt(cfg.mutantsPerRound, 10) || 1);
+  cfg.unitBudgetSec = Math.max(0, parseInt(cfg.unitBudgetSec, 10) || 0);
   cfg.maxAttemptsPerFile = parseInt(cfg.maxAttemptsPerFile, 10) || 3;
   cfg.minRoundGapFrac = Math.max(0, parseFloat(cfg.minRoundGapFrac) || 0);
   cfg.minRoundGain = Math.max(0, parseFloat(cfg.minRoundGain) || 0);

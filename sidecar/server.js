@@ -518,6 +518,8 @@ const routes = {
       missedLines: f.missedLines ?? null,
       executableLines: f.executableLines ?? null,
       covPhaseMaxPct: state.run.config.covPhaseMaxPct ?? 0,
+      mutantsPerRound: state.run.config.mutantsPerRound ?? 1,
+      totalMutants: f.totalMutants ?? null,
       // the method this unit is about: the tests must concentrate here
       method: f.method || null,
       methodLine: f.methodLine || null,
@@ -704,10 +706,17 @@ const routes = {
       }
       const rounds = f.rounds || 0;
       const maxRounds = state.run.config.maxRoundsPerFile || 5;
+      const elapsedSec = (f.spentSec || 0)
+        + (f.attemptStartedAt ? Math.floor(Date.now() / 1000) - f.attemptStartedAt : 0);
       const { keepRound, continueRounds, gain, gapClosed, verdict } = roundsMod.decide({
         macBase: rb.mac, macAfter, improvedAny, degradedAny, rounds, maxRounds,
         minGapFrac: state.run.config.minRoundGapFrac,
         minGain: state.run.config.minRoundGain,
+        // granularity: one mutant of N is the smallest move a round can make, and the
+        // floors must never sit above it
+        totalMutants: st.totalMutants ?? f.totalMutants ?? null,
+        coverage: coverageAfter,
+        elapsedSec, budgetSec: state.run.config.unitBudgetSec || 0,
       });
       S.event('improving_mac', `round ${rounds + 1} of ${file}: cov ${rb.coverage}→${coverageAfter}, mut ${rb.mutation}→${st.score}, mac ${rb.mac}→${macAfter} — ${verdict}`);
       // remembered so /api/round/accept can echo it: the loop's IF then reads the

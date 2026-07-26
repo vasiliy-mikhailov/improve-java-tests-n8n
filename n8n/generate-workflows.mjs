@@ -247,7 +247,11 @@ const cfg = $('Start Run').first().json.run.config;
 const targetPath = gaps.mutTestPath;
 // freshest survivors: the sidecar tracks the last PIT run of this class (any round)
 const allSurvived = (gaps.survived && gaps.survived.length) ? gaps.survived : ($('Baseline Mutation').first().json.survived || []);
-const survived = allSurvived.slice(0, cfg.maxMutantsPerFile || 8);
+// ONE mutant per round by default: a single short test, verified immediately, then the
+// next mutant. Small prompts compile far more reliably than a sprawling test aimed at a
+// dozen mutants at once, and every kill is measured before the next is attempted.
+const perRound = gaps.mutantsPerRound || 1;
+const survived = allSurvived.slice(0, perRound);
 if (!survived.length) return [{ json: { skip: true, reason: 'no surviving mutants', targetPath, projectTestPath: gaps.projectTestPath } }];
 const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
 const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
@@ -266,7 +270,7 @@ const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', mo
   + '\\n\\nWrite one test class killing as many of these mutants as possible. JSON only.';
 // bounded per round: each round targets a handful of mutants, and a smaller answer
 // arrives sooner and compiles more often than a sprawling one
-return [{ json: { system, prompt, json: true, maxTokens: 5000, temperature: 0.25, stage: 'improving_mutation', stageDetail: 'writing mutant-killing tests', targetPath, projectTestPath: gaps.projectTestPath } }];`,
+return [{ json: { system, prompt, json: true, maxTokens: single ? 2500 : 5000, temperature: 0.25, stage: 'improving_mutation', stageDetail: single ? ('killing 1 mutant: ' + (survived[0].mutator || '') + ' at line ' + survived[0].line) : 'writing mutant-killing tests', targetPath, projectTestPath: gaps.projectTestPath } }];`,
   covDone);
 
 // =============================================================================

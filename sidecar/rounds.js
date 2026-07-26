@@ -16,7 +16,7 @@
 // MAC 0 on a 782-mutant schema file closes 0.4 % and is a tar pit.
 const { round2 } = require('./util');
 
-const DEFAULTS = { minGapFrac: 0.05, minGain: 0.5, maxRounds: 5 };
+const DEFAULTS = { minGapFrac: 0.05, minGain: 0.5, maxRounds: 12 };
 
 /**
  * @param {object} a
@@ -27,29 +27,43 @@ const DEFAULTS = { minGapFrac: 0.05, minGain: 0.5, maxRounds: 5 };
  * @param {number} a.rounds    rounds ALREADY accepted for this file
  */
 function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
-  maxRounds = DEFAULTS.maxRounds, minGapFrac = DEFAULTS.minGapFrac, minGain = DEFAULTS.minGain } = {}) {
+  maxRounds = DEFAULTS.maxRounds, minGapFrac = DEFAULTS.minGapFrac, minGain = DEFAULTS.minGain,
+  totalMutants = null, coverage = null, elapsedSec = 0, budgetSec = 0 } = {}) {
   const base = macBase ?? 0;
   const after = macAfter ?? 0;
   const keepRound = !!improvedAny && !degradedAny;
   const gain = round2(after - base);
   const gapLeft = 100 - base;
   const gapClosed = gapLeft > 0 ? gain / gapLeft : 0;
+  // A floor above the measurement's own granularity stops the loop on its first success.
+  // Killing ONE mutant of N moves MAC by coverage/N — on a 306-mutant method at 88 %
+  // coverage that is 0.29 points, under the 0.5 default. With one mutant per round that
+  // rule would end the loop after round 1, every time. So the floors are clamped to what
+  // a single mutant is worth: killing one is always progress.
+  const oneMutant = (totalMutants > 0 && coverage != null) ? (coverage / totalMutants) : null;
+  const effMinGain = oneMutant != null ? Math.min(minGain, oneMutant * 0.99) : minGain;
+  const effMinGapFrac = (oneMutant != null && gapLeft > 0)
+    ? Math.min(minGapFrac, (oneMutant * 0.99) / gapLeft) : minGapFrac;
   // rounds is the count already accepted; this one is number rounds+1
   const roundsLeft = rounds + 1 < Math.max(1, maxRounds);
-  const marginal = keepRound && (gapClosed < minGapFrac || gain < minGain);
+  const marginal = keepRound && (gapClosed < effMinGapFrac || gain < effMinGain);
+  // a mutant-dense method must not hold the run for ever, however cheap each round is
+  const outOfTime = budgetSec > 0 && elapsedSec >= budgetSec;
   // A perfect score leaves nothing to buy. Without this the loop always spends one more
   // round to discover that — cheap on a whole class, wasteful when the unit is a single
   // method, where reaching 100 in the first round is the common case.
   const perfect = after >= 100;
-  const continueRounds = keepRound && roundsLeft && !marginal && !perfect;
+  const continueRounds = keepRound && roundsLeft && !marginal && !perfect && !outOfTime;
   const verdict = !keepRound
     ? (degradedAny ? 'DEGRADED (stop, drop round)' : 'STALE (stop)')
-    : perfect ? `PROGRESS (MAC ${after} — nothing left to improve, keep and stop)`
+    : outOfTime ? `PROGRESS (unit time budget ${budgetSec}s spent — keep and stop)`
+      : perfect ? `PROGRESS (MAC ${after} — nothing left to improve, keep and stop)`
       : !roundsLeft ? `PROGRESS (round budget ${Math.max(1, maxRounds)} spent — keep and stop)`
       : marginal ? `PROGRESS but MARGINAL (+${gain} MAC = ${round2(gapClosed * 100)}% of the remaining gap; `
         + `floors ${round2(minGapFrac * 100)}% / +${minGain}) — keep and stop`
         : 'PROGRESS (another round)';
-  return { keepRound, continueRounds, marginal, perfect, gain, gapClosed: round2(gapClosed), verdict };
+  return { keepRound, continueRounds, marginal, perfect, outOfTime, gain,
+    gapClosed: round2(gapClosed), effMinGain: round2(effMinGain), verdict };
 }
 
 module.exports = { decide, DEFAULTS };

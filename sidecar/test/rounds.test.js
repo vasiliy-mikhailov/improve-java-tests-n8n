@@ -73,6 +73,31 @@ test('reaching a perfect score ends the loop immediately', () => {
   assert.match(d.verdict, /nothing left to improve/);
 });
 
+test('killing ONE mutant always counts as progress, whatever the floors say', () => {
+  // 306 mutants at 88 % coverage: one kill moves MAC by 88/306 = 0.29, under the 0.5
+  // default floor. Without clamping the floors to the measurement's granularity, the
+  // one-mutant-per-round strategy would stop after its first success every time.
+  const d = decide({ ...base, macBase: 0, macAfter: 0.29, totalMutants: 306, coverage: 88 });
+  assert.equal(d.continueRounds, true);
+  assert.ok(d.effMinGain <= 0.29, 'floor must not exceed what one mutant is worth');
+  const unclamped = decide({ ...base, macBase: 0, macAfter: 0.29 });
+  assert.equal(unclamped.continueRounds, false, 'without the clamp this is judged marginal');
+});
+
+test('a genuinely marginal round still stops when mutants are coarse', () => {
+  // 4 mutants: one kill is worth 25 points, so a 0.29 gain really is noise
+  const d = decide({ ...base, macBase: 50, macAfter: 50.29, totalMutants: 4, coverage: 100 });
+  assert.equal(d.continueRounds, false);
+});
+
+test('the unit time budget ends the loop even while progress continues', () => {
+  const d = decide({ ...base, macBase: 0, macAfter: 40, elapsedSec: 3000, budgetSec: 2400 });
+  assert.equal(d.keepRound, true);
+  assert.equal(d.continueRounds, false);
+  assert.equal(d.outOfTime, true);
+  assert.match(d.verdict, /time budget/);
+});
+
 test('thresholds are configurable', () => {
   const strict = decide({ ...base, macBase: 0, macAfter: 40, minGapFrac: 0.5 });
   assert.equal(strict.continueRounds, false);
