@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { decide } = require('../rounds');
+const { decide } = require('../../rounds');
 
 const base = { improvedAny: true, degradedAny: false, rounds: 0, maxRounds: 5 };
 
@@ -109,7 +109,7 @@ test('thresholds are configurable', () => {
 });
 
 // ── mutant selection comes from PIT's data, not from anyone's judgement ──────
-const { killDifficulty } = require('../pit');
+const { killDifficulty } = require('../../pit');
 
 test('value-returning and arithmetic mutants rank ahead of conditional removal', () => {
   // Empirical, from JSON-java: four consecutive rounds targeted

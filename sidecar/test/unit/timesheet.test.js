@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { estimate, diffStats, RATES } = require('../timesheet');
+const { estimate, diffStats, RATES } = require('../../timesheet');
 
 test('estimate itemizes and sums the four buckets', () => {
   const t = estimate({ sourceLines: 200, testCases: 5, mutantsKilled: 4, rounds: 2 });

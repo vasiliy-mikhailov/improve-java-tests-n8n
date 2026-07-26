@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { globsToMatcher, slugify, fileSlug, mac, round2, extractJson, redact } = require('../util');
+const { globsToMatcher, slugify, fileSlug, mac, round2, extractJson, redact } = require('../../util');
 
 test('glob matcher: ** spans directories, * does not', () => {
   const m = globsToMatcher('lib/**/*.ts');

@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mergeReport, lineCounter } = require('../coverage');
+const { mergeReport, lineCounter } = require('../../coverage');
 
 // Shape of a real JaCoCo report: <class> holds a <method> per method, each with its OWN
 // counters, and the class totals come LAST. Here the first method is uncovered (0/3) and

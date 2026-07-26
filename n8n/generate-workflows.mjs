@@ -7,7 +7,7 @@
 //
 // Run: node generate-workflows.mjs → writes workflows/Improve-Java-Tests.json
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -55,32 +55,6 @@ function Http(name, { method = 'POST', path, urlExpr, body, timeout = 600000 }) 
   return add('n8n-nodes-base.httpRequest', name, params, 4.2);
 }
 
-// ── shared prompt fragments (live inside Code nodes) ───────────────────────
-
-// What a generated Java test must satisfy to compile, run and be worth committing.
-const COMMON_TEST_RULES = `
-- ONE test file only. Its public class name MUST equal the file name, and the package declaration MUST match the directory under src/test/java.
-- Use the SAME test framework and assertion library as the style reference (JUnit 5: org.junit.jupiter.api.Test/Assertions; JUnit 4: org.junit.Test/org.junit.Assert). Do NOT introduce a dependency the project does not already have.
-- Call only the PUBLIC API of the class under test. Never use reflection, setAccessible, or read source/bytecode.
-- Do NOT modify production code, existing tests, or the build files.
-- Deterministic: no network, no clock/randomness without fixing them, no reliance on file-system state or test execution order.
-- Every test must ASSERT a value or an observable side effect; a test that only checks "does not throw" is worthless.
-- The tests MUST compile and PASS against the CURRENT implementation.`;
-
-// The heart of mutation-killing: PIT mutator → the assertion that catches it.
-const MUTATOR_PLAYBOOK = `
-Mutator → the assertion that detects it:
-- ConditionalsBoundary (< ↔ <=, > ↔ >=): exercise the value EXACTLY at the boundary and assert the branch taken there.
-- NegateConditionals (== ↔ !=, < ↔ >=): assert behaviour on BOTH sides of the condition.
-- Math (+ ↔ -, * ↔ /, %): choose inputs where the two operations differ; assert the exact numeric result.
-- Increments (i++ ↔ i--): assert the final accumulated/counted value.
-- ReturnVals / NullReturnVals / PrimitiveReturnVals / BooleanTrueReturnVals / EmptyObjectReturnVals: assert the ACTUAL returned value or the returned object's contents (size, a known element) — never merely that it is non-null.
-- VoidMethodCall / ConstructorCall: assert the observable SIDE EFFECT of the removed call (state change, collaborator interaction, output).
-- RemoveConditional: assert that the guarded behaviour does NOT happen when the condition is false.
-- InlineConstant: assert the exact constant-derived value.
-- Switch: assert the outcome for each case label, including the default.
-Prefer SURVIVED over NO_COVERAGE. A SURVIVED mutant is on a line the suite already executes, so only an assertion is missing and a few lines of test will kill it. A NO_COVERAGE mutant is on a line nothing reaches: on an already well-covered method those are the leftovers behind error paths and awkward edge cases, and reaching them takes elaborate setup that often fails. Take a NO_COVERAGE mutant only when you can see plainly, from the code above, which inputs reach that line.`;
-
 // =============================================================================
 // SPINE
 // =============================================================================
@@ -127,64 +101,27 @@ link('Has Mutants?', 'Next Iteration', 1);   // nothing to mutate → pick anoth
 // =============================================================================
 // IMPROVEMENT PHASE (generic: coverage / mutation)
 // =============================================================================
-function phase(prefix, buildPromptCode, entryNode) {
+function phase(prefix, promptEndpoint, entryNode) {
   const B = (n) => `${prefix}: ${n}`;
   const stage = prefix === 'Cov' ? 'improving_coverage' : 'improving_mutation';
-  Code(B('Build Prompt'), buildPromptCode);
+  // The prompt is built by the sidecar (sidecar/prompts.js) from the freshest state, and
+  // the answer is parsed there too (sidecar/parse.js). Both are covered by unit tests;
+  // the same logic as JS strings inside Code nodes had neither a compiler nor a test, and
+  // shipped an undefined identifier and a silently-unapplied edit to production.
+  Http(B('Build Prompt'), { path: promptEndpoint, body: `={{ { path: $('Start Iteration').first().json.file } }}` });
   IfNum(B('Has Work?'), `={{ $json.skip ? 0 : 1 }}`, 'equal', 1);
   Http(B('LLM Write Tests'), { path: '/api/llm/chat', body: '={{ $json }}', timeout: 900000 });
-  Code(B('Parse Tests'), `
-const resp = $json;
-const plan = $('${B('Build Prompt')}').first().json;
-let tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];
-const offered = $('Mut: Build Prompt').first().json.offered || [];
-const chosen = offered[0] ? { line: offered[0].line, mutator: offered[0].mutator } : null;
-tests = tests
-  .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)
-  .slice(0, 1)
-  .map((t) => {
-    let p = typeof t.path === 'string' ? t.path.replace(/^\\.?\\//, '') : '';
-    // a Java file must live at the path its package + class name dictate, so trust our
-    // computed target unless the model produced exactly that
-    const safe = /(^|\\/)src\\/test\\/java\\/.+\\.java$/.test(p) && !p.includes('..');
-    if (!safe || p === plan.projectTestPath) p = plan.targetPath;
-    // the public class name has to match the file name or javac refuses to compile
-    const want = p.split('/').pop().replace(/\\.java$/, '');
-    let content = t.content;
-    const declared = (content.match(/public\\s+(?:final\\s+|abstract\\s+)?class\\s+(\\w+)/) || [])[1];
-    if (declared && declared !== want) {
-      content = content.replace(new RegExp('\\\\b' + declared + '\\\\b', 'g'), want);
-    }
-    return { path: p, content };
-  });
-return [{ json: { tests, paths: tests.map(t => t.path), count: tests.length, chosen } }];`);
+  Http(B('Parse Tests'), { path: '/api/tests/parse', body: `={{ { resp: $json, plan: $('${B('Build Prompt')}').first().json } }}` });
   Http(B('Write Tests'), { path: '/api/test/write-many', body: `={{ { tests: $json.tests, stage: '${stage}', note: $json.chosen ? ('targeting ' + $json.chosen.mutator + ' at line ' + $json.chosen.line) : null, targetMutant: $json.chosen || null } }}` });
   Http(B('Run Tests'), { path: '/api/test/run', body: `={{ { stage: '${stage}' } }}`, timeout: 3600000 });
   IfNum(B('Green?'), '={{ $json.passed ? 1 : 0 }}', 'equal', 1);
   IfNum(B('Wrote Any?'), `={{ $('${B('Parse Tests')}').first().json.count }}`, 'larger', 0);
-  Code(B('Build Repair'), `
-const fail = $json;
-const parsed = $('${B('Parse Tests')}').first().json;
-const gaps = $('Coverage Gaps').first().json;
-const filesTxt = parsed.tests.map(t => 'PATH: ' + t.path + '\\n' + t.content.slice(0, 6000)).join('\\n\\n---\\n\\n');
-const system = 'You are an expert Java test engineer. Tests you previously wrote FAIL to compile or fail against the current implementation. Fix them. Keep the SAME file path and class name. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full corrected file content"}]}. Compilation errors: fix imports, types, visibility and constructor/method signatures against the source shown. Assertion failures: correct the EXPECTED values to match the real behaviour of the source — never weaken an assertion to make it pass trivially. If a test cannot be fixed, drop it from the output.';
-const prompt = 'BUILD / TEST OUTPUT (failures):\\n' + String(fail.summary || '').slice(0, 4000)
-  + '\\n\\nYOUR TEST FILE(S):\\n' + filesTxt
-  + '\\n\\nCLASS UNDER TEST ' + gaps.fqcn + ' (' + gaps.path + (gaps.method ? ', method ' + gaps.method + '()' : '') + '):\\n'
-  + (gaps.methodSource ? (gaps.classHeader || '') + '\\n\\n' + gaps.methodSource : String(gaps.source || '').slice(0, 10000))
-  + '\\n\\nReply with corrected JSON now.';
-return [{ json: { system, prompt, json: true, maxTokens: 7000, temperature: 0.2, stage: '${stage}', stageDetail: 'repairing failing generated tests' } }];`);
+  Http(B('Build Repair'), {
+    path: '/api/prompt/repair',
+    body: `={{ { path: $('Start Iteration').first().json.file, stage: '${stage}', summary: $json.summary, tests: $('${B('Parse Tests')}').first().json.tests } }}`,
+  });
   Http(B('LLM Repair'), { path: '/api/llm/chat', body: '={{ $json }}', timeout: 900000 });
-  Code(B('Parse Repair'), `
-const resp = $json;
-const prev = $('${B('Parse Tests')}').first().json;
-let tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];
-tests = tests
-  .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)
-  .slice(0, prev.paths.length)
-  .map((t, i) => ({ path: prev.paths[i], content: t.content }))
-  .filter(t => t.path);
-return [{ json: { tests, paths: tests.map(t => t.path), count: tests.length } }];`);
+  Http(B('Parse Repair'), { path: '/api/tests/parse-repair', body: `={{ { resp: $json, prev: $('${B('Parse Tests')}').first().json } }}` });
   Http(B('Write Repair'), { path: '/api/test/write-many', body: `={{ { tests: $json.tests } }}` });
   Http(B('Re-run Tests'), { path: '/api/test/run', body: `={{ {} }}`, timeout: 3600000 });
   IfNum(B('Green After Repair?'), '={{ $json.passed ? 1 : 0 }}', 'equal', 1);
@@ -210,95 +147,14 @@ return [{ json: { tests, paths: tests.map(t => t.path), count: tests.length } }]
 }
 
 // ── coverage phase ─────────────────────────────────────────────────────────
-const covDone = phase('Cov', `
-const gaps = $json; // response of Coverage Gaps
-const u = gaps.uncovered || {};
-const fullyUncovered = u.lines === 'all';
-const missed = fullyUncovered ? 9999 : (u.lines || []).length;
-const targetPath = gaps.covTestPath;
-// The coverage phase exists to get the method EXECUTED at all. Once anything executes it,
-// the mutation phase takes over and drags coverage along with it: a NO_COVERAGE mutant is
-// by definition on a line nothing runs, and killing it requires calling that code. So this
-// phase runs only when the method is completely unexecuted; otherwise it burns a
-// multi-minute call and thousands of tokens to duplicate what mutation work does anyway.
-const anyCoverage = !fullyUncovered && gaps.coverage != null && gaps.coverage > (gaps.covPhaseMaxPct ?? 0);
-if (missed === 0) return [{ json: { skip: true, reason: 'method fully covered', targetPath, projectTestPath: gaps.projectTestPath } }];
-if (anyCoverage) {
-  return [{ json: { skip: true, reason: 'method already executed (' + gaps.coverage + '% covered) — mutation tests will extend coverage as they kill NO_COVERAGE mutants', targetPath, projectTestPath: gaps.projectTestPath } }];
-}
-const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
-const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
-const RULES = ${JSON.stringify(COMMON_TEST_RULES)};
-const system = 'You are an expert Java test engineer writing the FIRST test for ONE METHOD that no test executes yet' + (gaps.method ? ' (' + gaps.method + '())' : '') + '. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}. Create a NEW test class only — never modify existing files. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES
-  + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
-const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ', JDK ' + gaps.jdk + ')\\n'
-  + (gaps.method ? 'TARGET METHOD: ' + gaps.method + '()' + (gaps.methodLine ? ' (declared around line ' + gaps.methodLine + ')' : '') + ' — the tests must exercise THIS method; coverage and mutation score are measured on it alone.\\n' : '')
-  + (gaps.methodSource ? (gaps.classHeader || '') + '\\n\\n  // … other members omitted …\\n\\n' + gaps.methodSource : String(gaps.source || '').slice(0, 14000))
-  + '\\n\\nUNCOVERED: ' + (fullyUncovered ? 'THE ENTIRE CLASS (no test executes it at all)' : 'source lines ' + JSON.stringify((u.lines || []).slice(0, 140)))
-  + '\\n\\nEXISTING TEST (style reference — imports, assertion library, conventions; do NOT rewrite it):\\n'
-  + String(gaps.existingTest || '(none)').slice(0, 6000)
-  + '\\n\\nWrite one test class that executes the uncovered lines OF THE TARGET METHOD and asserts real behaviour. JSON only.';
-// a deliberately small budget for the first pass: it caps both the wait and the size of
-// what comes back, and the rounds provide the depth
-return [{ json: { system, prompt, json: true, maxTokens: 3000, temperature: 0.2, stage: 'improving_coverage', stageDetail: 'writing a first, simple test', targetPath, projectTestPath: gaps.projectTestPath } }];`,
-  'Coverage Gaps');
+// Only for a method NOTHING executes: once anything runs it, killing NO_COVERAGE mutants
+// drags coverage along anyway (sidecar/prompts.js decides and says so).
+const covDone = phase('Cov', '/api/prompt/coverage', 'Coverage Gaps');
 
 // ── mutation phase ─────────────────────────────────────────────────────────
-const mutDone = phase('Mut', `
-const gaps = $('Coverage Gaps').first().json;
-const targetPath = gaps.mutTestPath;
-// freshest survivors: the sidecar tracks the last PIT run of this unit (any round)
-const allSurvived = (gaps.survived && gaps.survived.length) ? gaps.survived : ($('Baseline Mutation').first().json.survived || []);
-// ONE mutant per round: a single short test, verified immediately, then the next mutant.
-// The MODEL chooses which one — from the source it can tell which kill is cheap and which
-// drags neighbouring mutants down with it, where the mechanical order only knows
-// NO_COVERAGE before SURVIVED. It picks and writes in the same call, so choosing costs no
-// extra round-trip, and the choice and its reason are recorded.
-// The TARGET is chosen from PIT's data (mutator kind, SURVIVED before NO_COVERAGE, and
-// this run's actual kill record), not by asking the model which one it fancies — that
-// judgement was confidently wrong on four consecutive rounds, every time picking a
-// RemoveConditional mutant it could not distinguish. The survivor list arrives ranked;
-// the model's job is to write the test for the one at the front.
-const single = (gaps.mutantsPerRound || 1) === 1;
-const choices = allSurvived.slice(0, single ? 1 : (gaps.mutantsPerRound || 1));
-if (!choices.length) return [{ json: { skip: true, reason: gaps.attemptedMutants
-  ? ('every remaining survivor has already been attempted (' + gaps.attemptedMutants + ' tried)')
-  : 'no surviving mutants', targetPath, projectTestPath: gaps.projectTestPath } }];
-const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
-const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
-const mutantsTxt = choices.map((m, i) =>
-  '#' + (i + 1) + ' [' + m.status + '] ' + m.mutator + ' at line ' + m.line + ' in method ' + (m.method || '?') + '() — ' + (m.description || '')).join('\\n');
-const RULES = ${JSON.stringify(COMMON_TEST_RULES)};
-const PLAYBOOK = ${JSON.stringify(MUTATOR_PLAYBOOK)};
-const framework = gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5';
-const replyShape = '{"tests":[{"path":"...","content":"full test file content"}]}';
-const system = 'You are an expert Java test engineer killing surviving PIT mutants of ONE METHOD, one at a time, writing ' + framework + ' tests. A mutant is killed when at least one test FAILS on the mutated code while PASSING on the real code — so the test must assert something that DISTINGUISHES the two. Reply ONLY with JSON: ' + replyShape + '. Create a NEW test class only. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES + PLAYBOOK
-  + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
-// the METHOD, not the whole class: prompt size drives latency, and the rest of a
-// 1500-line class is noise when the target is a single method
-const srcBlock = gaps.methodSource
-  ? (gaps.classHeader || '') + '\\n\\n  // … other members omitted …\\n\\n' + gaps.methodSource
-  : String(gaps.source || '').slice(0, 12000);
-const sigBlock = (gaps.siblingSignatures && gaps.siblingSignatures.length)
-  ? '\\n\\nOTHER MEMBERS (signatures only, for building inputs):\\n' + gaps.siblingSignatures.slice(0, 40).join('\\n') : '';
-const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ')\\n'
-  + srcBlock + sigBlock
-  + (gaps.method ? '\\n\\nFOCUS: this unit of work IS the method ' + gaps.method + '() — shown in full above; every mutant below is inside it, and the score is measured on it alone.' : '')
-  + '\\n\\nSURVIVING MUTANTS (status SURVIVED = the line runs but nothing asserts on it; NO_COVERAGE = the line never runs):\\n' + mutantsTxt
-  + '\\n\\nEXISTING TEST (style reference — do NOT rewrite it):\\n'
-  + String(gaps.existingTest || '(none)').slice(0, 4000)
-  + (single
-    ? '\\n\\nCHOOSE the single MOST PROMISING mutant above and kill it now. Most promising = you can kill it with a short, obviously-correct test; it sits on a path reachable with simple inputs rather than behind elaborate setup; and the test that kills it is likely to kill neighbouring mutants too. Then write ONE test class with ONE short test method that kills exactly that mutant: call the method with inputs reaching that line and assert the value that differs between the real code and the mutation. Nothing more — another round follows for the next mutant. JSON only.'
-    : '\\n\\nWrite one FOCUSED test class: one short test method per mutant above, each with the single assertion that distinguishes the real code from that mutation. JSON only.');
-// small answers arrive sooner and compile far more often than sprawling ones
-return [{ json: { system, prompt, json: true, maxTokens: single ? 2500 : 5000, temperature: 0.25,
-  stage: 'improving_mutation',
-  stageDetail: single && choices[0]
-    ? ('killing ' + choices[0].mutator + ' at line ' + choices[0].line)
-    : 'writing mutant-killing tests',
-  offered: choices.map(m => ({ line: m.line, mutator: m.mutator, status: m.status })),
-  targetPath, projectTestPath: gaps.projectTestPath } }];`,
-  covDone);
+// ONE mutant per round, chosen from PIT's data and this run's kill record — not from the
+// model's opinion about what it can kill, which was confidently wrong four rounds running.
+const mutDone = phase('Mut', '/api/prompt/mutation', covDone);
 
 // =============================================================================
 // VERIFY → CHECK RULES → PR / DISCARD → LOOP
@@ -365,32 +221,25 @@ console.log(`✓ ${w.name}: ${w.nodes.length} nodes`);
 // terminate the single-quoted string it was interpolated into, and the workflow
 // only failed hours later, mid-run, inside n8n. Fragments are injected as JSON
 // now — this check is what keeps it that way.
-const broken = [];
-// Stubs rich enough for the prompt builders to run: every node reads $json / $('Node')
-// and returns [{json}]. Parsing alone is not enough — an identifier that is never defined
-// (a half-applied edit) parses perfectly and throws ReferenceError at runtime, mid-run,
-// inside n8n. That happened; this is the check that catches it.
-const stubUnit = {
-  path: 'src/main/java/a/B.java', unit: 'src/main/java/a/B.java::m', fqcn: 'a.B', method: 'm',
-  module: '.', source: 'class B { int m(int x){ return x + 1; } }', sourceLines: 1,
-  uncovered: { lines: [3, 4] }, coverage: 0, missedLines: 2, executableLines: 4,
-  covTestPath: 'src/test/java/a/BMacCovTest.java', mutTestPath: 'src/test/java/a/BMacMutTest.java',
-  projectTestPath: null, testExists: false, existingTest: null, rounds: 0, package: 'a',
-  className: 'B', testFramework: 'junit5', jdk: 17, constraints: [], mutantsPerRound: 1,
-  mutantChoices: 20, covPhaseMaxPct: 0, totalMutants: 306,
-  survived: [{ status: 'SURVIVED', mutator: 'MathMutator', line: 3, method: 'm', description: 'replaced + with -' }],
-};
-const stubJson = { ...stubUnit, ok: true, json: { tests: [{ path: 'src/test/java/a/BMacMutTest.java', content: 'class X {}' }], mutant: 1, why: 'cheap' }, passed: false, summary: 'boom', tests: [], paths: [], count: 0, file: stubUnit.unit, run: { config: { maxMutantsPerFile: 8, mutantsPerRound: 1 } } };
-const $ = () => ({ first: () => ({ json: stubJson }) });
-for (const n of w.nodes.filter((x) => x.type === 'n8n-nodes-base.code')) {
-  try { new Function('$json', '$', n.parameters.jsCode)(stubJson, $); }
-  catch (e) { broken.push(`${n.name}: ${e.constructor.name}: ${e.message}`); }
+// Every node is now an HTTP call into the sidecar, so the build-time check that matters
+// is whether those endpoints exist. A path typo used to surface as a 404 an hour into a
+// run; here it fails the build. (The logic those nodes used to carry inline now lives in
+// sidecar/*.js under `npm test`.)
+const routes = new Set(
+  [...readFileSync(join(__dirname, '..', 'sidecar', 'server.js'), 'utf8')
+    .matchAll(/'(GET|POST) (\/api\/[^']+)'/g)].map((m) => `${m[1]} ${m[2]}`));
+const badUrls = [];
+for (const n of w.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+  const url = String(n.parameters.url || '');
+  const path = (url.replace(/^=?http:\/\/127\.0\.0\.1:3000/, '').split('?')[0]) || '';
+  const key = `${n.parameters.method || 'GET'} ${path}`;
+  if (!routes.has(key)) badUrls.push(`${n.name}: ${key}`);
 }
-if (broken.length) {
-  console.error('CODE NODE ERRORS (parse or execute):\n  ' + broken.join('\n  '));
+if (badUrls.length) {
+  console.error('HTTP NODES POINTING AT NON-EXISTENT SIDECAR ROUTES:\n  ' + badUrls.join('\n  '));
   process.exit(1);
 }
-console.log(`✓ all ${w.nodes.filter((x) => x.type === 'n8n-nodes-base.code').length} Code nodes parse AND execute`);
+console.log(`\u2713 all ${w.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest').length} HTTP nodes hit a real sidecar route`);
 
 // static safety scan: forbid non-native/system node types
 const allowed = ['n8n-nodes-base.manualTrigger', 'n8n-nodes-base.webhook', 'n8n-nodes-base.httpRequest',

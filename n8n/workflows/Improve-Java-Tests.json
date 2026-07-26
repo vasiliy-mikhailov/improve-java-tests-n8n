@@ -10,7 +10,7 @@
         220,
         0
       ],
-      "id": "2c430327-1881-4f5c-a279-6d402aaadd34",
+      "id": "9bb5859f-47a5-4b21-875f-cdcececf6d7e",
       "name": "Start (manual)"
     },
     {
@@ -26,7 +26,7 @@
         440,
         0
       ],
-      "id": "436d1ec7-3e6f-4be1-a1dc-255079d99d52",
+      "id": "9a18bb4e-d759-4ce4-b3b0-5a3e86c71bd8",
       "name": "Start (webhook)",
       "webhookId": "aa11bb22-ijt-4run-9000-improvejava01"
     },
@@ -50,7 +50,7 @@
         660,
         0
       ],
-      "id": "8295baad-f0f7-46b8-bb95-9c6e13773f6f",
+      "id": "7cd768b3-d7ad-4d3a-a82e-19366449208d",
       "name": "Start Run"
     },
     {
@@ -73,7 +73,7 @@
         880,
         0
       ],
-      "id": "57fd4a27-7ab9-4998-8898-d693a5b9c317",
+      "id": "7e8c7110-bee7-4f03-a88b-9248945f2b48",
       "name": "Clone Repo"
     },
     {
@@ -96,7 +96,7 @@
         1100,
         0
       ],
-      "id": "8934ec1f-1f85-41e9-a722-152d558a3ba6",
+      "id": "b486d450-774d-4be2-b913-692133c91217",
       "name": "Rules: post-clone"
     },
     {
@@ -119,7 +119,7 @@
         1320,
         0
       ],
-      "id": "4ad4fda1-e1e9-419f-a551-8e2fa6dba933",
+      "id": "c01fab20-4885-42b6-ad22-61231a0548a4",
       "name": "Build & Detect"
     },
     {
@@ -142,7 +142,7 @@
         1540,
         0
       ],
-      "id": "88187245-d0ce-48f0-ac5b-e3715a0144af",
+      "id": "0d38b11d-54df-4ff7-9685-28493094c3c5",
       "name": "Baseline Coverage"
     },
     {
@@ -165,7 +165,7 @@
         1760,
         0
       ],
-      "id": "810e33be-53a3-4823-bcd7-f780113fc6d5",
+      "id": "248db875-579d-4e6f-84f3-408aa6b717cc",
       "name": "Rules: pre-pick"
     },
     {
@@ -188,7 +188,7 @@
         1980,
         0
       ],
-      "id": "8b4c9c20-9b56-40ae-87c8-9a21ddb29a69",
+      "id": "1ac22417-7cb8-402c-afb6-72a92111a3fc",
       "name": "Rules: write-test"
     },
     {
@@ -199,7 +199,7 @@
         2200,
         0
       ],
-      "id": "2fe1a7cd-3d56-4eb9-8af9-1d26d1208717",
+      "id": "89fdf2b3-eafc-415a-9e28-dbd34fe9a384",
       "name": "Next Iteration"
     },
     {
@@ -219,7 +219,7 @@
         2420,
         0
       ],
-      "id": "b8eb1189-c2d0-4db3-ba89-050e62b5ef11",
+      "id": "d9ad05f6-69a3-41bc-beba-429fe00133a2",
       "name": "Get Candidates"
     },
     {
@@ -240,7 +240,7 @@
         2640,
         0
       ],
-      "id": "0c514d2a-d613-4981-a29e-3056a846f99f",
+      "id": "c571a4e8-233c-4102-8657-5022811153fd",
       "name": "More Work?"
     },
     {
@@ -263,7 +263,7 @@
         2860,
         0
       ],
-      "id": "92700e6d-e57a-4984-8f5f-ca340bba2f52",
+      "id": "a59e45fc-41ec-4051-a685-ac678422f030",
       "name": "Rules: pick file"
     },
     {
@@ -284,7 +284,7 @@
         3080,
         0
       ],
-      "id": "2c76e2c0-e2ff-4607-b8b2-2ad17d73a0dc",
+      "id": "97ce6319-5cb8-47eb-85d5-f5b4a44c7291",
       "name": "File Picked?"
     },
     {
@@ -305,7 +305,7 @@
         3300,
         0
       ],
-      "id": "2f85cfc8-330b-4838-91cc-65f790b4e69b",
+      "id": "8546a743-9919-48b7-a359-b9b4fed540e8",
       "name": "Pick Retryable?"
     },
     {
@@ -328,7 +328,7 @@
         3520,
         0
       ],
-      "id": "cacadc76-10d1-4b27-82b7-c8c06630551e",
+      "id": "2c845f22-26b6-4455-b8fc-ccfdc6d78dc2",
       "name": "Start Iteration"
     },
     {
@@ -351,7 +351,7 @@
         220,
         200
       ],
-      "id": "10105adf-03df-4d2d-a25a-2f0345aca5b8",
+      "id": "172361b9-d923-4152-9b1f-e3586de76f00",
       "name": "Baseline Mutation"
     },
     {
@@ -372,7 +372,7 @@
         440,
         200
       ],
-      "id": "e784ef88-176b-4dd9-b1c9-afc4441137f3",
+      "id": "6717911d-44d2-46ea-89d3-3690de037334",
       "name": "Has Mutants?"
     },
     {
@@ -392,21 +392,30 @@
         660,
         200
       ],
-      "id": "ac1ed0a3-fc95-4f90-9402-d07554abece9",
+      "id": "d4420364-5997-48d7-8b4a-981cd4ac5227",
       "name": "Coverage Gaps"
     },
     {
       "parameters": {
-        "jsCode": "\nconst gaps = $json; // response of Coverage Gaps\nconst u = gaps.uncovered || {};\nconst fullyUncovered = u.lines === 'all';\nconst missed = fullyUncovered ? 9999 : (u.lines || []).length;\nconst targetPath = gaps.covTestPath;\n// The coverage phase exists to get the method EXECUTED at all. Once anything executes it,\n// the mutation phase takes over and drags coverage along with it: a NO_COVERAGE mutant is\n// by definition on a line nothing runs, and killing it requires calling that code. So this\n// phase runs only when the method is completely unexecuted; otherwise it burns a\n// multi-minute call and thousands of tokens to duplicate what mutation work does anyway.\nconst anyCoverage = !fullyUncovered && gaps.coverage != null && gaps.coverage > (gaps.covPhaseMaxPct ?? 0);\nif (missed === 0) return [{ json: { skip: true, reason: 'method fully covered', targetPath, projectTestPath: gaps.projectTestPath } }];\nif (anyCoverage) {\n  return [{ json: { skip: true, reason: 'method already executed (' + gaps.coverage + '% covered) — mutation tests will extend coverage as they kill NO_COVERAGE mutants', targetPath, projectTestPath: gaps.projectTestPath } }];\n}\nconst constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');\nconst testClass = targetPath.split('/').pop().replace(/\\.java$/, '');\nconst RULES = \"\\n- ONE test file only. Its public class name MUST equal the file name, and the package declaration MUST match the directory under src/test/java.\\n- Use the SAME test framework and assertion library as the style reference (JUnit 5: org.junit.jupiter.api.Test/Assertions; JUnit 4: org.junit.Test/org.junit.Assert). Do NOT introduce a dependency the project does not already have.\\n- Call only the PUBLIC API of the class under test. Never use reflection, setAccessible, or read source/bytecode.\\n- Do NOT modify production code, existing tests, or the build files.\\n- Deterministic: no network, no clock/randomness without fixing them, no reliance on file-system state or test execution order.\\n- Every test must ASSERT a value or an observable side effect; a test that only checks \\\"does not throw\\\" is worthless.\\n- The tests MUST compile and PASS against the CURRENT implementation.\";\nconst system = 'You are an expert Java test engineer writing the FIRST test for ONE METHOD that no test executes yet' + (gaps.method ? ' (' + gaps.method + '())' : '') + '. Reply ONLY with JSON: {\"tests\":[{\"path\":\"...\",\"content\":\"full test file content\"}]}. Create a NEW test class only — never modify existing files. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES\n  + (constraints ? '\\nTeam constraints:\\n' + constraints : '');\nconst prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ', JDK ' + gaps.jdk + ')\\n'\n  + (gaps.method ? 'TARGET METHOD: ' + gaps.method + '()' + (gaps.methodLine ? ' (declared around line ' + gaps.methodLine + ')' : '') + ' — the tests must exercise THIS method; coverage and mutation score are measured on it alone.\\n' : '')\n  + (gaps.methodSource ? (gaps.classHeader || '') + '\\n\\n  // … other members omitted …\\n\\n' + gaps.methodSource : String(gaps.source || '').slice(0, 14000))\n  + '\\n\\nUNCOVERED: ' + (fullyUncovered ? 'THE ENTIRE CLASS (no test executes it at all)' : 'source lines ' + JSON.stringify((u.lines || []).slice(0, 140)))\n  + '\\n\\nEXISTING TEST (style reference — imports, assertion library, conventions; do NOT rewrite it):\\n'\n  + String(gaps.existingTest || '(none)').slice(0, 6000)\n  + '\\n\\nWrite one test class that executes the uncovered lines OF THE TARGET METHOD and asserts real behaviour. JSON only.';\n// a deliberately small budget for the first pass: it caps both the wait and the size of\n// what comes back, and the rounds provide the depth\nreturn [{ json: { system, prompt, json: true, maxTokens: 3000, temperature: 0.2, stage: 'improving_coverage', stageDetail: 'writing a first, simple test', targetPath, projectTestPath: gaps.projectTestPath } }];",
-        "mode": "runOnceForAllItems"
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/prompt/coverage",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { path: $('Start Iteration').first().json.file } }}"
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         880,
         200
       ],
-      "id": "09fb64cc-789a-479c-8587-720b869d89bc",
+      "id": "1a15a84c-a4c2-4ac9-97f1-c5eadc20f146",
       "name": "Cov: Build Prompt"
     },
     {
@@ -427,7 +436,7 @@
         1100,
         200
       ],
-      "id": "98b12633-1f7f-477f-9723-f3e7cdf7c999",
+      "id": "9aec2916-1f66-4f5b-bf94-691da8b3ac4d",
       "name": "Cov: Has Work?"
     },
     {
@@ -450,21 +459,30 @@
         1320,
         200
       ],
-      "id": "f20d371d-07dd-4554-9275-722177b6a26f",
+      "id": "7a6237d3-6dbf-47cc-9c24-8067aedc85d5",
       "name": "Cov: LLM Write Tests"
     },
     {
       "parameters": {
-        "jsCode": "\nconst resp = $json;\nconst plan = $('Cov: Build Prompt').first().json;\nlet tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];\nconst offered = $('Mut: Build Prompt').first().json.offered || [];\nconst chosen = offered[0] ? { line: offered[0].line, mutator: offered[0].mutator } : null;\ntests = tests\n  .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)\n  .slice(0, 1)\n  .map((t) => {\n    let p = typeof t.path === 'string' ? t.path.replace(/^\\.?\\//, '') : '';\n    // a Java file must live at the path its package + class name dictate, so trust our\n    // computed target unless the model produced exactly that\n    const safe = /(^|\\/)src\\/test\\/java\\/.+\\.java$/.test(p) && !p.includes('..');\n    if (!safe || p === plan.projectTestPath) p = plan.targetPath;\n    // the public class name has to match the file name or javac refuses to compile\n    const want = p.split('/').pop().replace(/\\.java$/, '');\n    let content = t.content;\n    const declared = (content.match(/public\\s+(?:final\\s+|abstract\\s+)?class\\s+(\\w+)/) || [])[1];\n    if (declared && declared !== want) {\n      content = content.replace(new RegExp('\\\\b' + declared + '\\\\b', 'g'), want);\n    }\n    return { path: p, content };\n  });\nreturn [{ json: { tests, paths: tests.map(t => t.path), count: tests.length, chosen } }];",
-        "mode": "runOnceForAllItems"
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/tests/parse",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { resp: $json, plan: $('Cov: Build Prompt').first().json } }}"
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1540,
         200
       ],
-      "id": "7fbc15d6-9e6f-4535-aa63-800a216c5f89",
+      "id": "db7fb496-ece9-46c9-b82a-9399cb04572b",
       "name": "Cov: Parse Tests"
     },
     {
@@ -487,7 +505,7 @@
         1760,
         200
       ],
-      "id": "2173a300-044a-43e7-b628-ca1d34861c28",
+      "id": "9bb56227-b562-41c4-8b93-ea5545231c88",
       "name": "Cov: Write Tests"
     },
     {
@@ -510,7 +528,7 @@
         1980,
         200
       ],
-      "id": "aff58e22-84f8-4ace-9760-5f83c745caa1",
+      "id": "94fdbe45-7a93-4c72-a7ca-62feb5752489",
       "name": "Cov: Run Tests"
     },
     {
@@ -531,7 +549,7 @@
         2200,
         200
       ],
-      "id": "766efe01-f606-4022-a28d-d19e89e6a757",
+      "id": "82a9241b-e75c-4893-adae-0d9a3588ffa4",
       "name": "Cov: Green?"
     },
     {
@@ -552,21 +570,30 @@
         2420,
         200
       ],
-      "id": "79b2677e-dd74-4f40-ae01-7245cb0f163f",
+      "id": "21b3803d-a935-4ef3-8f94-2bdf9a1ebd9f",
       "name": "Cov: Wrote Any?"
     },
     {
       "parameters": {
-        "jsCode": "\nconst fail = $json;\nconst parsed = $('Cov: Parse Tests').first().json;\nconst gaps = $('Coverage Gaps').first().json;\nconst filesTxt = parsed.tests.map(t => 'PATH: ' + t.path + '\\n' + t.content.slice(0, 6000)).join('\\n\\n---\\n\\n');\nconst system = 'You are an expert Java test engineer. Tests you previously wrote FAIL to compile or fail against the current implementation. Fix them. Keep the SAME file path and class name. Reply ONLY with JSON: {\"tests\":[{\"path\":\"...\",\"content\":\"full corrected file content\"}]}. Compilation errors: fix imports, types, visibility and constructor/method signatures against the source shown. Assertion failures: correct the EXPECTED values to match the real behaviour of the source — never weaken an assertion to make it pass trivially. If a test cannot be fixed, drop it from the output.';\nconst prompt = 'BUILD / TEST OUTPUT (failures):\\n' + String(fail.summary || '').slice(0, 4000)\n  + '\\n\\nYOUR TEST FILE(S):\\n' + filesTxt\n  + '\\n\\nCLASS UNDER TEST ' + gaps.fqcn + ' (' + gaps.path + (gaps.method ? ', method ' + gaps.method + '()' : '') + '):\\n'\n  + (gaps.methodSource ? (gaps.classHeader || '') + '\\n\\n' + gaps.methodSource : String(gaps.source || '').slice(0, 10000))\n  + '\\n\\nReply with corrected JSON now.';\nreturn [{ json: { system, prompt, json: true, maxTokens: 7000, temperature: 0.2, stage: 'improving_coverage', stageDetail: 'repairing failing generated tests' } }];",
-        "mode": "runOnceForAllItems"
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/prompt/repair",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { path: $('Start Iteration').first().json.file, stage: 'improving_coverage', summary: $json.summary, tests: $('Cov: Parse Tests').first().json.tests } }}"
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         2640,
         200
       ],
-      "id": "4b75946f-e252-419a-9258-61986449d2c7",
+      "id": "f7272f70-25ad-47f4-9aad-25e5b5fe4f55",
       "name": "Cov: Build Repair"
     },
     {
@@ -589,21 +616,30 @@
         2860,
         200
       ],
-      "id": "2c4361d2-b9cb-40e6-a7e0-b026aebae6fd",
+      "id": "85c933dc-3613-4048-ba4b-78c14a5f184c",
       "name": "Cov: LLM Repair"
     },
     {
       "parameters": {
-        "jsCode": "\nconst resp = $json;\nconst prev = $('Cov: Parse Tests').first().json;\nlet tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];\ntests = tests\n  .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)\n  .slice(0, prev.paths.length)\n  .map((t, i) => ({ path: prev.paths[i], content: t.content }))\n  .filter(t => t.path);\nreturn [{ json: { tests, paths: tests.map(t => t.path), count: tests.length } }];",
-        "mode": "runOnceForAllItems"
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/tests/parse-repair",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { resp: $json, prev: $('Cov: Parse Tests').first().json } }}"
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         3080,
         200
       ],
-      "id": "b4e392d6-b98a-4625-99d0-270226d70962",
+      "id": "ad33682e-8c7e-4a00-aa26-3f652db95ef7",
       "name": "Cov: Parse Repair"
     },
     {
@@ -626,7 +662,7 @@
         3300,
         200
       ],
-      "id": "a2af828e-f181-4bd7-ba1b-3fdb63adc64f",
+      "id": "1e7b9963-6329-4ba3-8a00-3e9603205415",
       "name": "Cov: Write Repair"
     },
     {
@@ -649,7 +685,7 @@
         3520,
         200
       ],
-      "id": "dc8dddef-62e6-4c5b-80a7-6df1ece04c28",
+      "id": "63cda512-aaa8-411f-8ed9-debdbaee6937",
       "name": "Cov: Re-run Tests"
     },
     {
@@ -670,7 +706,7 @@
         220,
         400
       ],
-      "id": "3e2af2bf-6d44-42da-8d06-997e3bfd0331",
+      "id": "e59230cc-6962-4b6f-a264-143c552bfb4f",
       "name": "Cov: Green After Repair?"
     },
     {
@@ -693,7 +729,7 @@
         440,
         400
       ],
-      "id": "77945c6b-cc97-4231-b33a-c29381b0118b",
+      "id": "ed55d947-61ff-451c-9d7b-566c4c8557b9",
       "name": "Cov: Delete Broken Tests"
     },
     {
@@ -704,21 +740,30 @@
         660,
         400
       ],
-      "id": "08577f8c-7289-4f1c-8c3a-01cb6da7cdf9",
+      "id": "201f37f4-d89f-4199-a96f-d59613d06d11",
       "name": "Cov: Done"
     },
     {
       "parameters": {
-        "jsCode": "\nconst gaps = $('Coverage Gaps').first().json;\nconst targetPath = gaps.mutTestPath;\n// freshest survivors: the sidecar tracks the last PIT run of this unit (any round)\nconst allSurvived = (gaps.survived && gaps.survived.length) ? gaps.survived : ($('Baseline Mutation').first().json.survived || []);\n// ONE mutant per round: a single short test, verified immediately, then the next mutant.\n// The MODEL chooses which one — from the source it can tell which kill is cheap and which\n// drags neighbouring mutants down with it, where the mechanical order only knows\n// NO_COVERAGE before SURVIVED. It picks and writes in the same call, so choosing costs no\n// extra round-trip, and the choice and its reason are recorded.\n// The TARGET is chosen from PIT's data (mutator kind, SURVIVED before NO_COVERAGE, and\n// this run's actual kill record), not by asking the model which one it fancies — that\n// judgement was confidently wrong on four consecutive rounds, every time picking a\n// RemoveConditional mutant it could not distinguish. The survivor list arrives ranked;\n// the model's job is to write the test for the one at the front.\nconst single = (gaps.mutantsPerRound || 1) === 1;\nconst choices = allSurvived.slice(0, single ? 1 : (gaps.mutantsPerRound || 1));\nif (!choices.length) return [{ json: { skip: true, reason: gaps.attemptedMutants\n  ? ('every remaining survivor has already been attempted (' + gaps.attemptedMutants + ' tried)')\n  : 'no surviving mutants', targetPath, projectTestPath: gaps.projectTestPath } }];\nconst constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');\nconst testClass = targetPath.split('/').pop().replace(/\\.java$/, '');\nconst mutantsTxt = choices.map((m, i) =>\n  '#' + (i + 1) + ' [' + m.status + '] ' + m.mutator + ' at line ' + m.line + ' in method ' + (m.method || '?') + '() — ' + (m.description || '')).join('\\n');\nconst RULES = \"\\n- ONE test file only. Its public class name MUST equal the file name, and the package declaration MUST match the directory under src/test/java.\\n- Use the SAME test framework and assertion library as the style reference (JUnit 5: org.junit.jupiter.api.Test/Assertions; JUnit 4: org.junit.Test/org.junit.Assert). Do NOT introduce a dependency the project does not already have.\\n- Call only the PUBLIC API of the class under test. Never use reflection, setAccessible, or read source/bytecode.\\n- Do NOT modify production code, existing tests, or the build files.\\n- Deterministic: no network, no clock/randomness without fixing them, no reliance on file-system state or test execution order.\\n- Every test must ASSERT a value or an observable side effect; a test that only checks \\\"does not throw\\\" is worthless.\\n- The tests MUST compile and PASS against the CURRENT implementation.\";\nconst PLAYBOOK = \"\\nMutator → the assertion that detects it:\\n- ConditionalsBoundary (< ↔ <=, > ↔ >=): exercise the value EXACTLY at the boundary and assert the branch taken there.\\n- NegateConditionals (== ↔ !=, < ↔ >=): assert behaviour on BOTH sides of the condition.\\n- Math (+ ↔ -, * ↔ /, %): choose inputs where the two operations differ; assert the exact numeric result.\\n- Increments (i++ ↔ i--): assert the final accumulated/counted value.\\n- ReturnVals / NullReturnVals / PrimitiveReturnVals / BooleanTrueReturnVals / EmptyObjectReturnVals: assert the ACTUAL returned value or the returned object's contents (size, a known element) — never merely that it is non-null.\\n- VoidMethodCall / ConstructorCall: assert the observable SIDE EFFECT of the removed call (state change, collaborator interaction, output).\\n- RemoveConditional: assert that the guarded behaviour does NOT happen when the condition is false.\\n- InlineConstant: assert the exact constant-derived value.\\n- Switch: assert the outcome for each case label, including the default.\\nPrefer SURVIVED over NO_COVERAGE. A SURVIVED mutant is on a line the suite already executes, so only an assertion is missing and a few lines of test will kill it. A NO_COVERAGE mutant is on a line nothing reaches: on an already well-covered method those are the leftovers behind error paths and awkward edge cases, and reaching them takes elaborate setup that often fails. Take a NO_COVERAGE mutant only when you can see plainly, from the code above, which inputs reach that line.\";\nconst framework = gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5';\nconst replyShape = '{\"tests\":[{\"path\":\"...\",\"content\":\"full test file content\"}]}';\nconst system = 'You are an expert Java test engineer killing surviving PIT mutants of ONE METHOD, one at a time, writing ' + framework + ' tests. A mutant is killed when at least one test FAILS on the mutated code while PASSING on the real code — so the test must assert something that DISTINGUISHES the two. Reply ONLY with JSON: ' + replyShape + '. Create a NEW test class only. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES + PLAYBOOK\n  + (constraints ? '\\nTeam constraints:\\n' + constraints : '');\n// the METHOD, not the whole class: prompt size drives latency, and the rest of a\n// 1500-line class is noise when the target is a single method\nconst srcBlock = gaps.methodSource\n  ? (gaps.classHeader || '') + '\\n\\n  // … other members omitted …\\n\\n' + gaps.methodSource\n  : String(gaps.source || '').slice(0, 12000);\nconst sigBlock = (gaps.siblingSignatures && gaps.siblingSignatures.length)\n  ? '\\n\\nOTHER MEMBERS (signatures only, for building inputs):\\n' + gaps.siblingSignatures.slice(0, 40).join('\\n') : '';\nconst prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ')\\n'\n  + srcBlock + sigBlock\n  + (gaps.method ? '\\n\\nFOCUS: this unit of work IS the method ' + gaps.method + '() — shown in full above; every mutant below is inside it, and the score is measured on it alone.' : '')\n  + '\\n\\nSURVIVING MUTANTS (status SURVIVED = the line runs but nothing asserts on it; NO_COVERAGE = the line never runs):\\n' + mutantsTxt\n  + '\\n\\nEXISTING TEST (style reference — do NOT rewrite it):\\n'\n  + String(gaps.existingTest || '(none)').slice(0, 4000)\n  + (single\n    ? '\\n\\nCHOOSE the single MOST PROMISING mutant above and kill it now. Most promising = you can kill it with a short, obviously-correct test; it sits on a path reachable with simple inputs rather than behind elaborate setup; and the test that kills it is likely to kill neighbouring mutants too. Then write ONE test class with ONE short test method that kills exactly that mutant: call the method with inputs reaching that line and assert the value that differs between the real code and the mutation. Nothing more — another round follows for the next mutant. JSON only.'\n    : '\\n\\nWrite one FOCUSED test class: one short test method per mutant above, each with the single assertion that distinguishes the real code from that mutation. JSON only.');\n// small answers arrive sooner and compile far more often than sprawling ones\nreturn [{ json: { system, prompt, json: true, maxTokens: single ? 2500 : 5000, temperature: 0.25,\n  stage: 'improving_mutation',\n  stageDetail: single && choices[0]\n    ? ('killing ' + choices[0].mutator + ' at line ' + choices[0].line)\n    : 'writing mutant-killing tests',\n  offered: choices.map(m => ({ line: m.line, mutator: m.mutator, status: m.status })),\n  targetPath, projectTestPath: gaps.projectTestPath } }];",
-        "mode": "runOnceForAllItems"
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/prompt/mutation",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { path: $('Start Iteration').first().json.file } }}"
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         880,
         400
       ],
-      "id": "378154b3-90eb-4722-99cb-20ce5fb34a70",
+      "id": "071c4d60-433f-457c-a54b-13b8e1d3139b",
       "name": "Mut: Build Prompt"
     },
     {
@@ -739,7 +784,7 @@
         1100,
         400
       ],
-      "id": "bb542b06-5787-4a7d-88f4-80e26a2f2136",
+      "id": "9c81b1e9-d191-4d9c-a944-3a10123e9815",
       "name": "Mut: Has Work?"
     },
     {
@@ -762,21 +807,30 @@
         1320,
         400
       ],
-      "id": "901c7404-c584-4761-bb94-d73d6d592359",
+      "id": "34e6dfdc-f9e3-4f21-b207-9380819bac7a",
       "name": "Mut: LLM Write Tests"
     },
     {
       "parameters": {
-        "jsCode": "\nconst resp = $json;\nconst plan = $('Mut: Build Prompt').first().json;\nlet tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];\nconst offered = $('Mut: Build Prompt').first().json.offered || [];\nconst chosen = offered[0] ? { line: offered[0].line, mutator: offered[0].mutator } : null;\ntests = tests\n  .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)\n  .slice(0, 1)\n  .map((t) => {\n    let p = typeof t.path === 'string' ? t.path.replace(/^\\.?\\//, '') : '';\n    // a Java file must live at the path its package + class name dictate, so trust our\n    // computed target unless the model produced exactly that\n    const safe = /(^|\\/)src\\/test\\/java\\/.+\\.java$/.test(p) && !p.includes('..');\n    if (!safe || p === plan.projectTestPath) p = plan.targetPath;\n    // the public class name has to match the file name or javac refuses to compile\n    const want = p.split('/').pop().replace(/\\.java$/, '');\n    let content = t.content;\n    const declared = (content.match(/public\\s+(?:final\\s+|abstract\\s+)?class\\s+(\\w+)/) || [])[1];\n    if (declared && declared !== want) {\n      content = content.replace(new RegExp('\\\\b' + declared + '\\\\b', 'g'), want);\n    }\n    return { path: p, content };\n  });\nreturn [{ json: { tests, paths: tests.map(t => t.path), count: tests.length, chosen } }];",
-        "mode": "runOnceForAllItems"
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/tests/parse",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { resp: $json, plan: $('Mut: Build Prompt').first().json } }}"
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1540,
         400
       ],
-      "id": "bf6c7674-b908-491b-a217-01b4ed4eb61c",
+      "id": "8a6e0775-19e7-411c-86ea-be9fd53a6f93",
       "name": "Mut: Parse Tests"
     },
     {
@@ -799,7 +853,7 @@
         1760,
         400
       ],
-      "id": "d5604377-8345-4806-a57f-cd8b83371b09",
+      "id": "ce1aa99f-4f9f-4992-936f-319cf2207cfe",
       "name": "Mut: Write Tests"
     },
     {
@@ -822,7 +876,7 @@
         1980,
         400
       ],
-      "id": "f555f35d-9e5c-4a16-96ec-714bbcc5a54a",
+      "id": "5894c292-d163-44c0-b122-ede9676c9c92",
       "name": "Mut: Run Tests"
     },
     {
@@ -843,7 +897,7 @@
         2200,
         400
       ],
-      "id": "ddbee0ea-baa5-4bf3-adb1-5db8ed82cd58",
+      "id": "588157b7-4757-4dcb-93ff-674b50074843",
       "name": "Mut: Green?"
     },
     {
@@ -864,21 +918,30 @@
         2420,
         400
       ],
-      "id": "d1e936a5-e0a8-473d-9621-74c43aa388c9",
+      "id": "e5e3200c-23dc-4167-9b95-b41a6a057685",
       "name": "Mut: Wrote Any?"
     },
     {
       "parameters": {
-        "jsCode": "\nconst fail = $json;\nconst parsed = $('Mut: Parse Tests').first().json;\nconst gaps = $('Coverage Gaps').first().json;\nconst filesTxt = parsed.tests.map(t => 'PATH: ' + t.path + '\\n' + t.content.slice(0, 6000)).join('\\n\\n---\\n\\n');\nconst system = 'You are an expert Java test engineer. Tests you previously wrote FAIL to compile or fail against the current implementation. Fix them. Keep the SAME file path and class name. Reply ONLY with JSON: {\"tests\":[{\"path\":\"...\",\"content\":\"full corrected file content\"}]}. Compilation errors: fix imports, types, visibility and constructor/method signatures against the source shown. Assertion failures: correct the EXPECTED values to match the real behaviour of the source — never weaken an assertion to make it pass trivially. If a test cannot be fixed, drop it from the output.';\nconst prompt = 'BUILD / TEST OUTPUT (failures):\\n' + String(fail.summary || '').slice(0, 4000)\n  + '\\n\\nYOUR TEST FILE(S):\\n' + filesTxt\n  + '\\n\\nCLASS UNDER TEST ' + gaps.fqcn + ' (' + gaps.path + (gaps.method ? ', method ' + gaps.method + '()' : '') + '):\\n'\n  + (gaps.methodSource ? (gaps.classHeader || '') + '\\n\\n' + gaps.methodSource : String(gaps.source || '').slice(0, 10000))\n  + '\\n\\nReply with corrected JSON now.';\nreturn [{ json: { system, prompt, json: true, maxTokens: 7000, temperature: 0.2, stage: 'improving_mutation', stageDetail: 'repairing failing generated tests' } }];",
-        "mode": "runOnceForAllItems"
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/prompt/repair",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { path: $('Start Iteration').first().json.file, stage: 'improving_mutation', summary: $json.summary, tests: $('Mut: Parse Tests').first().json.tests } }}"
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         2640,
         400
       ],
-      "id": "a2351f04-5daf-4949-9aba-ef7898bc48ae",
+      "id": "3a1664ea-50be-4b5b-a0fc-a4ce67c3b948",
       "name": "Mut: Build Repair"
     },
     {
@@ -901,21 +964,30 @@
         2860,
         400
       ],
-      "id": "15206b5f-dd7a-43f8-8b4a-fd1678d087d6",
+      "id": "756eaef3-1e18-421a-afe4-847b9df06aec",
       "name": "Mut: LLM Repair"
     },
     {
       "parameters": {
-        "jsCode": "\nconst resp = $json;\nconst prev = $('Mut: Parse Tests').first().json;\nlet tests = (resp.ok && resp.json && Array.isArray(resp.json.tests)) ? resp.json.tests : [];\ntests = tests\n  .filter(t => t && typeof t.content === 'string' && t.content.trim().length > 20)\n  .slice(0, prev.paths.length)\n  .map((t, i) => ({ path: prev.paths[i], content: t.content }))\n  .filter(t => t.path);\nreturn [{ json: { tests, paths: tests.map(t => t.path), count: tests.length } }];",
-        "mode": "runOnceForAllItems"
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/tests/parse-repair",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { resp: $json, prev: $('Mut: Parse Tests').first().json } }}"
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         3080,
         400
       ],
-      "id": "2f764108-64e0-43c3-ba6e-3b08590a6ae6",
+      "id": "103adf7c-808b-411c-8dc0-cd233d512cc3",
       "name": "Mut: Parse Repair"
     },
     {
@@ -938,7 +1010,7 @@
         3300,
         400
       ],
-      "id": "db5b4941-a89c-42cb-8a03-93eb0b9fb6f0",
+      "id": "f337bfb9-fe86-4675-b9ba-57e350579046",
       "name": "Mut: Write Repair"
     },
     {
@@ -961,7 +1033,7 @@
         3520,
         400
       ],
-      "id": "0f4763df-abfe-4793-8eed-ae9d1d46bc54",
+      "id": "db79fcf0-d310-490c-86d0-c857fdab83bf",
       "name": "Mut: Re-run Tests"
     },
     {
@@ -982,7 +1054,7 @@
         220,
         600
       ],
-      "id": "d3c35533-7fcf-4393-b254-5d28687932e5",
+      "id": "8c3ade53-62c3-4599-8d27-49e7d7f78fe5",
       "name": "Mut: Green After Repair?"
     },
     {
@@ -1005,7 +1077,7 @@
         440,
         600
       ],
-      "id": "01dbf4ed-ca9b-4ba7-a57e-35f6f5b09c0b",
+      "id": "f2add0ce-65ed-4b7a-bcf2-b9d461f84285",
       "name": "Mut: Delete Broken Tests"
     },
     {
@@ -1016,7 +1088,7 @@
         660,
         600
       ],
-      "id": "53e9e135-013a-4e42-9362-81f7a428421c",
+      "id": "198b02c6-f744-46c1-bfe1-72c6a3dcc907",
       "name": "Mut: Done"
     },
     {
@@ -1039,7 +1111,7 @@
         880,
         600
       ],
-      "id": "f113e564-1a53-49c7-b5ed-6d0e989791df",
+      "id": "6476256b-1c17-40d9-917a-ad09cf80da8a",
       "name": "Verify"
     },
     {
@@ -1060,7 +1132,7 @@
         1100,
         600
       ],
-      "id": "8a485517-fe34-497c-b116-7d277468fb28",
+      "id": "4be08aac-c65d-411f-89f8-fcfa2032e2b6",
       "name": "Keep Round?"
     },
     {
@@ -1081,7 +1153,7 @@
         1320,
         600
       ],
-      "id": "906fa0c1-13db-41e6-bf35-3c6225a38996",
+      "id": "c6b91a46-6aa1-497c-a124-f8933e191130",
       "name": "Another Round?"
     },
     {
@@ -1104,7 +1176,7 @@
         1540,
         600
       ],
-      "id": "10369b26-897c-4e0f-899b-8083c7cc8a87",
+      "id": "6045964b-06c4-4d53-957d-1f23bcdaff78",
       "name": "Accept Round"
     },
     {
@@ -1127,7 +1199,7 @@
         1760,
         600
       ],
-      "id": "f29efc0b-5482-4090-9ce6-bd1d8a06764c",
+      "id": "1f6d0798-1ba6-4db6-9bf9-48f9790d7e28",
       "name": "Drop Last Round"
     },
     {
@@ -1150,7 +1222,7 @@
         1980,
         600
       ],
-      "id": "e878e774-7ec0-4c99-82d9-4e328cd6a468",
+      "id": "ed3e59c0-3ffe-45b3-adc4-9c8b3c2a5d7a",
       "name": "Round Missed"
     },
     {
@@ -1173,7 +1245,7 @@
         2200,
         600
       ],
-      "id": "b1d1a20d-14f5-4955-abca-d83d99f19645",
+      "id": "41be3b00-3243-4454-9adf-553a1c995e20",
       "name": "Cleanup Tests"
     },
     {
@@ -1196,7 +1268,7 @@
         2420,
         600
       ],
-      "id": "0850cf78-6158-4992-97da-8a2eeb027a44",
+      "id": "0325105c-c546-480f-9a14-257d1f575cbd",
       "name": "Rules: check changes"
     },
     {
@@ -1217,7 +1289,7 @@
         2640,
         600
       ],
-      "id": "aaaddde6-6d49-4b44-ae4a-ad6518f45efa",
+      "id": "470bfe0b-7dad-4367-a0f4-4beeb052fae2",
       "name": "Approved?"
     },
     {
@@ -1240,7 +1312,7 @@
         2860,
         600
       ],
-      "id": "65bab581-4351-4756-a285-7d616116fceb",
+      "id": "f625d5b3-bce8-4758-b734-fe5067e75717",
       "name": "Rules: make PR"
     },
     {
@@ -1263,7 +1335,7 @@
         3080,
         600
       ],
-      "id": "a0c2a280-1204-4d8a-afc2-d2c5ad75a47b",
+      "id": "5451cd85-f419-4a18-a77c-e177f0c9f5fc",
       "name": "Create PR"
     },
     {
@@ -1286,7 +1358,7 @@
         3300,
         600
       ],
-      "id": "975deea4-bba0-4cf1-9ff7-5dba997fef36",
+      "id": "b812c1c6-0bba-4c25-9a86-aca7b1fca82d",
       "name": "Discard Changes"
     },
     {
@@ -1297,7 +1369,7 @@
         3520,
         600
       ],
-      "id": "2b9a565b-8f92-4339-a35c-53fb102e8231",
+      "id": "17b245f8-52dc-4b04-a423-dfd0a2b715ef",
       "name": "Iteration Done"
     },
     {
@@ -1320,7 +1392,7 @@
         220,
         800
       ],
-      "id": "e2514eab-d0a9-413b-9f37-658aa14e8297",
+      "id": "a3b800d8-0c2d-4dc2-8ecd-2e80253ba18e",
       "name": "Finish Run"
     },
     {
@@ -1331,7 +1403,7 @@
         440,
         800
       ],
-      "id": "e86fbdb6-0a34-4a2b-bd64-0ab8e3b491ef",
+      "id": "483a1f16-2851-4e60-ac04-40be57bd93e2",
       "name": "End"
     }
   ],

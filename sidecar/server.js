@@ -14,6 +14,8 @@ const pr = require('./pr');
 const llm = require('./llm');
 const timesheet = require('./timesheet');
 const roundsMod = require('./rounds');
+const prompts = require('./prompts');
+const parse = require('./parse');
 const { run } = require('./exec');
 const { mac, fileSlug, round2, clamp, slugify } = require('./util');
 
@@ -247,6 +249,79 @@ function expandFilesIntoMethodUnits(classes) {
 }
 
 const isCtor = (m) => m === '<init>' || m === '<clinit>';
+
+/**
+ * Everything the model needs to know about one unit (`path::method`): the method's source,
+ * what is uncovered, the ranked survivors, the target test paths, the team's constraints.
+ * Read fresh on every call — a prompt built from a stale copy asks for a mutant that the
+ * last round already killed.
+ */
+function gapsFor(p) {
+  needRun();
+  if (!p) throw new Error('path required');
+  const srcPath = unitPath(p);
+  const source = repo.readFileSafe(srcPath, 24000);
+  const f = state.files[p] || {};
+  const round = (f.rounds || 0) + 1;
+  // each round writes its OWN test classes — Java forbids two public classes of the
+  // same name, and append-only additions keep earlier rounds' commits intact
+  const guess = repo.guessTestPath(srcPath, round);
+  let existingTest = guess.exists ? repo.readFileSafe(guess.path, 12000) : null;
+  if (!existingTest) {
+    // no test for this class yet → hand the LLM a sibling test to imitate
+    // (assertion library, base classes, naming and package conventions)
+    const ref = repo.findStyleReference(p);
+    if (ref) existingTest = `// STYLE REFERENCE — an existing test from this repo (${ref.path}).\n// Imitate its imports, assertion style and conventions. Do not modify it.\n${ref.content}`;
+  }
+  const fqcn = f.fqcn || repo.fqcnOf(srcPath);
+  // only the part of the class the model needs for THIS method
+  const mctx = f.method ? repo.methodContext(srcPath, f.method, f.methodLine) : null;
+  return {
+    ok: true, path: srcPath, unit: p, source, sourceLines: source ? source.split('\n').length : 0,
+    methodSource: mctx ? mctx.body : null,
+    classHeader: mctx ? mctx.header : null,
+    siblingSignatures: mctx ? mctx.signatures : null,
+    uncovered: coverage.uncoveredLines(p),
+    coverage: f.coverage ?? null,
+    missedLines: f.missedLines ?? null,
+    executableLines: f.executableLines ?? null,
+    covPhaseMaxPct: state.run.config.covPhaseMaxPct ?? 0,
+    mutantsPerRound: state.run.config.mutantsPerRound ?? 1,
+    mutantChoices: state.run.config.mutantChoices ?? 20,
+    totalMutants: f.totalMutants ?? null,
+    // the method this unit is about: the tests must concentrate here
+    method: f.method || null,
+    methodLine: f.methodLine || null,
+    rounds: f.rounds || 0,
+    // Ordering comes from PIT's own data (mutator kind, SURVIVED vs NO_COVERAGE) and
+    // from what has ACTUALLY been killed in this run — never from the model's opinion
+    // about what it can kill, which was confidently wrong four rounds running.
+    // Never offer a mutant we have already tried and failed to kill. Each round
+    // re-measures, so the list is fresh — a kill often takes neighbours with it and
+    // those simply disappear — but a survivor we already attacked and left alive is a
+    // known dead end for this approach, and re-picking it burns the round.
+    survived: rankSurvivors((f.lastSurvived || []).filter((m) =>
+      !(f.attemptedMutants || []).includes(`${m.mutator}@${m.line}`))),
+    attemptedMutants: (f.attemptedMutants || []).length,
+    targetMethod: f.targetMethod || null,
+    fqcn,
+    package: fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '',
+    className: fqcn.slice(fqcn.lastIndexOf('.') + 1),
+    module: f.module || repo.moduleOf(srcPath),
+    // both generated class names for THIS round, already Surefire/Gradle-includable
+    covTestPath: guess.covPath,
+    mutTestPath: guess.mutPath,
+    projectTestPath: guess.exists ? guess.path : null,
+    testExists: guess.exists,
+    round,
+    existingTest,
+    buildTool: state.runner?.tool,
+    testFramework: state.runner?.testFramework,
+    testFrameworkVersion: state.runner?.testFrameworkVersion,
+    jdk: state.runner?.jdk?.chosen,
+    constraints: rulesMod.testWritingConstraints(),
+  };
+}
 
 function candidates() {
   const cfg = state.run.config;
@@ -514,73 +589,34 @@ const routes = {
   },
 
   'GET /api/files/gaps': async (q) => {
-    needRun();
     const p = q.get('path');
     if (!p) throw new Error('path required');
     S.setStage('improving_coverage', `analysing coverage gaps in ${p}`);
-    const srcPath = unitPath(p);
-    const source = repo.readFileSafe(srcPath, 24000);
-    const f = state.files[p] || {};
-    const round = (f.rounds || 0) + 1;
-    // each round writes its OWN test classes — Java forbids two public classes of the
-    // same name, and append-only additions keep earlier rounds' commits intact
-    const guess = repo.guessTestPath(srcPath, round);
-    let existingTest = guess.exists ? repo.readFileSafe(guess.path, 12000) : null;
-    if (!existingTest) {
-      // no test for this class yet → hand the LLM a sibling test to imitate
-      // (assertion library, base classes, naming and package conventions)
-      const ref = repo.findStyleReference(p);
-      if (ref) existingTest = `// STYLE REFERENCE — an existing test from this repo (${ref.path}).\n// Imitate its imports, assertion style and conventions. Do not modify it.\n${ref.content}`;
-    }
-    const fqcn = f.fqcn || repo.fqcnOf(srcPath);
-    // only the part of the class the model needs for THIS method
-    const mctx = f.method ? repo.methodContext(srcPath, f.method, f.methodLine) : null;
-    return {
-      ok: true, path: srcPath, unit: p, source, sourceLines: source ? source.split('\n').length : 0,
-      methodSource: mctx ? mctx.body : null,
-      classHeader: mctx ? mctx.header : null,
-      siblingSignatures: mctx ? mctx.signatures : null,
-      uncovered: coverage.uncoveredLines(p),
-      coverage: f.coverage ?? null,
-      missedLines: f.missedLines ?? null,
-      executableLines: f.executableLines ?? null,
-      covPhaseMaxPct: state.run.config.covPhaseMaxPct ?? 0,
-      mutantsPerRound: state.run.config.mutantsPerRound ?? 1,
-      mutantChoices: state.run.config.mutantChoices ?? 20,
-      totalMutants: f.totalMutants ?? null,
-      // the method this unit is about: the tests must concentrate here
-      method: f.method || null,
-      methodLine: f.methodLine || null,
-      rounds: f.rounds || 0,
-      // Ordering comes from PIT's own data (mutator kind, SURVIVED vs NO_COVERAGE) and
-      // from what has ACTUALLY been killed in this run — never from the model's opinion
-      // about what it can kill, which was confidently wrong four rounds running.
-      // Never offer a mutant we have already tried and failed to kill. Each round
-      // re-measures, so the list is fresh — a kill often takes neighbours with it and
-      // those simply disappear — but a survivor we already attacked and left alive is a
-      // known dead end for this approach, and re-picking it burns the round.
-      survived: rankSurvivors((f.lastSurvived || []).filter((m) =>
-        !(f.attemptedMutants || []).includes(`${m.mutator}@${m.line}`))),
-      attemptedMutants: (f.attemptedMutants || []).length,
-      targetMethod: f.targetMethod || null,
-      fqcn,
-      package: fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '',
-      className: fqcn.slice(fqcn.lastIndexOf('.') + 1),
-      module: f.module || repo.moduleOf(srcPath),
-      // both generated class names for THIS round, already Surefire/Gradle-includable
-      covTestPath: guess.covPath,
-      mutTestPath: guess.mutPath,
-      projectTestPath: guess.exists ? guess.path : null,
-      testExists: guess.exists,
-      round,
-      existingTest,
-      buildTool: state.runner?.tool,
-      testFramework: state.runner?.testFramework,
-      testFrameworkVersion: state.runner?.testFrameworkVersion,
-      jdk: state.runner?.jdk?.chosen,
-      constraints: rulesMod.testWritingConstraints(),
-    };
+    return gapsFor(p);
   },
+  // Prompt building lives in sidecar/prompts.js (unit-tested) rather than in a Code node,
+  // so the workflow orchestrates and this decides what to ask for. The unit is named,
+  // never passed in as a blob: the prompt must be built from the freshest state, not from
+  // whatever a node captured several minutes and one PIT run ago.
+  'POST /api/prompt/coverage': async (q, body) => {
+    needRun();
+    return prompts.coveragePrompt(gapsFor(body.path || state.currentUnit));
+  },
+
+  'POST /api/prompt/mutation': async (q, body) => {
+    needRun();
+    return prompts.mutationPrompt(gapsFor(body.path || state.currentUnit));
+  },
+
+  'POST /api/prompt/repair': async (q, body) => {
+    needRun();
+    return prompts.repairPrompt(gapsFor(body.path || state.currentUnit),
+      { summary: body.summary }, body.tests || [], body.stage || 'improving_mutation');
+  },
+
+  'POST /api/tests/parse': async (q, body) => parse.parseGeneratedTests(body.resp, body.plan || {}),
+
+  'POST /api/tests/parse-repair': async (q, body) => parse.parseRepairedTests(body.resp, body.prev || {}),
 
   'POST /api/test/write': async (q, body) => {
     needRun();

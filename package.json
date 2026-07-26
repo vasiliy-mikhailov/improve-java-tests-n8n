@@ -4,9 +4,9 @@
   "private": true,
   "description": "n8n pipeline in Docker that raises coverage, Stryker mutation score and MAC of any JS/TS repo",
   "scripts": {
-    "test": "node --test sidecar/test/*.test.js",
+    "test": "node --test sidecar/test/unit/*.test.js",
     "workflow": "node n8n/generate-workflows.mjs",
-    "check": "node --test sidecar/test/*.test.js && node n8n/generate-workflows.mjs"
+    "check": "node --test sidecar/test/unit/*.test.js && node n8n/generate-workflows.mjs"
   },
   "license": "MIT"
 }
