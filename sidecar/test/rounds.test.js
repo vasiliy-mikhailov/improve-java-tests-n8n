@@ -13,17 +13,20 @@ test('a healthy round is kept and buys another round', () => {
   assert.equal(d.gapClosed, 0.4);
 });
 
-test('a degrading round is dropped', () => {
-  const d = decide({ ...base, degradedAny: true, macBase: 40, macAfter: 38 });
-  assert.equal(d.keepRound, false);
-  assert.equal(d.continueRounds, false);
+test('a degrading round is dropped, and the unit continues if work remains', () => {
+  const d = decide({ ...base, degradedAny: true, macBase: 40, macAfter: 38, survivorsLeft: 12 });
+  assert.equal(d.keepRound, false, 'a round that made things worse is never kept');
+  assert.equal(d.continueRounds, true, 'but one bad test says nothing about the next mutant');
   assert.match(d.verdict, /DEGRADED/);
+  const done = decide({ ...base, degradedAny: true, macBase: 40, macAfter: 38, survivorsLeft: 0 });
+  assert.equal(done.continueRounds, false, 'nothing left to try → stop');
 });
 
-test('a stale round is dropped', () => {
-  const d = decide({ ...base, improvedAny: false, macBase: 40, macAfter: 40 });
+test('a round that changed nothing is dropped and the next mutant is tried', () => {
+  const d = decide({ ...base, improvedAny: false, macBase: 40, macAfter: 40, survivorsLeft: 5 });
   assert.equal(d.keepRound, false);
-  assert.match(d.verdict, /STALE/);
+  assert.equal(d.continueRounds, true);
+  assert.match(d.verdict, /MISS/);
 });
 
 test('a marginal round is KEPT but ends the loop (mutant tar pit)', () => {
@@ -128,4 +131,35 @@ test('a covered mutant always ranks ahead of an uncovered one of the same kind',
 test('even an easy mutator ranks behind a covered hard one when uncovered', () => {
   assert.ok(killDifficulty({ mutator: 'RemoveConditionalMutator', status: 'SURVIVED' })
     < killDifficulty({ mutator: 'ReturnValsMutator', status: 'NO_COVERAGE' }));
+});
+
+// ── a missed kill drops the round, not the unit ─────────────────────────────
+const miss = { macBase: 62, macAfter: 62, improvedAny: false, degradedAny: false,
+  rounds: 1, maxRounds: 0, totalMutants: 284, coverage: 88 };
+
+test('a missed kill continues to the next mutant while survivors remain', () => {
+  // XML#parse had 83 un-attempted survivors when one bad guess ended the unit
+  const d = decide({ ...miss, survivorsLeft: 83, consecutiveMisses: 0 });
+  assert.equal(d.keepRound, false, 'the round itself is worthless and gets dropped');
+  assert.equal(d.continueRounds, true, 'but the unit still has work');
+  assert.match(d.verdict, /try the next mutant/);
+});
+
+test('repeated misses in a row do end the unit', () => {
+  const d = decide({ ...miss, survivorsLeft: 83, consecutiveMisses: 3, maxMisses: 3 });
+  assert.equal(d.continueRounds, false);
+  assert.match(d.verdict, /in a row/);
+});
+
+test('a miss with no un-attempted survivors left ends the unit', () => {
+  const d = decide({ ...miss, survivorsLeft: 0, consecutiveMisses: 0 });
+  assert.equal(d.continueRounds, false);
+  assert.match(d.verdict, /no un-attempted survivors/);
+});
+
+test('a kept round still stops at the time budget', () => {
+  const d = decide({ ...miss, improvedAny: true, macAfter: 63, survivorsLeft: 50,
+    elapsedSec: 4000, budgetSec: 3600 });
+  assert.equal(d.keepRound, true);
+  assert.equal(d.continueRounds, false);
 });

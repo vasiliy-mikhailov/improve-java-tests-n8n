@@ -10,7 +10,7 @@
         220,
         0
       ],
-      "id": "261e13ad-b841-43f1-a409-083a5405c940",
+      "id": "2c430327-1881-4f5c-a279-6d402aaadd34",
       "name": "Start (manual)"
     },
     {
@@ -26,7 +26,7 @@
         440,
         0
       ],
-      "id": "7398259e-d4c9-4d9e-885a-a6ea98ba20be",
+      "id": "436d1ec7-3e6f-4be1-a1dc-255079d99d52",
       "name": "Start (webhook)",
       "webhookId": "aa11bb22-ijt-4run-9000-improvejava01"
     },
@@ -50,7 +50,7 @@
         660,
         0
       ],
-      "id": "9ea74500-6bc4-4387-a359-6e45690b9cc1",
+      "id": "8295baad-f0f7-46b8-bb95-9c6e13773f6f",
       "name": "Start Run"
     },
     {
@@ -73,7 +73,7 @@
         880,
         0
       ],
-      "id": "7654576e-e6f3-481f-9610-1f622ae700be",
+      "id": "57fd4a27-7ab9-4998-8898-d693a5b9c317",
       "name": "Clone Repo"
     },
     {
@@ -96,7 +96,7 @@
         1100,
         0
       ],
-      "id": "6871b002-820c-4c4c-adad-1c9b7deafc03",
+      "id": "8934ec1f-1f85-41e9-a722-152d558a3ba6",
       "name": "Rules: post-clone"
     },
     {
@@ -119,7 +119,7 @@
         1320,
         0
       ],
-      "id": "34886a07-a8a8-4c3c-bbfe-48ca1d07976e",
+      "id": "4ad4fda1-e1e9-419f-a551-8e2fa6dba933",
       "name": "Build & Detect"
     },
     {
@@ -142,7 +142,7 @@
         1540,
         0
       ],
-      "id": "28e9d859-d732-4d43-bca7-77cbef5c1a68",
+      "id": "88187245-d0ce-48f0-ac5b-e3715a0144af",
       "name": "Baseline Coverage"
     },
     {
@@ -165,7 +165,7 @@
         1760,
         0
       ],
-      "id": "7d8d473b-1672-4c23-8f18-52c4823d7258",
+      "id": "810e33be-53a3-4823-bcd7-f780113fc6d5",
       "name": "Rules: pre-pick"
     },
     {
@@ -188,7 +188,7 @@
         1980,
         0
       ],
-      "id": "c9100856-6380-41d6-a452-1ed4ab8ecc6f",
+      "id": "8b4c9c20-9b56-40ae-87c8-9a21ddb29a69",
       "name": "Rules: write-test"
     },
     {
@@ -199,7 +199,7 @@
         2200,
         0
       ],
-      "id": "0405c20c-188b-44f1-842e-fd2c7efc09fd",
+      "id": "2fe1a7cd-3d56-4eb9-8af9-1d26d1208717",
       "name": "Next Iteration"
     },
     {
@@ -219,7 +219,7 @@
         2420,
         0
       ],
-      "id": "71a36bbf-1e2e-4cca-a8db-76bee1fe88c6",
+      "id": "b8eb1189-c2d0-4db3-ba89-050e62b5ef11",
       "name": "Get Candidates"
     },
     {
@@ -240,7 +240,7 @@
         2640,
         0
       ],
-      "id": "3a9d1ad9-5875-423a-9c43-cc26bc83bb4b",
+      "id": "0c514d2a-d613-4981-a29e-3056a846f99f",
       "name": "More Work?"
     },
     {
@@ -263,7 +263,7 @@
         2860,
         0
       ],
-      "id": "90ff6804-f197-4fed-a845-fda0c8237ba8",
+      "id": "92700e6d-e57a-4984-8f5f-ca340bba2f52",
       "name": "Rules: pick file"
     },
     {
@@ -284,7 +284,7 @@
         3080,
         0
       ],
-      "id": "90957bc5-001e-4c3f-8904-9167960f46f7",
+      "id": "2c76e2c0-e2ff-4607-b8b2-2ad17d73a0dc",
       "name": "File Picked?"
     },
     {
@@ -305,7 +305,7 @@
         3300,
         0
       ],
-      "id": "135b2614-8a13-4d9d-b47c-c739ed0b65a3",
+      "id": "2f85cfc8-330b-4838-91cc-65f790b4e69b",
       "name": "Pick Retryable?"
     },
     {
@@ -328,7 +328,7 @@
         3520,
         0
       ],
-      "id": "d1ed995d-e6a4-4e91-a074-c7155699564d",
+      "id": "cacadc76-10d1-4b27-82b7-c8c06630551e",
       "name": "Start Iteration"
     },
     {
@@ -351,7 +351,7 @@
         220,
         200
       ],
-      "id": "4d13b20e-dd35-4570-aefd-f69553ed994c",
+      "id": "10105adf-03df-4d2d-a25a-2f0345aca5b8",
       "name": "Baseline Mutation"
     },
     {
@@ -372,7 +372,7 @@
         440,
         200
       ],
-      "id": "55c9d7b4-2550-4d51-a2e4-61746f0adcab",
+      "id": "e784ef88-176b-4dd9-b1c9-afc4441137f3",
       "name": "Has Mutants?"
     },
     {
@@ -392,7 +392,7 @@
         660,
         200
       ],
-      "id": "875e4dcb-8abf-48e0-a67e-e4ba95fc983c",
+      "id": "ac1ed0a3-fc95-4f90-9402-d07554abece9",
       "name": "Coverage Gaps"
     },
     {
@@ -406,7 +406,7 @@
         880,
         200
       ],
-      "id": "ab8056c9-66c9-4b48-ac83-548dd910d4a4",
+      "id": "09fb64cc-789a-479c-8587-720b869d89bc",
       "name": "Cov: Build Prompt"
     },
     {
@@ -427,7 +427,7 @@
         1100,
         200
       ],
-      "id": "562e4a9d-3c03-4a18-8d65-169a08b61401",
+      "id": "98b12633-1f7f-477f-9723-f3e7cdf7c999",
       "name": "Cov: Has Work?"
     },
     {
@@ -450,7 +450,7 @@
         1320,
         200
       ],
-      "id": "72e98570-4cbd-4f32-9b89-49ddca6c5603",
+      "id": "f20d371d-07dd-4554-9275-722177b6a26f",
       "name": "Cov: LLM Write Tests"
     },
     {
@@ -464,7 +464,7 @@
         1540,
         200
       ],
-      "id": "3fd4ef35-f2e3-48a5-9ef1-3f8f72fa24b2",
+      "id": "7fbc15d6-9e6f-4535-aa63-800a216c5f89",
       "name": "Cov: Parse Tests"
     },
     {
@@ -487,7 +487,7 @@
         1760,
         200
       ],
-      "id": "b93d54be-2bcc-4a8e-bf60-534b0b51da57",
+      "id": "2173a300-044a-43e7-b628-ca1d34861c28",
       "name": "Cov: Write Tests"
     },
     {
@@ -510,7 +510,7 @@
         1980,
         200
       ],
-      "id": "7989c6e1-a9db-4da6-9fdf-fee532d61e8f",
+      "id": "aff58e22-84f8-4ace-9760-5f83c745caa1",
       "name": "Cov: Run Tests"
     },
     {
@@ -531,7 +531,7 @@
         2200,
         200
       ],
-      "id": "91be5218-8b08-49b2-8cd3-f4a25b8e26a5",
+      "id": "766efe01-f606-4022-a28d-d19e89e6a757",
       "name": "Cov: Green?"
     },
     {
@@ -552,7 +552,7 @@
         2420,
         200
       ],
-      "id": "9581ef80-289f-45c0-831a-d0ca0e7888c7",
+      "id": "79b2677e-dd74-4f40-ae01-7245cb0f163f",
       "name": "Cov: Wrote Any?"
     },
     {
@@ -566,7 +566,7 @@
         2640,
         200
       ],
-      "id": "cbd0a41b-e44e-4085-8e40-2c10ea3a880a",
+      "id": "4b75946f-e252-419a-9258-61986449d2c7",
       "name": "Cov: Build Repair"
     },
     {
@@ -589,7 +589,7 @@
         2860,
         200
       ],
-      "id": "cbced983-e37d-40d3-a503-16f4273088ee",
+      "id": "2c4361d2-b9cb-40e6-a7e0-b026aebae6fd",
       "name": "Cov: LLM Repair"
     },
     {
@@ -603,7 +603,7 @@
         3080,
         200
       ],
-      "id": "93b63e4e-9ccc-4ab1-84de-cce3133c260d",
+      "id": "b4e392d6-b98a-4625-99d0-270226d70962",
       "name": "Cov: Parse Repair"
     },
     {
@@ -626,7 +626,7 @@
         3300,
         200
       ],
-      "id": "1d2c56eb-ad18-4849-8f93-ff740af11ff5",
+      "id": "a2af828e-f181-4bd7-ba1b-3fdb63adc64f",
       "name": "Cov: Write Repair"
     },
     {
@@ -649,7 +649,7 @@
         3520,
         200
       ],
-      "id": "f8b1775a-9d97-4b85-b968-d251972f8341",
+      "id": "dc8dddef-62e6-4c5b-80a7-6df1ece04c28",
       "name": "Cov: Re-run Tests"
     },
     {
@@ -670,7 +670,7 @@
         220,
         400
       ],
-      "id": "1320409c-7062-45e5-8906-a5cef67bc676",
+      "id": "3e2af2bf-6d44-42da-8d06-997e3bfd0331",
       "name": "Cov: Green After Repair?"
     },
     {
@@ -693,7 +693,7 @@
         440,
         400
       ],
-      "id": "2f0e9dbd-24a0-4a8d-bec7-dda63c284030",
+      "id": "77945c6b-cc97-4231-b33a-c29381b0118b",
       "name": "Cov: Delete Broken Tests"
     },
     {
@@ -704,7 +704,7 @@
         660,
         400
       ],
-      "id": "7d1497bd-1b8e-4e38-8d47-26a2a1e5d84e",
+      "id": "08577f8c-7289-4f1c-8c3a-01cb6da7cdf9",
       "name": "Cov: Done"
     },
     {
@@ -718,7 +718,7 @@
         880,
         400
       ],
-      "id": "85f377fc-d7f3-4945-98fa-13684fed925a",
+      "id": "378154b3-90eb-4722-99cb-20ce5fb34a70",
       "name": "Mut: Build Prompt"
     },
     {
@@ -739,7 +739,7 @@
         1100,
         400
       ],
-      "id": "9a51d037-1158-4e1d-a605-feb86e0797fe",
+      "id": "bb542b06-5787-4a7d-88f4-80e26a2f2136",
       "name": "Mut: Has Work?"
     },
     {
@@ -762,7 +762,7 @@
         1320,
         400
       ],
-      "id": "902316b9-d4ad-4601-9737-466a081da81a",
+      "id": "901c7404-c584-4761-bb94-d73d6d592359",
       "name": "Mut: LLM Write Tests"
     },
     {
@@ -776,7 +776,7 @@
         1540,
         400
       ],
-      "id": "fdc7d5bd-5045-4ef7-b663-5a05ee7721b9",
+      "id": "bf6c7674-b908-491b-a217-01b4ed4eb61c",
       "name": "Mut: Parse Tests"
     },
     {
@@ -799,7 +799,7 @@
         1760,
         400
       ],
-      "id": "c7623395-dfe7-43bf-bb91-b03893dff0ae",
+      "id": "d5604377-8345-4806-a57f-cd8b83371b09",
       "name": "Mut: Write Tests"
     },
     {
@@ -822,7 +822,7 @@
         1980,
         400
       ],
-      "id": "8a4efd5e-25ac-499e-819d-2960cedd58ed",
+      "id": "f555f35d-9e5c-4a16-96ec-714bbcc5a54a",
       "name": "Mut: Run Tests"
     },
     {
@@ -843,7 +843,7 @@
         2200,
         400
       ],
-      "id": "13751e23-c777-4bec-834b-06687691dab5",
+      "id": "ddbee0ea-baa5-4bf3-adb1-5db8ed82cd58",
       "name": "Mut: Green?"
     },
     {
@@ -864,7 +864,7 @@
         2420,
         400
       ],
-      "id": "39f547b8-3e0a-4258-80be-af4aab5fbcaa",
+      "id": "d1e936a5-e0a8-473d-9621-74c43aa388c9",
       "name": "Mut: Wrote Any?"
     },
     {
@@ -878,7 +878,7 @@
         2640,
         400
       ],
-      "id": "5f5bbec8-acd8-4ac9-bffe-d3588d16e92d",
+      "id": "a2351f04-5daf-4949-9aba-ef7898bc48ae",
       "name": "Mut: Build Repair"
     },
     {
@@ -901,7 +901,7 @@
         2860,
         400
       ],
-      "id": "fcbac0a0-977e-4758-ba1b-bb1faaf8aa30",
+      "id": "15206b5f-dd7a-43f8-8b4a-fd1678d087d6",
       "name": "Mut: LLM Repair"
     },
     {
@@ -915,7 +915,7 @@
         3080,
         400
       ],
-      "id": "35236d0c-2159-4ad9-a4c8-af9c7628155f",
+      "id": "2f764108-64e0-43c3-ba6e-3b08590a6ae6",
       "name": "Mut: Parse Repair"
     },
     {
@@ -938,7 +938,7 @@
         3300,
         400
       ],
-      "id": "8d6e5bb8-bae0-4ab4-bf3a-a49a83579d39",
+      "id": "db5b4941-a89c-42cb-8a03-93eb0b9fb6f0",
       "name": "Mut: Write Repair"
     },
     {
@@ -961,7 +961,7 @@
         3520,
         400
       ],
-      "id": "2309df5c-db32-4b6a-8f1a-f6233a38b07c",
+      "id": "0f4763df-abfe-4793-8eed-ae9d1d46bc54",
       "name": "Mut: Re-run Tests"
     },
     {
@@ -982,7 +982,7 @@
         220,
         600
       ],
-      "id": "8f91897e-0f55-4a02-9e45-87b46888054d",
+      "id": "d3c35533-7fcf-4393-b254-5d28687932e5",
       "name": "Mut: Green After Repair?"
     },
     {
@@ -1005,7 +1005,7 @@
         440,
         600
       ],
-      "id": "14e84fec-553c-4869-b069-b6ed112ed10a",
+      "id": "01dbf4ed-ca9b-4ba7-a57e-35f6f5b09c0b",
       "name": "Mut: Delete Broken Tests"
     },
     {
@@ -1016,7 +1016,7 @@
         660,
         600
       ],
-      "id": "887eacca-9c34-49cd-8318-f11080171b52",
+      "id": "53e9e135-013a-4e42-9362-81f7a428421c",
       "name": "Mut: Done"
     },
     {
@@ -1039,7 +1039,7 @@
         880,
         600
       ],
-      "id": "dd9a7a6d-44d9-4528-b85d-44cc9c75d34d",
+      "id": "f113e564-1a53-49c7-b5ed-6d0e989791df",
       "name": "Verify"
     },
     {
@@ -1060,7 +1060,7 @@
         1100,
         600
       ],
-      "id": "ecd34429-9f01-41e2-bf71-47073af06489",
+      "id": "8a485517-fe34-497c-b116-7d277468fb28",
       "name": "Keep Round?"
     },
     {
@@ -1081,7 +1081,7 @@
         1320,
         600
       ],
-      "id": "33b32194-36ad-4beb-aab3-5d3f2b7effcb",
+      "id": "906fa0c1-13db-41e6-bf35-3c6225a38996",
       "name": "Another Round?"
     },
     {
@@ -1104,7 +1104,7 @@
         1540,
         600
       ],
-      "id": "17a57c0f-a0f4-4e44-a0d5-0845b533bd03",
+      "id": "10369b26-897c-4e0f-899b-8083c7cc8a87",
       "name": "Accept Round"
     },
     {
@@ -1127,8 +1127,31 @@
         1760,
         600
       ],
-      "id": "a1d83d2b-8863-4093-845d-b9bf09dc8da3",
+      "id": "f29efc0b-5482-4090-9ce6-bd1d8a06764c",
       "name": "Drop Last Round"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3000/api/round/miss",
+        "options": {
+          "timeout": 600000,
+          "redirect": {
+            "redirect": {}
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { file: $('Start Iteration').first().json.file } }}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        600
+      ],
+      "id": "e878e774-7ec0-4c99-82d9-4e328cd6a468",
+      "name": "Round Missed"
     },
     {
       "parameters": {
@@ -1147,10 +1170,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1980,
+        2200,
         600
       ],
-      "id": "5efd5f76-d368-4bfa-b25c-5e2ce534a7cf",
+      "id": "b1d1a20d-14f5-4955-abca-d83d99f19645",
       "name": "Cleanup Tests"
     },
     {
@@ -1170,10 +1193,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2200,
+        2420,
         600
       ],
-      "id": "1058c957-d090-4c80-a796-95830c6c4327",
+      "id": "0850cf78-6158-4992-97da-8a2eeb027a44",
       "name": "Rules: check changes"
     },
     {
@@ -1191,10 +1214,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        2420,
+        2640,
         600
       ],
-      "id": "5c7dcde6-02cd-4d03-bb95-4ea7f9da1707",
+      "id": "aaaddde6-6d49-4b44-ae4a-ad6518f45efa",
       "name": "Approved?"
     },
     {
@@ -1214,10 +1237,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2640,
+        2860,
         600
       ],
-      "id": "fd10c9e0-f7da-4712-8064-0a771fbe3383",
+      "id": "65bab581-4351-4756-a285-7d616116fceb",
       "name": "Rules: make PR"
     },
     {
@@ -1237,10 +1260,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2860,
+        3080,
         600
       ],
-      "id": "f2fbf452-cf5f-4ba7-a6f7-7975e8aecf09",
+      "id": "a0c2a280-1204-4d8a-afc2-d2c5ad75a47b",
       "name": "Create PR"
     },
     {
@@ -1260,10 +1283,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3080,
+        3300,
         600
       ],
-      "id": "a3a4b8df-08db-4219-a6ad-fbe8164d0b23",
+      "id": "975deea4-bba0-4cf1-9ff7-5dba997fef36",
       "name": "Discard Changes"
     },
     {
@@ -1271,10 +1294,10 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        3300,
+        3520,
         600
       ],
-      "id": "0c1a7d50-d125-4e21-babb-59ee0a399f9d",
+      "id": "2b9a565b-8f92-4339-a35c-53fb102e8231",
       "name": "Iteration Done"
     },
     {
@@ -1294,10 +1317,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3520,
-        600
+        220,
+        800
       ],
-      "id": "2d8fff2d-8c7e-47d7-832a-a16e0b86befc",
+      "id": "e2514eab-d0a9-413b-9f37-658aa14e8297",
       "name": "Finish Run"
     },
     {
@@ -1305,10 +1328,10 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        220,
+        440,
         800
       ],
-      "id": "0f77f567-0edb-42f7-bd13-32214875ead6",
+      "id": "e86fbdb6-0a34-4a2b-bd64-0ab8e3b491ef",
       "name": "End"
     }
   ],
@@ -1962,7 +1985,7 @@
         ],
         [
           {
-            "node": "Drop Last Round",
+            "node": "Round Missed",
             "type": "main",
             "index": 0
           }
@@ -1970,6 +1993,17 @@
       ]
     },
     "Accept Round": {
+      "main": [
+        [
+          {
+            "node": "Another Round?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Round Missed": {
       "main": [
         [
           {

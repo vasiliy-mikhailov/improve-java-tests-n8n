@@ -28,7 +28,8 @@ const DEFAULTS = { minGapFrac: 0.05, minGain: 0.5, maxRounds: 0 };
  */
 function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
   maxRounds = DEFAULTS.maxRounds, minGapFrac = DEFAULTS.minGapFrac, minGain = DEFAULTS.minGain,
-  totalMutants = null, coverage = null, elapsedSec = 0, budgetSec = 0 } = {}) {
+  totalMutants = null, coverage = null, elapsedSec = 0, budgetSec = 0,
+  consecutiveMisses = 0, maxMisses = 3, survivorsLeft = null } = {}) {
   const base = macBase ?? 0;
   const after = macAfter ?? 0;
   const keepRound = !!improvedAny && !degradedAny;
@@ -55,16 +56,29 @@ function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
   // round to discover that — cheap on a whole class, wasteful when the unit is a single
   // method, where reaching 100 in the first round is the common case.
   const perfect = after >= 100;
-  const continueRounds = keepRound && roundsLeft && !marginal && !perfect && !outOfTime;
+  // A round that failed to kill its mutant is DROPPED, but it does not end the unit: the
+  // mutant is now marked attempted and dozens of survivors usually remain. Stopping on
+  // the first miss abandoned a method with 83 live mutants after one bad guess. What ends
+  // a unit is running out of un-attempted survivors, missing repeatedly in a row, running
+  // out of time, or reaching 100.
+  const missesLeft = maxMisses <= 0 || consecutiveMisses < maxMisses;
+  const workLeft = survivorsLeft == null || survivorsLeft > 0;
+  const continueRounds = roundsLeft && !perfect && !outOfTime && workLeft && missesLeft
+    && (keepRound ? !marginal : true);
   const verdict = !keepRound
-    ? (degradedAny ? 'DEGRADED (stop, drop round)' : 'STALE (stop)')
+    ? (degradedAny ? `DEGRADED (drop this round${continueRounds ? ', try the next mutant' : ', stop)'}`
+      : !continueRounds
+        ? (!workLeft ? 'MISS (no un-attempted survivors left — stop)'
+          : !missesLeft ? `MISS (${consecutiveMisses + 1} in a row — stop)`
+            : outOfTime ? 'MISS (time budget spent — stop)' : 'MISS (stop)')
+        : `MISS (drop this round, try the next mutant — miss ${consecutiveMisses + 1}/${maxMisses})`)
     : outOfTime ? `PROGRESS (unit time budget ${budgetSec}s spent — keep and stop)`
       : perfect ? `PROGRESS (MAC ${after} — nothing left to improve, keep and stop)`
       : !roundsLeft ? `PROGRESS (round budget ${maxRounds} spent — keep and stop)`
       : marginal ? `PROGRESS but MARGINAL (+${gain} MAC = ${round2(gapClosed * 100)}% of the remaining gap; `
         + `floors ${round2(minGapFrac * 100)}% / +${minGain}) — keep and stop`
         : 'PROGRESS (another round)';
-  return { keepRound, continueRounds, marginal, perfect, outOfTime, gain,
+  return { keepRound, continueRounds, marginal, perfect, outOfTime, workLeft, missesLeft, gain,
     gapClosed: round2(gapClosed), effMinGain: round2(effMinGain), verdict };
 }
 

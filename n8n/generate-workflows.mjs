@@ -312,6 +312,8 @@ IfNum('Keep Round?', `={{ $json.keepRound ? 1 : 0 }}`, 'equal', 1);
 IfNum('Another Round?', `={{ $json.continueRounds ? 1 : 0 }}`, 'equal', 1);
 Http('Accept Round', { path: '/api/round/accept', body: `={{ { file: $('Start Iteration').first().json.file } }}` });
 Http('Drop Last Round', { path: '/api/round/drop', body: `={{ { file: $('Start Iteration').first().json.file } }}` });
+// a round that failed to kill its mutant: bin the test, keep the unit
+Http('Round Missed', { path: '/api/round/miss', body: `={{ { file: $('Start Iteration').first().json.file } }}` });
 Http('Cleanup Tests', { path: '/api/test/cleanup', body: `={{ { file: $('Start Iteration').first().json.file } }}`, timeout: 5400000 });
 Http('Rules: check changes', { path: '/api/rules/apply', body: `={{ { stage: 'check_changes', context: $('Drop Last Round').first().json } }}`, timeout: 600000 });
 IfNum('Approved?', `={{ ($json.result && $json.result.approved && $('Drop Last Round').first().json.improved) ? 1 : 0 }}`, 'equal', 1);
@@ -328,8 +330,9 @@ NoOp('End');
 
 chain(mutDone, 'Verify', 'Keep Round?');
 link('Keep Round?', 'Accept Round', 0);          // round earned its place → commit it
-link('Keep Round?', 'Drop Last Round', 1);       // stale/degraded → discard it
+link('Keep Round?', 'Round Missed', 1);          // no kill → drop the test, not the unit
 link('Accept Round', 'Another Round?');
+link('Round Missed', 'Another Round?');
 link('Another Round?', 'Coverage Gaps', 0);      // next round on the same class
 link('Another Round?', 'Drop Last Round', 1);    // done: nothing uncommitted left to drop
 chain('Drop Last Round', 'Rules: check changes', 'Approved?');

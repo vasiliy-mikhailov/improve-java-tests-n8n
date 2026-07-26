@@ -790,7 +790,14 @@ const routes = {
         totalMutants: st.totalMutants ?? f.totalMutants ?? null,
         coverage: coverageAfter,
         elapsedSec, budgetSec: state.run.config.unitBudgetSec || 0,
+        // a miss drops the round but not the unit: what matters is whether any
+        // un-attempted survivor remains and how many misses came in a row
+        consecutiveMisses: f.consecutiveMisses || 0,
+        maxMisses: state.run.config.maxConsecutiveMisses ?? 3,
+        survivorsLeft: (st.survived || []).filter((m) =>
+          !(f.attemptedMutants || []).includes(`${m.mutator}@${m.line}`)).length,
       });
+      S.upsertFile(file, { consecutiveMisses: keepRound ? 0 : (f.consecutiveMisses || 0) + 1 });
       S.event('improving_mac', `round ${rounds + 1} of ${file}: cov ${rb.coverage}→${coverageAfter}, mut ${rb.mutation}→${st.score}, mac ${rb.mac}→${macAfter} — ${verdict}`);
       // remembered so /api/round/accept can echo it: the loop's IF then reads the
       // verdict off its direct input instead of reaching back to a node that has
@@ -815,6 +822,18 @@ const routes = {
       S.event('improving_mac', 'verification failed: ' + e.message.slice(0, 300));
       return { ok: true, improved: false, testsGreen: false, error: e.message, file };
     }
+  },
+
+  'POST /api/round/miss': async (q, body) => {
+    needRun();
+    const file = body.file;
+    const f = state.files[file];
+    if (!f) throw new Error('unknown unit: ' + file);
+    // throw away only this round's uncommitted test; every accepted round before it
+    // stays committed on the branch
+    await repo.discardUncommitted();
+    S.event('improving_mac', `dropped the round's test for ${unitLabel(file)} — moving to the next mutant`);
+    return { ok: true, file, continueRounds: !!f.continueRounds, rounds: f.rounds || 0 };
   },
 
   'POST /api/round/accept': async (q, body) => {

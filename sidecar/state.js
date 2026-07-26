@@ -29,6 +29,8 @@ function envConfig() {
     mutantChoices: parseInt(e.MUTANT_CHOICES || '20', 10),
     // rounds are cheap now, but a mutant-dense method still needs a ceiling
     unitBudgetSec: parseInt(e.UNIT_BUDGET_SEC || '3600', 10),
+    // consecutive rounds that fail to kill their mutant before a unit is given up
+    maxConsecutiveMisses: parseInt(e.MAX_CONSECUTIVE_MISSES || '3', 10),
     maxAttemptsPerFile: parseInt(e.MAX_ATTEMPTS_PER_FILE || '3', 10),
     // diminishing-returns stop: a further round is only worth its ~10 min of
     // machine time if the last one closed a real share of the remaining MAC gap
@@ -71,7 +73,7 @@ function freshRun(overrides = {}) {
   const o = overrides && typeof overrides === 'object' ? overrides : {};
   for (const k of ['repoUrl', 'repoBranch', 'scopeGlob', 'scopeLimit', 'maxIterations',
     'maxRoundsPerFile', 'maxAttemptsPerFile', 'minRoundGapFrac',
-    'minRoundGain', 'mutantsPerRound', 'mutantChoices', 'unitBudgetSec', 'minMutantsPerClass', 'pitScope', 'minUnitLines', 'maxFailures', 'covPhaseMaxPct', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
+    'minRoundGain', 'mutantsPerRound', 'mutantChoices', 'unitBudgetSec', 'maxConsecutiveMisses', 'minMutantsPerClass', 'pitScope', 'minUnitLines', 'maxFailures', 'covPhaseMaxPct', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
     if (o[k] !== undefined && o[k] !== null && o[k] !== '') cfg[k] = o[k];
   }
   if (o.rules && typeof o.rules === 'object') {
