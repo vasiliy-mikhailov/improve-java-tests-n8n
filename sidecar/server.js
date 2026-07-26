@@ -396,6 +396,15 @@ function gapsFor(p) {
   };
 }
 
+
+/** Would both phases skip for this unit — i.e. is there no work a round could do? */
+function nothingToAsk(file) {
+  try {
+    const gaps = gapsFor(file);
+    return !!(prompts.coveragePrompt(gaps).skip && prompts.mutationPrompt(gaps).skip);
+  } catch { return false; }
+}
+
 function candidates() {
   const cfg = state.run.config;
   const maxAttempts = cfg.maxAttemptsPerFile || 3;
@@ -1013,8 +1022,14 @@ const routes = {
       // answer 0 into "unknown", so "no surviving mutants left — stop" could never fire
       // and the loop kept ordering rounds that had nothing to target
       survivorsLeft: select.eligible(f.lastSurvived || [], f.attemptedMutants || []).length,
+      // Did this round have anything to ask the model for at all? Both phases skipping
+      // means no test was written — nothing to retry, and nothing a further attempt would
+      // change either.
+      nothingToAsk: nothingToAsk(file),
     });
     S.upsertFile(file, { consecutiveMisses: outcome.consecutiveMisses, continueRounds: outcome.continueRounds });
+    // and do not spend further attempts on it
+    if (outcome.settle) S.upsertFile(file, { attempts: state.run.config.maxAttemptsPerFile || 3 });
     S.event('improving_mac', `dropped the round's test for ${unitLabel(file)} — ${outcome.verdict}`);
     S.save();
     return { ok: true, file, continueRounds: outcome.continueRounds, consecutiveMisses: outcome.consecutiveMisses, rounds: f.rounds || 0 };
