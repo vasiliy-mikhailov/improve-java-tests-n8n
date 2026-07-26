@@ -258,3 +258,43 @@ changed, coverage produced by a deleted test, a kill announced by a round that w
 nothing, machine hours charged three times. The guard list in SPEC §4 is now long enough
 that it is the specification's centre of gravity, which is the honest description of this
 project.
+
+### Addendum — the test sizes that were missing, and what they found
+
+Google's sizing makes the gap in this project legible: **size** is about resources
+(small = no I/O at all, medium = one machine, large = off-machine), **scope** is about how
+much code runs. The suite was 220 small, 14 medium (real git, temp report files), and
+**zero large** — then a jump straight to an e2e run measured in hours. Everything about the
+model lived in that gap.
+
+`npm run test:model` fills it: ten large tests that call the real endpoint and assert
+invariants a correct answer must satisfy — parseable within the shipped budget, one file
+at the planned path, class name matching, no reflection, the project's own framework, the
+mutant actually exercised, an equivalent mutation declined, a repair that keeps the path.
+Answers record to fixtures keyed by `hash(model, thinking, budget, prompt)`, so a replay is
+medium and only a changed prompt costs a call.
+
+Nine passed immediately, against a ten-line fixture class — which proves close to nothing,
+the same error as fixtures whose braces balanced when the file that broke the parser did
+not. The tenth builds its prompt from gaps captured live (`JSONObject#isRecordStyleAccessor`,
+7 KB, a guarded private method) and failed. It then corrected two of my own conclusions:
+
+- **Thinking was not the cause.** At 2500 tokens with thinking OFF and zero reasoning, the
+  same prompt still truncated. The mutation stage's answer budget was too small for real
+  work, and a truncated call is discarded and paid for again at double.
+- **A bigger ceiling does not rescue thinking.** At 5500 it produced 21,515 characters of
+  reasoning; given 7000 it produced 26,960 and truncated again. It expands to fill whatever
+  it is handed.
+
+Budget 2500 → 4000, the prompt now demands terse tests (the generated ones carried
+multi-line javadoc), and `LLM_ENABLE_THINKING=false`. Measured effect on model calls:
+**90–282 s → 3–6 s**, and the kills continued — `JSONArray#getFloat` went coverage 50→66.67,
+mutation 33.33→66.67, **MAC 16.67→44.45** in one round, second PR of the clean run.
+
+The last defect of the day is the day in miniature: `decide()` reported
+`PROGRESS but MARGINAL (+0 MAC)` for a unit whose mutation score was `null` — `?? 0`
+turning "not measured" into a number, printed verbatim into the activity stream. An
+unmeasurable round is now UNMEASURED and is not retried.
+
+Final: **239 small/medium tests, 10 large**, zero Code nodes, 2 PRs from the clean run,
+D9 and D12 still 0.5 on the honest rule that nothing scores until it has been seen working.
