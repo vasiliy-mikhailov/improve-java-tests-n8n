@@ -2,8 +2,9 @@
 
 One Docker container that points an **n8n pipeline** at any Java repo (Maven or Gradle) and
 produces **pull requests that improve tests**: higher JaCoCo line coverage, higher **PIT**
-mutation score, and higher **MAC = coverage % × mutation %** — one PR per improved class —
-with a live dashboard showing exactly what the pipeline is doing right now.
+mutation score, and higher **MAC = coverage % × mutation %** — one PR per improved file —
+with a live dashboard showing exactly what the pipeline is doing right now, down to what the
+model was asked and what it answered.
 
 [PROBLEM.md](PROBLEM.md) — what we want, the ralph loop and the reward formula.
 [SPEC.md](SPEC.md) — how the implementation actually works.
@@ -37,26 +38,38 @@ n8n workflow (native nodes ONLY: HTTP Request / Code / IF / NoOp / triggers)
 sidecar :3000  (zero-dependency Node 22)
    │    ├─ git / gh
    │    ├─ Maven or Gradle, under the JDK the project actually needs (8/11/17/21 in the image)
-   │    ├─ JaCoCo  → line coverage per class
-   │    ├─ PIT     → mutation score per class (scoped to one class per run)
+   │    ├─ JaCoCo  → line coverage per class AND per method
+   │    ├─ PIT     → mutation score, scoped to one method per run
    │    └─ qwen 3.6 27b fp8 → writes the JUnit tests
    │  state.json + events  →  dashboard (/dashboard) polls every 2 s
    ▼
-per class: pick (rules) → branch → measure → write coverage tests (LLM) →
-           write mutant-killing tests (LLM) → verify MAC improved → PR (or discard)
+per method: pick (rules) → branch → measure → target one mutant →
+            write ONE test for it → re-measure → repeat → PR (or discard)
 ```
 
 Stages you'll see live on the dashboard: cloning, building, measuring baseline,
-**picking a class**, **improving coverage**, **improving mutation score**,
+**picking a method**, **improving coverage**, **improving mutation score**,
 **improving MAC (verifying)**, **preparing PR**.
 
-### The improvement loop (per class)
+### The improvement loop
 
-A picked class is improved in **rounds**. A round is **kept** only if at least one of
-coverage / mutation / MAC improved and none degraded; it is **repeated** only while the last
-round closed a real share of the remaining MAC gap (`MIN_ROUND_GAP_FRAC`, `MIN_ROUND_GAIN`) and
-the round budget (`MAX_ROUNDS_PER_FILE`) lasts. Kept rounds are individual commits, so a later
-bad round is dropped alone; the class then gets one cumulative PR if it netted improvement.
+The unit of work is a **method**; the target inside it is a **single mutant**.
+
+```
+pick the weakest method → PIT it → target the most killable surviving mutant
+      ↑                                          ↓
+      └──── repeat while it pays ←─ re-measure ←─ write ONE test for that mutant
+```
+
+The target is chosen from PIT's own data — mutator kind, `SURVIVED` before `NO_COVERAGE`,
+and this run's actual kill record — not from the model's opinion about what it can kill. A
+mutant is never attacked twice; one kill often takes neighbours with it, which the
+re-measurement catches. A round is **kept** iff at least one of coverage / mutation / MAC
+improved and none degraded, and each kept round is its own commit so a later bad round is
+dropped alone. A unit ends when a round kills nothing, when every survivor has been
+attempted, or when its time budget expires — then one cumulative PR per file that gained.
+
+Full detail in [SPEC.md](SPEC.md).
 
 ### Java specifics the pipeline handles for you
 
