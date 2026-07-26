@@ -7,6 +7,7 @@ const path = require('node:path');
 const { run } = require('./exec');
 const { state, event, DATA_DIR } = require('./state');
 const { repoDir } = require('./repo');
+const { worthCommitting } = require('./cleanup');
 
 async function changedFiles() {
   const dir = repoDir();
@@ -41,7 +42,7 @@ async function diffAgainstBase() {
   const dir = repoDir();
   const base = state.run.config.prBase;
   // intent-to-add new test files so they show up in the diff
-  const newTests = (await changedFiles()).filter(isCommittableTest);
+  const newTests = pruneEmptyTests((await changedFiles()).filter(isCommittableTest));
   if (newTests.length) await run(['git', 'add', '-N', '--', ...newTests], { cwd: dir, timeoutMs: 30000 });
   const r = await run(['git', 'diff', base, '--', ':!target', ':!build', ':!.gradle', ':!.ijt-*', ':!pom.xml', ':!**/pom.xml'], { cwd: dir, timeoutMs: 60000 });
   return r.stdout;
@@ -53,12 +54,30 @@ const TEST_PATH_RE = /(^|\/)src\/test\/java\/.+\.java$/;
 const ARTIFACT_RE = /(^|\/)(target|build|\.gradle|\.ijt-)/;
 const isCommittableTest = (p) => TEST_PATH_RE.test(p) && !ARTIFACT_RE.test(p);
 
+/**
+ * Test files with something in them. An empty or test-less file is dead weight in a PR —
+ * a zero-byte generated test reached a prepared patch as a new file with an empty blob —
+ * so it is removed from the tree rather than carried into the deliverable.
+ */
+function pruneEmptyTests(paths) {
+  const dir = repoDir();
+  const kept = [];
+  for (const rel of paths) {
+    let content = null;
+    try { content = fs.readFileSync(path.join(dir, rel), 'utf8'); } catch { continue; }
+    if (worthCommitting(content)) { kept.push(rel); continue; }
+    try { fs.unlinkSync(path.join(dir, rel)); } catch { /* already gone */ }
+    event('preparing_pr', `dropped ${rel}: ${content.trim() ? 'no test methods in it' : 'empty file'}`);
+  }
+  return kept;
+}
+
 async function commit(message) {
   const dir = repoDir();
   // Commit ONLY test sources — never the injected PIT plugin block in pom.xml, the
   // .ijt-* init scripts or target/build output; committing those poisons the base branch.
   const changed = await changedFiles();
-  const testish = changed.filter(isCommittableTest);
+  const testish = pruneEmptyTests(changed.filter(isCommittableTest));
   if (!testish.length) {
     // rounds may already be committed on this branch — that's fine for PR creation
     const ahead = await run(['git', 'rev-list', '--count', `${state.run.config.prBase}..HEAD`], { cwd: dir, timeoutMs: 30000 });
@@ -120,4 +139,4 @@ async function createPr({ file, branch, title, body, labels = [] }) {
   return record;
 }
 
-module.exports = { commit, createPr, changedFiles, changedTestFiles, diffAgainstBase };
+module.exports = { commit, createPr, changedFiles, changedTestFiles, diffAgainstBase, pruneEmptyTests };

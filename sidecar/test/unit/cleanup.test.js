@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { extractCleanedFile, plausibleCleanup } = require('../../cleanup');
+const { extractCleanedFile, plausibleCleanup, worthCommitting } = require('../../cleanup');
 
 const ORIGINAL = `package org.json;
 
@@ -109,4 +109,21 @@ test('thinking blocks and markdown fences never reach the file', () => {
 
 test('the cleaned file always ends with exactly one newline', () => {
   assert.match(extractCleanedFile('```java\n' + CLEANED.trimEnd() + '\n```'), /}\n$/);
+});
+
+test('an empty or test-less file is never worth committing', () => {
+  // A zero-byte XMLMacMutR2Test.java reached a prepared PR: a new file, empty blob, no
+  // hunks. Whatever produced it, dead weight in a deliverable is exactly what D12 forbids.
+  assert.equal(worthCommitting(''), false);
+  assert.equal(worthCommitting('   \n\n  '), false);
+  assert.equal(worthCommitting('package org.json;\n\npublic class T { }\n'), false, 'no @Test = nothing tested');
+});
+
+test('a real generated test is worth committing', () => {
+  assert.equal(worthCommitting(CLEANED), true);
+});
+
+test('a parameterised or repeated test counts as a test', () => {
+  const p = 'package a;\nimport org.junit.jupiter.params.ParameterizedTest;\npublic class T {\n  @ParameterizedTest\n  void t(int x) { assertEquals(1, x); }\n}\n';
+  assert.equal(worthCommitting(p), true);
 });

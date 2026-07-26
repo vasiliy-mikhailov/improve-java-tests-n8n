@@ -74,4 +74,17 @@ function plausibleCleanup(original, cleaned) {
   return { ok: true, testsBefore, testsAfter };
 }
 
-module.exports = { extractCleanedFile, plausibleCleanup };
+/**
+ * Is this file worth putting in a pull request?
+ *
+ * A zero-byte XMLMacMutR2Test.java reached a prepared PR — a new file with an empty blob
+ * and no hunks. Dead weight in a deliverable is precisely what D12 forbids, and an empty
+ * or test-less class earns nothing wherever it came from.
+ */
+function worthCommitting(content) {
+  const src = String(content || '');
+  if (!src.trim()) return false;
+  return countTests(src) > 0;
+}
+
+module.exports = { extractCleanedFile, plausibleCleanup, worthCommitting };
