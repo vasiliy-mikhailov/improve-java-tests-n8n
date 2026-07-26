@@ -37,9 +37,10 @@ function envConfig() {
     // units we could not measure do not consume the scope quota, but too many of them
     // means the repo/toolchain is broken rather than the units
     maxFailures: parseInt(e.MAX_FAILURES || '10', 10),
-    // a unit already this well covered skips the coverage phase entirely: its weakness
-    // is assertions, not execution, and the mutation phase is where that is fixed
-    covPhaseSkipPct: parseFloat(e.COV_PHASE_SKIP_PCT || '80'),
+    // The coverage phase runs only for a method covered at or below this (default 0:
+    // completely unexecuted). Above it, mutation work extends coverage on its own —
+    // killing a NO_COVERAGE mutant means executing the line it sits on.
+    covPhaseMaxPct: parseFloat(e.COV_PHASE_MAX_PCT || '0'),
     prMode: e.PR_MODE || 'github', // github | local
     prBase: e.PR_BASE || '',       // defaults to repoBranch
     setupScript: e.SETUP_SCRIPT || '', // extra build goal/task to run after compile (e.g. 'shade')
@@ -60,7 +61,7 @@ function freshRun(overrides = {}) {
   const o = overrides && typeof overrides === 'object' ? overrides : {};
   for (const k of ['repoUrl', 'repoBranch', 'scopeGlob', 'scopeLimit', 'maxIterations',
     'maxMutantsPerFile', 'maxRoundsPerFile', 'maxAttemptsPerFile', 'minRoundGapFrac',
-    'minRoundGain', 'minMutantsPerClass', 'pitScope', 'minUnitLines', 'maxFailures', 'covPhaseSkipPct', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
+    'minRoundGain', 'minMutantsPerClass', 'pitScope', 'minUnitLines', 'maxFailures', 'covPhaseMaxPct', 'prMode', 'prBase', 'dryRun', 'setupScript']) {
     if (o[k] !== undefined && o[k] !== null && o[k] !== '') cfg[k] = o[k];
   }
   if (o.rules && typeof o.rules === 'object') {

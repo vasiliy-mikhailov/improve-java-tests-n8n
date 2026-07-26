@@ -517,7 +517,7 @@ const routes = {
       coverage: f.coverage ?? null,
       missedLines: f.missedLines ?? null,
       executableLines: f.executableLines ?? null,
-      covPhaseSkipPct: state.run.config.covPhaseSkipPct ?? 80,
+      covPhaseMaxPct: state.run.config.covPhaseMaxPct ?? 0,
       // the method this unit is about: the tests must concentrate here
       method: f.method || null,
       methodLine: f.methodLine || null,

@@ -213,18 +213,20 @@ const u = gaps.uncovered || {};
 const fullyUncovered = u.lines === 'all';
 const missed = fullyUncovered ? 9999 : (u.lines || []).length;
 const targetPath = gaps.covTestPath;
-// Skip the coverage phase when the unit is already well executed. A method at 88 %
-// coverage with a 0 % mutation score does not need MORE code run — it needs assertions,
-// which is the mutation phase's job. Writing coverage tests for it burns a multi-minute
-// LLM call and thousands of tokens to change nothing.
+// The coverage phase exists to get the method EXECUTED at all. Once anything executes it,
+// the mutation phase takes over and drags coverage along with it: a NO_COVERAGE mutant is
+// by definition on a line nothing runs, and killing it requires calling that code. So this
+// phase runs only when the method is completely unexecuted; otherwise it burns a
+// multi-minute call and thousands of tokens to duplicate what mutation work does anyway.
+const anyCoverage = !fullyUncovered && gaps.coverage != null && gaps.coverage > (gaps.covPhaseMaxPct ?? 0);
 if (missed === 0) return [{ json: { skip: true, reason: 'method fully covered', targetPath, projectTestPath: gaps.projectTestPath } }];
-if (!fullyUncovered && gaps.coverage != null && gaps.coverage >= (gaps.covPhaseSkipPct ?? 80)) {
-  return [{ json: { skip: true, reason: 'already ' + gaps.coverage + '% covered — the gap is assertions, not execution', targetPath, projectTestPath: gaps.projectTestPath } }];
+if (anyCoverage) {
+  return [{ json: { skip: true, reason: 'method already executed (' + gaps.coverage + '% covered) — mutation tests will extend coverage as they kill NO_COVERAGE mutants', targetPath, projectTestPath: gaps.projectTestPath } }];
 }
 const constraints = (gaps.constraints || []).map(c => '- ' + c).join('\\n');
 const testClass = targetPath.split('/').pop().replace(/\\.java$/, '');
 const RULES = ${JSON.stringify(COMMON_TEST_RULES)};
-const system = 'You are an expert Java test engineer writing ' + (gaps.testFramework === 'junit4' ? 'JUnit 4' : gaps.testFramework === 'testng' ? 'TestNG' : 'JUnit 5') + ' tests to INCREASE LINE COVERAGE of ONE METHOD' + (gaps.method ? ' (' + gaps.method + '())' : '') + ' of one class. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}. Create a NEW test class only — never modify existing files. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES
+const system = 'You are an expert Java test engineer writing the FIRST test for ONE METHOD that no test executes yet' + (gaps.method ? ' (' + gaps.method + '())' : '') + '. Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}. Create a NEW test class only — never modify existing files. Required file path: ' + targetPath + ' (package ' + gaps.package + ', public class ' + testClass + '). Rules:' + RULES
   + (constraints ? '\\nTeam constraints:\\n' + constraints : '');
 const prompt = 'CLASS UNDER TEST: ' + gaps.fqcn + '  (file ' + gaps.path + ', module ' + gaps.module + ', JDK ' + gaps.jdk + ')\\n'
   + (gaps.method ? 'TARGET METHOD: ' + gaps.method + '()' + (gaps.methodLine ? ' (declared around line ' + gaps.methodLine + ')' : '') + ' — the tests must exercise THIS method; coverage and mutation score are measured on it alone.\\n' : '')
