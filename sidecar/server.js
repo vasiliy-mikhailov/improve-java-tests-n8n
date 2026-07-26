@@ -19,6 +19,7 @@ const parse = require('./parse');
 const select = require('./select');
 const cleanupMod = require('./cleanup');
 const measure = require('./measure');
+const purge = require('./purge');
 const javasrc = require('./javasrc');
 const { run } = require('./exec');
 const { mac, fileSlug, round2, clamp, slugify } = require('./util');
@@ -1087,6 +1088,50 @@ const routes = {
     }
     S.event('improving_mac', `discarded changes for ${file}: ${body.reason || 'no MAC improvement'}`);
     return { ok: true };
+  },
+
+  /**
+   * Start a repo again from nothing: forget what previous runs settled and measured, and
+   * remove what they produced — prepared PR patches and the per-file branches carrying
+   * their generated tests. The clone itself is reset to the base branch and cleaned.
+   */
+  'POST /api/admin/purge-repo': async (q, body) => {
+    const repoUrl = body.repoUrl || state.run?.config?.repoUrl || S.envConfig().repoUrl;
+    if (!repoUrl) throw new Error('repoUrl required');
+    const slug = slugify(repoUrl);
+    const plan = purge.purgePlan(state.improvedLedger[slug] || {}, path.join(S.DATA_DIR, 'prs'));
+
+    const removedFiles = [];
+    for (const f of plan.files) {
+      try { fs.unlinkSync(f); removedFiles.push(path.basename(f)); } catch { /* already gone */ }
+    }
+    const removedBranches = [];
+    const dir = path.join(S.DATA_DIR, 'repos', slug);
+    if (fs.existsSync(path.join(dir, '.git'))) {
+      const base = state.run?.config?.prBase || state.run?.config?.repoBranch || 'HEAD';
+      await run(['git', 'checkout', '-f', base], { cwd: dir, timeoutMs: 60000 });
+      await run(['git', 'clean', '-fdx', '--', 'src'], { cwd: dir, timeoutMs: 120000 });
+      // every branch this pipeline made, not only the ones the ledger knows about
+      const listed = await run(['git', 'branch', '--list', 'tests/improve-*', '--format=%(refname:short)'],
+        { cwd: dir, timeoutMs: 30000 });
+      for (const b of new Set([...plan.branches, ...listed.stdout.split('\n').map((x) => x.trim()).filter(Boolean)])) {
+        if (!purge.OURS.test(b)) continue;
+        const r = await run(['git', 'branch', '-D', b], { cwd: dir, timeoutMs: 30000 });
+        if (r.code === 0) removedBranches.push(b);
+      }
+    }
+
+    delete state.improvedLedger[slug];
+    delete state.measureLedger[slug];
+    if (state.overheadLedger) delete state.overheadLedger[slug];
+    state.mutatorStats = {};
+    state.llmBudget = null;
+    if (state.run && slugify(state.run.config.repoUrl) === slug) { state.files = {}; state.prs = []; }
+    S.event('starting', `purged ${repoUrl}: removed ${removedFiles.length} prepared PR artifact(s) and `
+      + `${removedBranches.length} branch(es), and cleared its ledgers — `
+      + 'the next run starts from the repo as it is upstream');
+    S.save();
+    return { ok: true, repoUrl, removedFiles, removedBranches };
   },
 
   'POST /api/admin/reset': async () => {
