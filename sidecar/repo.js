@@ -13,6 +13,7 @@ const path = require('node:path');
 const { run } = require('./exec');
 const { state, event, upsertFile, DATA_DIR } = require('./state');
 const { slugify, globsToMatcher } = require('./util');
+const { resolveBranch } = require('./branch');
 
 function repoDir() {
   const cfg = state.run?.config;
@@ -27,6 +28,14 @@ async function clone() {
   const cfg = state.run.config;
   const dir = repoDir();
   fs.mkdirSync(path.dirname(dir), { recursive: true });
+  // Ask the remote which branches it actually has before naming one. A configured branch
+  // the repo does not have used to end the run here; now it falls back to the repo's own
+  // default and says so.
+  const ls = await run(['git', 'ls-remote', '--symref', cfg.repoUrl], { timeoutMs: 120000, label: 'git ls-remote' });
+  if (ls.code !== 0) throw new Error('cannot reach ' + cfg.repoUrl + ': ' + ls.stderr.slice(-300));
+  const resolved = resolveBranch(cfg.repoBranch, ls.stdout);
+  if (resolved.fellBack) event('cloning', resolved.reason);
+  cfg.repoBranch = resolved.branch;
   if (fs.existsSync(path.join(dir, '.git'))) {
     event('cloning', 'repo exists, fetching latest');
     const remote = await run(['git', 'remote', 'get-url', 'origin'], { cwd: dir, timeoutMs: 10000 });
