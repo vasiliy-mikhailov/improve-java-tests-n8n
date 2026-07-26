@@ -113,7 +113,7 @@ const rankSurvivors = (list) => select.rankSurvivors(list, state.mutatorStats ||
 function metricsPayload() {
   refreshTotals();
   const files = Object.values(state.files).sort((a, b) => (a.mac ?? 999) - (b.mac ?? 999));
-  const targeted = files.filter((f) => f.macBefore != null);
+  const targeted = files.filter(select.isTargeted);
   const avg = (xs) => xs.length ? round2(xs.reduce((s, x) => s + x, 0) / xs.length) : null;
   // work accounting: human-equivalent hours, machine time, ETA, FTE, progress
   const settled = files.filter((f) => ['improved', 'no_improvement', 'failed'].includes(f.status));

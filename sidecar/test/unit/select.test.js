@@ -105,3 +105,23 @@ test('ranking is total: the same input always yields the same order', () => {
   const list = [u({ path: 'x' }), u({ path: 'y' }), u({ path: 'z' })];
   assert.deepEqual(rankUnits(list).units.map((x) => x.path), rankUnits(list.slice().reverse()).units.map((x) => x.path));
 });
+
+// ── which units count as "targeted" in the headline ───────────────────────
+const { isTargeted } = require('../../select');
+
+test('a unit with no mutation surface is not a targeted improvement', () => {
+  // the dashboard reported avg MAC after = 13.33 while its one improved unit stood at
+  // 66.67: four units settled as "no mutants" were averaged in at 0, understating the
+  // work by a factor of five
+  assert.equal(isTargeted({ macBefore: 0, status: 'no_mutants' }), false);
+  assert.equal(isTargeted({ macBefore: 0, status: 'improved' }), true);
+});
+
+test('a unit that was never measured is not counted either way', () => {
+  assert.equal(isTargeted({ macBefore: null, status: 'candidate' }), false);
+  assert.equal(isTargeted({ status: 'candidate' }), false);
+});
+
+test('a measured unit that failed to improve still counts — it was really attempted', () => {
+  assert.equal(isTargeted({ macBefore: 40, status: 'no_improvement' }), true);
+});

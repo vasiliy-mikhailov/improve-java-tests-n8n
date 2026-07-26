@@ -69,4 +69,16 @@ function rankUnits(list) {
   return { units, unreachable: all.length - units.length };
 }
 
-module.exports = { rankSurvivors, eligible, penalty, attemptKey, rankUnits };
+/**
+ * Did this run actually take this unit on? Only those belong in the headline averages.
+ *
+ * A unit settled as having no mutation surface records a macBefore of 0 and never gets an
+ * "after", so averaging it in reported avg MAC after = 13.33 for a batch whose single
+ * improved unit stood at 66.67 — understating the work fivefold with units that cannot be
+ * improved at all.
+ */
+function isTargeted(f) {
+  return !!f && f.macBefore != null && f.status !== 'no_mutants';
+}
+
+module.exports = { rankSurvivors, eligible, penalty, attemptKey, rankUnits, isTargeted };
