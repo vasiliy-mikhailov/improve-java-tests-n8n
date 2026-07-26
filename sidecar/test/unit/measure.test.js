@@ -132,3 +132,12 @@ test('what the runs learned about reaching a unit survives a restart', () => {
   assert.equal(plan.restore[0].entry.everReached, false);
   assert.equal(plan.restore[0].entry.missesEver, 3);
 });
+
+test('which mutants were already attacked survives a restart', () => {
+  // Within a run the register is intact — but it lived only in run state, so a restart
+  // forgot it and a unit could spend a fresh round on a mutant it had already failed to
+  // kill. "Do not try to kill the same mutant twice" has to hold across runs too.
+  const m = { 'src/main/java/org/json/XML.java::parse': stamp({ attemptedMutants: ['MathMutator@10', 'NullReturnVals@20'] }) };
+  const plan = planReplay({}, m, has);
+  assert.deepEqual(plan.restore[0].entry.attemptedMutants, ['MathMutator@10', 'NullReturnVals@20']);
+});

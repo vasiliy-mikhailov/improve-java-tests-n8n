@@ -266,8 +266,10 @@ function replayLedgers() {
       coverageBefore: entry.coverageBefore, mutationBefore: entry.mutationBefore, macBefore: entry.macBefore,
       attemptCoverage: entry.attemptCoverage, attemptMutation: entry.attemptMutation, attemptMac: entry.attemptMac,
       failure: entry.failure,
-      // what earlier runs learned about whether a test can execute this unit at all
+      // what earlier runs learned about whether a test can execute this unit at all,
+      // and which of its mutants have already been attacked and survived
       everReached: entry.everReached, missesEver: entry.missesEver,
+      attemptedMutants: entry.attemptedMutants,
     });
   }
   if (plan.settle.length || plan.restore.length || plan.stale) {
@@ -907,6 +909,10 @@ const routes = {
         ? { everReached: true }
         : { everReached: f.everReached === true, missesEver: (f.missesEver || 0) + 1 };
       S.upsertFile(file, reachEvidence);
+      // and WHICH mutants have been attacked: that register cost real rounds to build,
+      // and losing it on a restart lets a unit spend another one on a mutant it has
+      // already failed to kill
+      reachEvidence.attemptedMutants = (state.files[file].attemptedMutants || []);
       // persist it: this is the only evidence that a unit cannot be executed at all, and
       // it took whole rounds to obtain — losing it on every restart means paying again
       recordMeasurement(file, reachEvidence);
