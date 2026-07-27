@@ -259,6 +259,13 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
         event('pit', `${fileRel}: PIT found no tests to run although JaCoCo measured ${cov}% line `
           + `coverage — treating the mutation score as UNMEASURED, not 0 (targetTests glob or `
           + `compiled classes are wrong)`);
+        // The inputs and PIT's own words, because without them this is unactionable. It
+        // recurred on round 2 of two different java-dataloader units and three readings of
+        // this code produced three different theories — the run was throwing away the one
+        // thing that could settle it.
+        event('pit', `unmeasured inputs: targetClasses=${targetClasses} targetTests=${targetTests} `
+          + `onlyMethod=${onlyMethod || '(class)'} excludedMethods=[${excluded.join(', ')}]`);
+        event('pit', 'PIT said: ' + out.replace(/\s+/g, ' ').slice(-500));
         return { file: fileRel, fqcn, totalMutants: null, killed: 0, score: null, survived: [], noTests: true, unmeasured: true };
       }
       event('pit', `${fileRel}: no mutations exercised — mutation score 0 (nothing kills mutants yet)`);
