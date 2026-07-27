@@ -131,7 +131,16 @@ function coveragePrompt(gaps) {
   const base = { targetPath, projectTestPath: gaps.projectTestPath || null };
 
   if (missed === 0) return { ...base, skip: true, reason: 'method fully covered' };
-  if (!fullyUncovered && gaps.coverage != null && gaps.coverage > (gaps.covPhaseMaxPct ?? 0)) {
+  // "mutation tests will extend coverage as they kill NO_COVERAGE mutants" is a fair
+  // general claim and it was measured false where it matters most. DataLoaderFactory's
+  // two Publisher factories each had 6 mutants, every one NO_COVERAGE, at 16.67%
+  // coverage: seven rounds apiece, coverage never off 16.67, mutation never off 0, about
+  // fifteen minutes each. Killing a NO_COVERAGE mutant does require running its line —
+  // which is exactly why "assert something that distinguishes this mutation" is the wrong
+  // instruction for a line no test reaches. Ask for the line to be REACHED first.
+  const survivors = gaps.survived || [];
+  const noneReached = survivors.length > 0 && survivors.every((m) => m.status === 'NO_COVERAGE');
+  if (!fullyUncovered && !noneReached && gaps.coverage != null && gaps.coverage > (gaps.covPhaseMaxPct ?? 0)) {
     return {
       ...base,
       skip: true,

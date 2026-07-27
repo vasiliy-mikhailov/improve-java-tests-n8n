@@ -217,3 +217,57 @@ test('a broken round with no captured error still says the test did not survive'
   const r = mutationPrompt({ ...gaps, lastRound: { reached: true, coverage: 100, broken: true } });
   assert.match(r.prompt, /did not compile|broke the build|broke the suite/i);
 });
+
+// ── the coverage phase must run when nothing executes the survivors ────────
+// DataLoaderFactory#newPublisherDataLoaderWithTry and its mapped sibling each measured 6
+// mutants, ALL of them NO_COVERAGE, at 16.67% line coverage. The coverage phase skipped
+// both — covPhaseMaxPct is 0, so it only fires at exactly 0% — on the stated grounds that
+// "mutation tests will extend coverage as they kill NO_COVERAGE mutants".
+//
+// That is plausible and it was measured false: seven rounds per unit, coverage never
+// moved off 16.67, mutation never left 0, ~15 minutes each. Killing a NO_COVERAGE mutant
+// does require executing its line, which is precisely why asking for a distinguishing
+// assertion is the wrong instruction — the test has to REACH the code first. Same
+// distinction the round feedback already makes between "never executed it" and "executed
+// it but did not distinguish the mutation".
+const allNoCoverage = [
+  { status: 'NO_COVERAGE', mutator: 'RemoveConditionalMutator_EQUAL_ELSE', line: 120 },
+  { status: 'NO_COVERAGE', mutator: 'NullReturnValsMutator', line: 121 },
+];
+
+test('a partly covered method whose every survivor is NO_COVERAGE still gets a coverage test', () => {
+  const r = coveragePrompt({
+    ...gaps, coverage: 16.67, covPhaseMaxPct: 0,
+    uncovered: { lines: [120, 121] }, survived: allNoCoverage,
+  });
+  assert.ok(!r.skip, `skipped with: ${r.reason}`);
+});
+
+test('but a method whose survivors actually run is left to the mutation phase', () => {
+  // these lines execute; nothing asserts on them. That is the mutation phase's job.
+  const r = coveragePrompt({
+    ...gaps, coverage: 16.67, covPhaseMaxPct: 0,
+    uncovered: { lines: [120] },
+    survived: [{ status: 'SURVIVED', mutator: 'MathMutator', line: 120 }],
+  });
+  assert.ok(r.skip);
+  assert.match(r.reason, /already executed/);
+});
+
+test('a mixed survivor list is left to the mutation phase too', () => {
+  // one reachable survivor means a mutation test has something to bite on
+  const r = coveragePrompt({
+    ...gaps, coverage: 16.67, covPhaseMaxPct: 0,
+    uncovered: { lines: [120, 121] },
+    survived: [...allNoCoverage, { status: 'SURVIVED', mutator: 'MathMutator', line: 122 }],
+  });
+  assert.ok(r.skip);
+});
+
+test('a fully covered method is still skipped whatever its survivors say', () => {
+  const r = coveragePrompt({
+    ...gaps, coverage: 100, covPhaseMaxPct: 0, uncovered: { lines: [] }, survived: allNoCoverage,
+  });
+  assert.ok(r.skip);
+  assert.match(r.reason, /fully covered/);
+});
