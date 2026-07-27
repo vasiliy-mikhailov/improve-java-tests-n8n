@@ -162,6 +162,34 @@ allprojects { p ->
 `;
 }
 
+/** Names this pipeline gives its own generated tests. */
+const OURS_RE = /(MacMut|MacCov)(R\d+)?Test$/;
+
+/**
+ * Did PIT refuse to run because a test fails on UNMUTATED code?
+ *
+ * PIT computes line coverage first by running every targetTests class against the original
+ * bytecode, and aborts if any fails: "Mutation testing requires a green suite." When the
+ * offender is one of OUR generated tests — as it was on
+ * ThreadLocalStatisticsCollector#incrementLoadErrorCount, where round 1's test and round
+ * 2's collided over thread-local state inside PIT's single minion JVM — the run is not
+ * unmeasurable in any deep sense. We wrote the broken test and we can take it back.
+ *
+ * The message names the class and the method; the code used to discard both and report
+ * "targetTests glob or compiled classes are wrong", which was a guess, and wrong, and cost
+ * three rounds of diagnosis.
+ */
+function pitGreenSuiteFailure(out) {
+  const s = String(out || '');
+  if (!/did not pass without mutation/.test(s)) return null;
+  const m = s.match(/testClass=([\w.$]+)[^\n]*?\[method:([\w$]+)\(/);
+  if (!m) {
+    const only = s.match(/testClass=([\w.$]+)/);
+    return only ? { testClass: only[1], method: null, ours: OURS_RE.test(only[1]) } : null;
+  }
+  return { testClass: m[1], method: m[2], ours: OURS_RE.test(m[1]) };
+}
+
 /** Never below this: a doomed run teaches nothing. Never above it: the old hard ceiling. */
 const PIT_TIMEOUT_MIN_MS = 120000;
 const PIT_TIMEOUT_MAX_MS = 3600000;
@@ -316,6 +344,26 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
   const reportAbs = findReport(dir, moduleRel);
   if (!reportAbs) {
     const out = r.stderr + r.stdout;
+    // PIT runs every targetTests class against UNMUTATED bytecode first and refuses to
+    // continue if one fails. When the offender is a test we generated, that is not a
+    // mystery to report as unmeasurable — it is our own broken test, named, and we can
+    // take it back. Round 1's test and round 2's collided over thread-local state inside
+    // PIT's single minion JVM while `gradle test` stayed green.
+    const green = pitGreenSuiteFailure(out);
+    if (green) {
+      const where = `${green.testClass}${green.method ? '#' + green.method + '()' : ''}`;
+      if (green.ours) {
+        const rel = `src/test/java/${green.testClass.replace(/\./g, '/')}.java`;
+        const removed = repo.deleteTestFile(rel);
+        event('pit', `${where} passes on its own and in the suite, but FAILS on unmutated code `
+          + `inside PIT's minion — PIT requires a green suite and refuses to run. It is a test `
+          + `this pipeline generated, so it has been ${removed ? 'deleted' : 'left (already gone)'}: ${rel}`);
+      } else {
+        event('pit', `${where} fails on unmutated code and PIT requires a green suite — that test `
+          + 'belongs to the project, not to this pipeline, so it is left alone and the unit is UNMEASURED');
+      }
+      return { file: fileRel, fqcn, totalMutants: null, killed: 0, score: null, survived: [], noTests: true, unmeasured: true, greenSuiteFailure: green };
+    }
     if (/No mutations found|no tests to run|0 tests/i.test(out)) {
       // Sanity check on our own measurement: a class the suite demonstrably executes
       // cannot legitimately have "no mutations exercised". When those two disagree the
@@ -539,5 +587,5 @@ function scopeToMethod(parsed, method) {
   };
 }
 
-module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor, gradlePitArgv, escapeMethodForPit, pitTimeoutMs,
+module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor, gradlePitArgv, escapeMethodForPit, pitTimeoutMs, pitGreenSuiteFailure,
   gradlePitestPluginVersion, gradleInitScript, killDifficulty, PIT_VERSION, MUTATORS };
