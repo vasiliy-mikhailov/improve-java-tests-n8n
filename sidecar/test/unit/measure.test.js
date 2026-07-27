@@ -141,3 +141,56 @@ test('which mutants were already attacked survives a restart', () => {
   const plan = planReplay({}, m, has);
   assert.deepEqual(plan.restore[0].entry.attemptedMutants, ['MathMutator@10', 'NullReturnVals@20']);
 });
+
+// ── effort survives a replay; measurements are still version-gated ─────────
+// The dashboard read "Human-equivalent work 0" beside "2 file(s) improved", with FTE and
+// ETA blank. The ledger had the numbers - spentSec 1389, a full timesheet - and the replay
+// threw them away, because the version gate added to protect the coverage/mutation
+// headline was applied to the whole metrics object. Those objects are written unstamped
+// (three sites in server.js), so the gate rejected 100% of them, always. Not a filter, a
+// delete.
+//
+// The gate exists because coverage/mutation/MAC semantics changed twice: per-file ->
+// per-method -> method-scoped. Human minutes and machine seconds mean exactly the same
+// thing under all three.
+const effortLedger = {
+  'src/main/java/org/json/XML.java::parse': {
+    state: 'improved',
+    metrics: {
+      spentSec: 1389,
+      timesheet: { totalMin: 88, hours: 1.47 },
+      macBefore: 0, macAfter: 66.67, mutationAfter: 66.67,
+    },
+  },
+};
+
+test('an unstamped ledger still yields its effort accounting', () => {
+  const plan = planReplay(effortLedger, {}, has);
+  assert.equal(plan.settle.length, 1);
+  assert.equal(plan.settle[0].effort.spentSec, 1389);
+  assert.equal(plan.settle[0].effort.timesheet.totalMin, 88);
+});
+
+test('but not its unstamped coverage or mutation numbers', () => {
+  const plan = planReplay(effortLedger, {}, has);
+  assert.equal(plan.settle[0].metrics, null,
+    'those carry semantics that have changed twice and must stay gated');
+});
+
+test('a stamped ledger yields both', () => {
+  const { stamp } = require('../../measure');
+  const led = {
+    'src/main/java/org/json/XML.java::parse': {
+      state: 'improved',
+      metrics: stamp({ spentSec: 1389, timesheet: { totalMin: 88 }, macAfter: 66.67 }),
+    },
+  };
+  const plan = planReplay(led, {}, has);
+  assert.equal(plan.settle[0].metrics.macAfter, 66.67);
+  assert.equal(plan.settle[0].effort.spentSec, 1389);
+});
+
+test('a record with no metrics at all reports no effort, not a fake zero', () => {
+  const plan = planReplay({ 'src/main/java/org/json/XML.java::parse': { state: 'improved' } }, {}, has);
+  assert.deepEqual(plan.settle[0].effort, {});
+});

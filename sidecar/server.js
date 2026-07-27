@@ -256,11 +256,14 @@ const isCtor = (m) => m === '<init>' || m === '<clinit>';
  */
 function replayLedgers() {
   const plan = measure.planReplay(ledger(), measured(), (k) => !!state.files[k]);
-  for (const { key, record, metrics } of plan.settle) {
+  for (const { key, record, metrics, effort } of plan.settle) {
+    // effort (timesheet, spentSec) comes back whatever the measurement version: it is what
+    // the work COST, and the headline reads "Human-equivalent work 0" beside "2 improved"
+    // without it
     S.upsertFile(key, record.state === 'improved'
-      ? { status: 'improved', fromLedger: true, prUrl: record.prUrl || null, prPatch: record.patchPath || null, ...(metrics || {}) }
+      ? { status: 'improved', fromLedger: true, prUrl: record.prUrl || null, prPatch: record.patchPath || null, ...effort, ...(metrics || {}) }
       : { status: record.state === 'no_mutants' ? 'no_mutants' : 'no_improvement',
-        fromLedger: true, attempts: state.run.config.maxAttemptsPerFile || 3, ...(metrics || {}) });
+        fromLedger: true, attempts: state.run.config.maxAttemptsPerFile || 3, ...effort, ...(metrics || {}) });
   }
   for (const { key, entry } of plan.restore) {
     S.upsertFile(key, {
@@ -634,7 +637,7 @@ const routes = {
         recordMeasurement(file, { coverageBefore: cov, failure: e.message.slice(0, 200) });
         ledger()[file] = {
           state: 'failed', ts: Date.now(),
-          metrics: { spentSec, coverageBefore: cov, failure: e.message.slice(0, 200) },
+          metrics: measure.stamp({ spentSec, coverageBefore: cov, failure: e.message.slice(0, 200) }),
         };
         S.save();
         return { ok: false, failed: true, score: 0, survived: [], totalMutants: 0, error: e.message.slice(0, 500) };
@@ -684,7 +687,7 @@ const routes = {
       state.run.iteration = Math.max(0, state.run.iteration - 1);
       S.upsertFile(file, { status: 'no_mutants', coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac });
       recordMeasurement(file, { coverageBefore: f.coverage, mutationBefore: r.score, macBefore: fileMac, noMutants: true });
-      ledger()[file] = { state: 'no_mutants', ts: Date.now(), metrics: { spentSec, totalMutants: r.totalMutants ?? 0 } };
+      ledger()[file] = { state: 'no_mutants', ts: Date.now(), metrics: measure.stamp({ spentSec, totalMutants: r.totalMutants ?? 0 }) };
       S.event('improving_mutation', `${unitLabel(file)}: ${verdict.reason}, skipping to the next method`);
       S.save();
       return { ok: true, ...r, skip: true, reason: 'too few mutants to improve' };
@@ -1193,12 +1196,14 @@ const routes = {
     S.upsertFile(file, { status: 'improved', prUrl: rec.url, prPatch: rec.patchPath, timesheet: ts });
     ledger()[file] = {
       state: 'improved', prUrl: rec.url, patchPath: rec.patchPath, branch: f.branch, ts: Date.now(),
-      metrics: {
+      // stamped, so the replay gate can tell a current measurement from a stale one
+      // instead of rejecting every improvement record ever written
+      metrics: measure.stamp({
         coverageBefore: f.coverageBefore, coverageAfter: f.coverageAfter,
         mutationBefore: f.mutationBefore, mutationAfter: f.mutationAfter,
         macBefore: f.macBefore, macAfter: f.macAfter,
         timesheet: ts, spentSec,
-      },
+      }),
     };
     S.save();
     await repo.resetToBase();

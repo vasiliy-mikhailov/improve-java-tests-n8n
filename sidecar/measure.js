@@ -43,6 +43,20 @@ function restorable(entry, key) {
 }
 
 /**
+ * The effort accounting inside a metrics object: what the work COST, not what it measured.
+ *
+ * Only the fields that are actually present — a missing timesheet must read as absent, not
+ * as zero hours, or the headline understates the work instead of admitting it does not
+ * know.
+ */
+function effortOf(metrics) {
+  const out = {};
+  if (metrics && metrics.timesheet) out.timesheet = metrics.timesheet;
+  if (metrics && typeof metrics.spentSec === 'number') out.spentSec = metrics.spentSec;
+  return out;
+}
+
+/**
  * What of the persisted ledgers applies to the units this run actually has.
  *
  * This must be decided AFTER classes are expanded into `path::method` units. It used to
@@ -66,10 +80,26 @@ function planReplay(improved, measurements, hasUnit) {
     // the ledger writes off improvable work on the strength of a measurement that, by the
     // pipeline's own definition, measured nothing.
     if (record && record.state === 'failed') { retryable += 1; continue; }
-    // The status is a record of what happened and stands. Its metrics are measurements,
-    // and they carry no version stamp — the same numbers the measurement ledger rejects
-    // as stale were being admitted through this door and averaged into the headline.
-    settle.push({ key, record, metrics: restorable(record && record.metrics, key) ? record.metrics : null });
+    // The status is a record of what happened and stands. Its measurements are gated:
+    // the same numbers the measurement ledger rejects as stale were being admitted
+    // through this door and averaged into the headline.
+    //
+    // But the gate was applied to the WHOLE metrics object, and these are written
+    // unstamped — so it rejected every one of them, always, and a replayed run showed
+    // "Human-equivalent work 0" next to "2 file(s) improved" with FTE and ETA blank while
+    // the ledger held spentSec 1389 and a full timesheet.
+    //
+    // Effort is not a measurement of the code. Human minutes and machine seconds mean the
+    // same thing under per-file, per-method and method-scoped semantics alike, which is
+    // the only thing the version stamp tracks. So they come back regardless; coverage,
+    // mutation and MAC stay gated.
+    const m = (record && record.metrics) || {};
+    settle.push({
+      key,
+      record,
+      metrics: restorable(m, key) ? record.metrics : null,
+      effort: effortOf(m),
+    });
   }
   for (const [rawKey, entry] of Object.entries(measurements || {})) {
     const key = normalizeUnitKey(rawKey);
@@ -80,4 +110,4 @@ function planReplay(improved, measurements, hasUnit) {
   return { settle, restore, stale, unknown, retryable };
 }
 
-module.exports = { MEASURE_VERSION, stamp, restorable, normalizeUnitKey, planReplay };
+module.exports = { MEASURE_VERSION, stamp, restorable, normalizeUnitKey, planReplay, effortOf };
