@@ -153,10 +153,34 @@ allprojects { p ->
       outputFormats = ['XML']
       timestampedReports = false
       failWhenNoMutations = false
+      // parity with the Maven path. Without it Gradle used PIT's default, and on an
+      // async class every hung mutant is paid for at whatever that default happens to be
+      timeoutConstMillis = 8000
     }
   }
 }
 `;
+}
+
+/** Never below this: a doomed run teaches nothing. Never above it: the old hard ceiling. */
+const PIT_TIMEOUT_MIN_MS = 120000;
+const PIT_TIMEOUT_MAX_MS = 3600000;
+
+/**
+ * How long this unit's PIT run may take.
+ *
+ * The unit budget was only consulted by decide(), AFTER a round returned, while the
+ * subprocess itself got a flat hour. DataLoader#getValueCache() then spent 984 seconds
+ * inside one `pitest` task — timing out mutant after mutant on a CompletableFuture-heavy
+ * class — against a configured budget of 900. A budget the subprocess never sees cannot
+ * stop anything.
+ */
+function pitTimeoutMs({ unitBudgetSec, spentSec = 0, attemptStartedAt = 0, now = Math.floor(Date.now() / 1000) }) {
+  // 0 documents "uncapped" and must not read as a 0ms timeout that fails every run
+  if (!unitBudgetSec) return PIT_TIMEOUT_MAX_MS;
+  const onThisAttempt = attemptStartedAt ? Math.max(0, now - attemptStartedAt) : 0;
+  const leftSec = unitBudgetSec - (spentSec || 0) - onThisAttempt;
+  return Math.min(PIT_TIMEOUT_MAX_MS, Math.max(PIT_TIMEOUT_MIN_MS, leftSec * 1000));
 }
 
 /**
@@ -239,6 +263,14 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
   // mutation surface and skipped. A missing report must read as a failure, never as zero.
   for (const stale of findAllReports(dir)) { try { fs.unlinkSync(stale); } catch { } }
 
+  // The unit's budget, handed to the subprocess. Without it a single invocation ran for
+  // an hour against a configured budget of 900s, because decide() only sees the clock
+  // after a round returns.
+  const pitMs = pitTimeoutMs({
+    unitBudgetSec: state.run?.config?.unitBudgetSec,
+    spentSec: f.spentSec, attemptStartedAt: f.attemptStartedAt,
+  });
+
   let r;
   if (state.runner.tool === 'maven') {
     ensureMavenWiring(moduleRel);
@@ -272,13 +304,13 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
     // no -am here: dependencies are built by the compile step above, and -DskipTests
     // (which -am would need) makes PIT skip its own run
     if (moduleRel && moduleRel !== '.') argv.push('-pl', moduleRel);
-    r = await run(argv, { cwd: dir, timeoutMs: 3600000, label: 'pit', env: repo.buildEnv() });
+    r = await run(argv, { cwd: dir, timeoutMs: pitMs, label: 'pit', env: repo.buildEnv() });
   } else {
     fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript(targetClasses, targetTests, excluded));
     const task = moduleRel && moduleRel !== '.' ? `:${moduleRel.split('/').join(':')}:pitest` : 'pitest';
     r = await run(gradlePitArgv({
       wrapper: state.runner.wrapper, scanArgs: state.runner.scanArgs, initScript: INIT_SCRIPT, task,
-    }), { cwd: dir, timeoutMs: 3600000, label: 'pit', env: repo.buildEnv() });
+    }), { cwd: dir, timeoutMs: pitMs, label: 'pit', env: repo.buildEnv() });
   }
 
   const reportAbs = findReport(dir, moduleRel);
@@ -495,5 +527,5 @@ function scopeToMethod(parsed, method) {
   };
 }
 
-module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor, gradlePitArgv, escapeMethodForPit,
+module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor, gradlePitArgv, escapeMethodForPit, pitTimeoutMs,
   gradlePitestPluginVersion, gradleInitScript, killDifficulty, PIT_VERSION, MUTATORS };
