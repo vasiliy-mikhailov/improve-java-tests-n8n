@@ -332,7 +332,19 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
         // thing that could settle it.
         event('pit', `unmeasured inputs: targetClasses=${targetClasses} targetTests=${targetTests} `
           + `onlyMethod=${onlyMethod || '(class)'} excludedMethods=[${excluded.join(', ')}]`);
-        event('pit', 'PIT said: ' + out.replace(/\s+/g, ' ').slice(-500));
+        // The TAIL of a Gradle run is its epilogue — deprecation notices and a task count.
+        // The reason lives at the line that matched, so log THAT with its context, and
+        // keep the whole output on disk. Two rounds of diagnosis were spent reading the
+        // epilogue and concluding things about task caching that the epilogue could not
+        // support.
+        const hit = out.split('\n').findIndex((l) => /No mutations found|no tests to run|0 tests/i.test(l));
+        const around = hit >= 0 ? out.split('\n').slice(Math.max(0, hit - 4), hit + 4).join(' | ') : '(no matching line)';
+        event('pit', 'PIT said: ' + around.replace(/\s+/g, ' ').slice(0, 700));
+        try {
+          const dump = path.join(DATA_DIR, 'pit-unmeasured.log');
+          fs.writeFileSync(dump, `# ${new Date().toISOString()} ${fileRel} onlyMethod=${onlyMethod}\n${out}`);
+          event('pit', `full PIT output written to ${dump}`);
+        } catch { /* diagnostics must never break the run */ }
         return { file: fileRel, fqcn, totalMutants: null, killed: 0, score: null, survived: [], noTests: true, unmeasured: true };
       }
       event('pit', `${fileRel}: no mutations exercised — mutation score 0 (nothing kills mutants yet)`);
