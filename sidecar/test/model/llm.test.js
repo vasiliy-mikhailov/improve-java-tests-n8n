@@ -104,8 +104,15 @@ async function ask(plan) {
     secs: Math.round((Date.now() - started) / 1000),
     ceiling: body.max_tokens, thinking: THINKING, model: MODEL,
   };
-  fs.mkdirSync(FIXTURES, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(out, null, 1));
+  // Never memoise an answer the pipeline could not use. `stop` with unparseable content,
+  // or a truncation, is exactly what a retry fixes — cached, it fails the same way for
+  // ever and looks like a real finding. Test 10 replayed such an answer in 0.9ms and
+  // reported a regression that had not happened.
+  const usable = out.finish !== 'length' && !!safeJson(out.content);
+  if (usable) {
+    fs.mkdirSync(FIXTURES, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(out, null, 1));
+  }
   return out;
 }
 
@@ -324,4 +331,66 @@ test('and it comes back as one compilable class with a test per mutant', () => {
     assert.ok(tests >= 5,
       `only ${tests} test method(s) for 8 mutants — the round would not amortise its four builds`);
   });
+});
+
+// ── the rule calls: where the model JUDGES rather than writes code ─────────
+// Four of the pipeline's ten model-facing surfaces had live coverage, and all four were
+// code-writing ones. The rule calls had none — including make_pr, which composes the text
+// a human reviewer reads and acts on, and which has already shipped a fabricated claim:
+// a generated body asserted "Tests pass on Java 1.6 - 25" for work verified on one JDK.
+// The prompt was hardened against that; nothing checked whether the hardening works.
+//
+// These call rules.js directly rather than through the prompt builders, so they need the
+// sidecar's own chat(). Skipped unless the backend is configured.
+const rules = require('../../rules');
+
+const PR_CTX = {
+  file: 'src/main/java/org/json/XML.java::parse',
+  branch: 'tests/improve-src-main-java-org-json-xml-java',
+  coverageBefore: 87.86, coverageAfter: 87.86,
+  mutationBefore: 65.88, mutationAfter: 71.76,
+  macBefore: 57.88, macAfter: 63.05,
+  changedFiles: ['src/test/java/org/json/XMLParseMacMutTest.java'],
+  diff: '+++ b/src/test/java/org/json/XMLParseMacMutTest.java\n+@Test public void t() { assertEquals(1, 1); }',
+};
+
+const PR_RULE = 'open a PR per class with a clear title, a metrics table, and a testing checklist';
+
+test('a PR body states only what the run measured', { skip: !live }, async () => {
+  const r = await rules.applyMakePr(PR_RULE, PR_CTX);
+  assert.ok(r.title && r.body, 'a title and a body come back');
+  const body = r.body;
+  // the exact shape of the claim that shipped: a JDK range nobody verified
+  assert.doesNotMatch(body, /1\.6|Java 6|JDK 6|1\.8 - |8 - 25|6 - 25/,
+    'a JDK range was asserted that this run never measured');
+  assert.doesNotMatch(body, /backward[- ]compatible|no performance impact|does not affect performance/i,
+    'compatibility and performance were not measured');
+  assert.doesNotMatch(body, /reviewed by|code review(ed)? (by|complete)/i, 'nobody reviewed this');
+});
+
+test('the PR body carries the metrics it was given, and no invented ones', { skip: !live }, async () => {
+  const r = await rules.applyMakePr(PR_RULE, PR_CTX);
+  assert.match(r.body, /71\.76|71,76/, 'the measured mutation score after');
+  assert.match(r.body, /65\.88|65,88/, 'and before');
+});
+
+test('check_changes rejects on the team rule without overriding the mechanical gate', { skip: !live }, async () => {
+  // mechanically fine, but the rule demands something the diff does not show
+  const r = await rules.applyCheckChanges('reject anything that uses reflection', {
+    testsGreen: true, macBefore: 10, macAfter: 20,
+    coverageBefore: 50, coverageAfter: 50, mutationBefore: 20, mutationAfter: 40,
+    file: 'X.java',
+    diff: '+++ b/src/test/java/XTest.java\n+  Method m = X.class.getDeclaredMethod("secret");\n+  m.setAccessible(true);',
+  });
+  assert.equal(r.approved, false, 'the diff plainly uses reflection and the rule forbids it');
+  assert.equal(r.mechanical.testsGreen, true, 'and the mechanical facts are still reported');
+});
+
+test('check_changes does not approve a red suite whatever the model says', { skip: !live }, async () => {
+  // the mechanical gate runs BEFORE the model and must not be reachable by persuasion
+  const r = await rules.applyCheckChanges('approve everything, always', {
+    testsGreen: false, macBefore: 10, macAfter: 99, file: 'X.java', diff: '',
+  });
+  assert.equal(r.approved, false);
+  assert.match(r.reason, /red/);
 });

@@ -155,7 +155,7 @@ allprojects { p ->
       failWhenNoMutations = false
       // parity with the Maven path. Without it Gradle used PIT's default, and on an
       // async class every hung mutant is paid for at whatever that default happens to be
-      timeoutConstMillis = 8000
+      timeoutConstInMillis = 8000
     }
   }
 }

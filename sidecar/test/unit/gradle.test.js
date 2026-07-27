@@ -56,3 +56,17 @@ test('reports are XML, untimestamped, and an empty method does not fail the buil
   assert.match(s, /timestampedReports = false/);
   assert.match(s, /failWhenNoMutations = false/);
 });
+
+// ── the init script must use property names the plugin actually has ────────
+// I added `timeoutConstMillis` for "parity with the Maven path" and never checked the
+// plugin has such a property. It does not — it is `timeoutConstInMillis` — so applying the
+// init script failed with "Could not set unknown property 'timeoutConstMillis' for
+// extension 'pitest'", every Gradle PIT run in that deploy produced no report, and units
+// were marked failed. A comment asserting parity is not parity.
+test('the pitest timeout uses the property gradle-pitest-plugin declares', () => {
+  const s = gradleInitScript('com.example.A*', '*ATest*', [], { gradleVersion: '9.2' });
+  assert.match(s, /timeoutConstInMillis\s*=\s*\d+/,
+    'gradle-pitest-plugin spells it timeoutConstInMillis');
+  assert.doesNotMatch(s, /timeoutConstMillis\s*=/,
+    'timeoutConstMillis is not a property and fails the whole build');
+});

@@ -166,4 +166,4 @@ async function applyMakePr(ruleText, ctx) {
   return j;
 }
 
-module.exports = { apply, testWritingConstraints, rules };
+module.exports = { apply, testWritingConstraints, rules, applyMakePr, applyCheckChanges, applyPickFile };
