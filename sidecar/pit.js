@@ -159,6 +159,33 @@ allprojects { p ->
 `;
 }
 
+/**
+ * The Gradle command that runs PIT.
+ *
+ * `--rerun` is not optional. Two verify runs of the same unit present identical `pitest`
+ * inputs to Gradle — same class, same target method, same excludedMethods — so with a
+ * build cache enabled (java-dataloader sets org.gradle.caching=true) the second is skipped
+ * as up-to-date and writes no report. Since a missing report must never read as zero, the
+ * skip surfaced as UNMEASURED and cost round 2 of every multi-round unit on that repo.
+ *
+ * `--rerun` forces only the named task; `--rerun-tasks` would recompile the world.
+ */
+function gradlePitArgv({ wrapper, scanArgs = [], initScript, task }) {
+  return [wrapper, '--no-daemon', ...(scanArgs || []), '-I', initScript, task, '--rerun'];
+}
+
+/**
+ * A method name as PIT expects it in `excludedMethods`.
+ *
+ * JaCoCo and PIT disagree about constructors: one writes `<init>`, the other XML-escapes
+ * it. The live excluded list read `[&lt;init&gt;, resetThread, ...]`, and since PIT matches
+ * on the literal name, no method matched — the constructor was never excluded and its
+ * mutants came back as strays on every scoped run.
+ */
+function escapeMethodForPit(m) {
+  return unescapeXml(String(m || ''));
+}
+
 // ── running ────────────────────────────────────────────────────────────────
 
 /**
@@ -196,7 +223,14 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
     .filter((u) => u.path === srcPath && u.method)
     .map((u) => u.method);
   const known = siblings.length ? siblings : Object.keys(f.methodStats?.byMethod || {});
-  const excluded = onlyMethod ? [...new Set(known)].filter((m) => m !== onlyMethod) : [];
+  // Normalise BOTH sides before comparing. The list arrives with constructors spelled
+  // `&lt;init&gt;` while onlyMethod is `<init>`, so a constructor unit did not recognise
+  // itself in its own sibling list, failed to remove itself, and shipped a target that was
+  // also excluded — PIT then had nothing to mutate at all.
+  const target = escapeMethodForPit(onlyMethod);
+  const excluded = onlyMethod
+    ? [...new Set(known.map(escapeMethodForPit))].filter((m) => m !== target)
+    : [];
 
   // Delete any previous report FIRST. findReport() falls back to "newest mutations.xml
   // anywhere", so when a run produces nothing it used to return the PREVIOUS unit's
@@ -242,8 +276,9 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
   } else {
     fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript(targetClasses, targetTests, excluded));
     const task = moduleRel && moduleRel !== '.' ? `:${moduleRel.split('/').join(':')}:pitest` : 'pitest';
-    r = await run([state.runner.wrapper, '--no-daemon', ...(state.runner.scanArgs || []), '-I', INIT_SCRIPT, task],
-      { cwd: dir, timeoutMs: 3600000, label: 'pit', env: repo.buildEnv() });
+    r = await run(gradlePitArgv({
+      wrapper: state.runner.wrapper, scanArgs: state.runner.scanArgs, initScript: INIT_SCRIPT, task,
+    }), { cwd: dir, timeoutMs: 3600000, label: 'pit', env: repo.buildEnv() });
   }
 
   const reportAbs = findReport(dir, moduleRel);
@@ -460,5 +495,5 @@ function scopeToMethod(parsed, method) {
   };
 }
 
-module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor,
+module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor, gradlePitArgv, escapeMethodForPit,
   gradlePitestPluginVersion, gradleInitScript, killDifficulty, PIT_VERSION, MUTATORS };
