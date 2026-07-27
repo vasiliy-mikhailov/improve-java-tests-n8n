@@ -183,5 +183,22 @@ function targetForRound(targetMutant, round, attempt) {
   return targetMutant;
 }
 
-module.exports = {
+/**
+ * How many surviving mutants this round should take on.
+ *
+ * A round costs four JVM builds — baseline PIT, coverage build, suite, verify PIT —
+ * whether it kills one mutant or eight. On java-dataloader that arithmetic put the
+ * remaining ETA at 170 hours, so a round attacks a batch by default.
+ *
+ * The narrow path remains as a fallback. A batch that kills nothing says nothing about
+ * WHICH of the eight resisted: the score is unchanged and every mutant is still alive, so
+ * there is no attribution and the mutator statistics learn nothing. One miss therefore
+ * drops the next round to a single mutant, where a miss means something.
+ */
+function mutantsForRound({ configured, consecutiveMisses = 0 } = {}) {
+  const n = Math.max(1, parseInt(configured, 10) || 1);
+  return consecutiveMisses > 0 ? 1 : n;
+}
+
+module.exports = { mutantsForRound,
   classifyBaseline, missOutcome, targetForRound, decide, DEFAULTS };

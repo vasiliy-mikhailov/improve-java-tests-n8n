@@ -192,3 +192,36 @@ test('a measured zero is still a real measurement', () => {
   const d = decide({ improvedAny: true, macBase: 0, macAfter: 12, rounds: 0, survivorsLeft: 5 });
   assert.equal(d.keepRound, true);
 });
+
+// ── how many mutants a round takes on ─────────────────────────────────────
+// A round costs four JVM builds - baseline PIT, coverage, suite, verify PIT - whether it
+// kills one mutant or eight, and on java-dataloader that arithmetic put the remaining ETA
+// at 170 hours. So a round attacks a batch by default. Verified against the live model
+// first (test/model/llm.test.js): an eight-mutant prompt on org.json.XML#parse answers
+// inside its 6000-token ceiling and returns one class with a test per mutant, for 608 more
+// characters of prompt than the single-mutant form.
+//
+// The narrow path stays, as a fallback. A batch that kills nothing says nothing about
+// WHICH of the eight resisted, so the retry drops to one mutant, where a miss is
+// attributable and the mutator statistics mean something.
+const { mutantsForRound } = require('../../rounds');
+
+test('a fresh round takes the configured batch', () => {
+  assert.equal(mutantsForRound({ configured: 8, consecutiveMisses: 0 }), 8);
+});
+
+test('after a miss it narrows to a single mutant', () => {
+  assert.equal(mutantsForRound({ configured: 8, consecutiveMisses: 1 }), 1);
+  assert.equal(mutantsForRound({ configured: 8, consecutiveMisses: 3 }), 1);
+});
+
+test('a run configured for single mutants stays single', () => {
+  assert.equal(mutantsForRound({ configured: 1, consecutiveMisses: 0 }), 1);
+});
+
+test('a missing or nonsense setting is one, never zero', () => {
+  // zero would offer the model no mutants and skip the round for ever
+  assert.equal(mutantsForRound({}), 1);
+  assert.equal(mutantsForRound({ configured: 0 }), 1);
+  assert.equal(mutantsForRound({ configured: -5 }), 1);
+});

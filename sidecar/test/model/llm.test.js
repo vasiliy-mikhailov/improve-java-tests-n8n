@@ -279,3 +279,49 @@ test('a compile error in the prompt does not break the reply contract', () => {
     assert.equal(r.tests[0].path, plan.targetPath);
   });
 });
+
+// ── can one round kill EIGHT mutants instead of one? ──────────────────────
+// A round costs four JVM builds — baseline PIT, coverage, suite, verify PIT — whether it
+// kills one mutant or eight. On java-dataloader that arithmetic put the remaining ETA at
+// 170 hours. The prompt has always had a multi-mutant branch (`mutantsPerRound > 1`); it
+// has never been exercised, because the config ships 1.
+//
+// Before wiring it up, the empirical question is whether the model can actually answer:
+// eight test methods is a far longer reply than one, and a truncated answer is thrown away
+// and paid for again at double the ceiling.
+//
+// The fixture is real throughout: org.json.XML#parse, its actual source, and 24 genuinely
+// surviving mutants from a live `mvn pitest` run on the repo (indexes and descriptions
+// included). Not a ten-line class chosen because it fits.
+const MULTI = JSON.parse(fs.readFileSync(path.join(__dirname, 'prompts', 'xml-parse-multi.json'), 'utf8'));
+
+test('the eight-mutant prompt is built as a multi-mutant round, not a single', () => {
+  const plan = mutationPrompt(MULTI);
+  assert.ok(!plan.skip, `expected a real prompt, got ${plan.reason}`);
+  assert.match(plan.prompt, /SURVIVING MUTANTS/, 'the multi branch, not "MUTANT TO KILL"');
+  assert.equal((plan.offered || []).length, 8, 'eight mutants offered');
+});
+
+test('the model answers an eight-mutant round within its budget', () => {
+  const plan = mutationPrompt(MULTI);
+  return ask(plan).then((a) => {
+    assert.notEqual(a.finish, 'length',
+      `truncated at ${a.ceiling} tokens after ${a.secs}s — eight tests do not fit, and the `
+      + 'pipeline discards the answer and pays again at double');
+    assert.ok(safeJson(a.content), 'and it parses as the reply shape');
+  });
+});
+
+test('and it comes back as one compilable class with a test per mutant', () => {
+  const plan = mutationPrompt(MULTI);
+  return ask(plan).then((a) => {
+    const r = asPipelineWould(a, plan);
+    assert.equal(r.count, 1, 'still exactly one file, at the planned path');
+    assert.equal(r.tests[0].path, plan.targetPath);
+    const want = plan.targetPath.split('/').pop().replace(/\.java$/, '');
+    assert.match(r.tests[0].content, new RegExp(`public\\s+class\\s+${want}\\b`));
+    const tests = (r.tests[0].content.match(/@Test/g) || []).length;
+    assert.ok(tests >= 5,
+      `only ${tests} test method(s) for 8 mutants — the round would not amortise its four builds`);
+  });
+});

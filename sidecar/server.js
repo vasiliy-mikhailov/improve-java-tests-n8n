@@ -356,7 +356,11 @@ function gapsFor(p) {
     missedLines: f.missedLines ?? null,
     executableLines: f.executableLines ?? null,
     covPhaseMaxPct: state.run.config.covPhaseMaxPct ?? 0,
-    mutantsPerRound: state.run.config.mutantsPerRound ?? 1,
+    // a batch by default, one mutant after a miss — see rounds.mutantsForRound
+    mutantsPerRound: roundsMod.mutantsForRound({
+      configured: state.run.config.mutantsPerRound,
+      consecutiveMisses: f.consecutiveMisses,
+    }),
     mutantChoices: state.run.config.mutantChoices ?? 20,
     totalMutants: f.totalMutants ?? null,
     // the method this unit is about: the tests must concentrate here

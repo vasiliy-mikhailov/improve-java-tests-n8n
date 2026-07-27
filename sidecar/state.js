@@ -24,7 +24,7 @@ function envConfig() {
     // Mutants shown to the model per round. 1 = write ONE test for the single most
     // promising survivor, re-measure, repeat: tiny prompts, fast answers, and every
     // round is independently verified instead of betting a big test on many mutants.
-    mutantsPerRound: parseInt(e.MUTANTS_PER_ROUND || '1', 10),
+    mutantsPerRound: parseInt(e.MUTANTS_PER_ROUND || '8', 10),
     // survivors offered to the model when it chooses which mutant to kill this round
     mutantChoices: parseInt(e.MUTANT_CHOICES || '20', 10),
     // rounds are cheap now, but a mutant-dense method still needs a ceiling
