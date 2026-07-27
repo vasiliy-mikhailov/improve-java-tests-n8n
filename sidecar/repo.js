@@ -287,7 +287,7 @@ async function install() {
   // needs, which is the only reliable way to know it.
   const argv = build.tool === 'maven'
     ? [build.wrapper, '-B', '-ntp', '-DskipTests', 'test-compile']
-    : [build.wrapper, '--no-daemon', '-q', 'testClasses'];
+    : [build.wrapper, '--no-daemon', ...(build.scanArgs || []), '-q', 'testClasses'];
   let r = null, lastErr = '';
   for (const major of jdk.order) {
     state.runner.jdk = { ...jdk, chosen: major, javaHome: javaHomeFor(major) };

@@ -65,17 +65,23 @@ test('every Gradle invocation in the sidecar passes the scan args', () => {
   // leaves that invocation uploading a scan and blocking on it, which is most of the
   // wall-clock. (A pure-logic test would not have noticed: repo.testFileExists was
   // written, tested through an injected parameter, and never exported.)
+  // Enumerating the files I remembered is how this shipped broken the first time: the
+  // guard listed tests.js, coverage.js and pit.js, passed, and repo.install() — the FIRST
+  // Gradle command of every run — still had no flag and blocked on the upload. So the
+  // whole directory is scanned, and a new call site cannot opt out by being new.
   const fs = require('node:fs');
   const path = require('node:path');
   const dir = path.join(__dirname, '..', '..');
-  for (const f of ['tests.js', 'coverage.js', 'pit.js']) {
-    const src = fs.readFileSync(path.join(dir, f), 'utf8');
-    const gradleCalls = src.split('\n').filter((l) => l.includes("'--no-daemon'"));
-    assert.ok(gradleCalls.length > 0, `${f} should still invoke Gradle`);
-    for (const line of gradleCalls) {
+  const sources = fs.readdirSync(dir).filter((f) => f.endsWith('.js'));
+  let found = 0;
+  for (const f of sources) {
+    for (const line of fs.readFileSync(path.join(dir, f), 'utf8').split('\n')) {
+      if (!line.includes("'--no-daemon'")) continue;
+      found += 1;
       assert.match(line, /scanArgs/, `${f}: this Gradle invocation does not pass scanArgs — ${line.trim()}`);
     }
   }
+  assert.ok(found >= 4, `expected every Gradle call site to be checked, saw ${found}`);
 });
 
 test('detectBuild hands the args on, and only for Gradle', () => {
