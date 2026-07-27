@@ -566,5 +566,5 @@ module.exports = {
   repoDir, clone, install, detectBuild, detectJdk, detectTestFramework, buildEnv, methodContext,
   listScopeFiles, listModules, moduleOf, moduleSelector, fqcnOf,
   createBranch, resetToBase, discardUncommitted,
-  readFileSafe, writeTestFile, deleteTestFile, guessTestPath, findStyleReference,
+  readFileSafe, writeTestFile, deleteTestFile, testFileExists, guessTestPath, findStyleReference,
 };

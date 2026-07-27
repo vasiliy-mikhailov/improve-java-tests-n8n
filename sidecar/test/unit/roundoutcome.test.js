@@ -180,3 +180,18 @@ test('with no survivor list there is nothing else to move on to', () => {
   const e = roundEvidence({ roundTestPaths: [], exists: () => false });
   assert.equal(e.otherEligible, 0);
 });
+
+// ── the wiring, not just the logic ────────────────────────────────────────
+test('every collaborator the verify route names is actually exported', () => {
+  // roundEvidence takes `exists` as a parameter, which made the logic testable and left
+  // the real call site untested: repo.testFileExists was written but never added to
+  // module.exports, so `node --check` passed, 285 unit tests passed, and the first live
+  // Gradle round died with "repo.testFileExists is not a function" — every verification
+  // in the run failing at once.
+  const repo = require('../../repo');
+  const select = require('../../select');
+  for (const [mod, name] of [[repo, 'testFileExists'], [repo, 'writeTestFile'],
+    [repo, 'deleteTestFile'], [select, 'eligible'], [select, 'attemptKey']]) {
+    assert.equal(typeof mod[name], 'function', `${name} is used by /api/verify and must be exported`);
+  }
+});
