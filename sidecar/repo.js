@@ -440,6 +440,21 @@ function deleteTestFile(rel) {
 }
 
 /**
+ * Is this generated test still on disk?
+ *
+ * Verification needs to know whether the round's test was there when PIT ran, because a
+ * test deleted for breaking the suite leaves a score that looks exactly like a test that
+ * ran and killed nothing. Asked of the file system rather than tracked in a flag: the flag
+ * is a claim, this is the thing itself.
+ */
+function testFileExists(rel) {
+  const dir = repoDir();
+  const abs = path.resolve(dir, String(rel || ''));
+  if (!abs.startsWith(dir + path.sep)) return false;
+  return fs.existsSync(abs);
+}
+
+/**
  * Where the generated tests for `srcRel` go: same module, same package, under
  * src/test/java — and named so the BUILD actually runs them.
  *

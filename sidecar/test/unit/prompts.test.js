@@ -189,3 +189,31 @@ test('the first round on a unit has nothing to feed back', () => {
   const r = mutationPrompt(gaps);
   assert.doesNotMatch(r.prompt, /YOUR PREVIOUS ATTEMPT/);
 });
+
+// ── and the third case: the last test never compiled ──────────────────────
+test('a test that broke the build is told THAT, not that its assertion was wrong', () => {
+  // Three outcomes need three different fixes, and the block had two branches. A test
+  // deleted for breaking the suite came back to the model as "the path is right; the
+  // assertion is not" — advice about an assertion in a file that never compiled. On the
+  // live run CDL#getValue and JSONObject#parseEndOfKeyValuePair each burned their whole
+  // miss budget this way.
+  const r = mutationPrompt({
+    ...gaps,
+    lastRound: { reached: true, coverage: 100, broken: true, error: 'cannot find symbol: method nextEntity()' },
+  });
+  assert.match(r.prompt, /did not compile|broke the build|broke the suite/i);
+  assert.doesNotMatch(r.prompt, /The path is right; the assertion is not/);
+});
+
+test('and it is shown the actual failure, not asked to guess', () => {
+  const r = mutationPrompt({
+    ...gaps,
+    lastRound: { reached: true, coverage: 100, broken: true, error: 'cannot find symbol: method nextEntity()' },
+  });
+  assert.match(r.prompt, /cannot find symbol: method nextEntity\(\)/);
+});
+
+test('a broken round with no captured error still says the test did not survive', () => {
+  const r = mutationPrompt({ ...gaps, lastRound: { reached: true, coverage: 100, broken: true } });
+  assert.match(r.prompt, /did not compile|broke the build|broke the suite/i);
+});

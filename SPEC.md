@@ -153,6 +153,9 @@ measured**. The guards that exist because of it:
 | a round is told whether its last test REACHED the method | "never executed it" and "executed it but did not distinguish the mutation" need opposite fixes and were reported identically |
 | the suite verdict comes from the coverage run that executed it | verify ran 1163 tests, then ran them again under JaCoCo to learn the same thing; `passed: null` (log unclear) still forces a real run |
 | generated test files named per METHOD, not per class | `JSONArray#optEnum` wrote rounds 1-4, then `#putAll` began at round 1 and overwrote its round-1 file: a verified kill vanished from the prepared PR while the PR still reported the MAC measured with it |
+| one attempt key per MUTANT, including PIT's `<index>` | a line can carry several mutations of one kind. `JSONObject#parseJSONObject` had 3 survivors, all `RemoveConditionalMutator_EQUAL_ELSE` at line 248: attacking one struck off all three, and the unit settled at 78.57 % announcing "no un-attempted survivors left" with two survivors never tried. 37 survivors across 18 units were masked this way in one run. Keys written before the index was recorded keep their old broad meaning rather than silently matching nothing |
+| `select.eligible` is the only implementation of that key | `survivorsLeft` hand-rolled a second copy without the index, so the round's stop decision used the colliding spelling even where the queue did not |
+| a round's verdict requires the round's test to still be ON DISK when PIT runs | a test that breaks the suite is repaired once and then DELETED, so verification measured a repo with no new test, found the score unchanged and announced "STILL ALIVE — the new test does not distinguish it" about a file that was not there — 41 times across 19 units in one run. The mutant had been marked attempted when the test was *written*, so it was struck off for good; `mutatorStats` booked a try with no kill, and two of those demote a whole mutator kind run-wide; and three such rounds ended the unit. `JSONWriter#value` was abandoned at 20 % that way, then re-picked and taken to 40 % by the first round whose test compiled |
 
 | per-stage token ceilings learned from `finish_reason` | 4 of 12 completions were truncated mid-JSON and re-run whole at ~100 s each, and nothing remembered it |
 
@@ -160,7 +163,7 @@ measured**. The guards that exist because of it:
 
 Two kinds of test, and they answer different questions:
 
-- **unit tests** (`sidecar/test/unit/`, `npm test` — 190 of them) cover the code the workflow's nodes call.
+- **unit tests** (`sidecar/test/unit/`, `npm test` — 267 of them) cover the code the workflow's nodes call.
   Every case is a defect that actually shipped; the table above is, row by row, an
   assertion in that suite.
 - **e2e** is a straight-through run against a real repo — hundreds of methods, real Maven,

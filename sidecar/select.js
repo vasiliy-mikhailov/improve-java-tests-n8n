@@ -7,7 +7,20 @@
 // confidently wrong on four consecutive rounds, every time naming a RemoveConditional
 // mutant it then could not distinguish.
 
-const attemptKey = (m) => `${m.mutator}@${m.line}`;
+/**
+ * One key per MUTANT — not per mutator-and-line.
+ *
+ * A line can carry several mutations of the same kind, and PIT numbers them with <index>.
+ * Without it, `JSONObject#parseJSONObject` — 14 mutants, 11 killed, 3 alive, all three
+ * `RemoveConditionalMutator_EQUAL_ELSE` at line 248 — struck off all three when a round
+ * attacked one, then settled at 78.57% announcing "no un-attempted survivors left" with
+ * two survivors it had never tried. 37 survivors across 18 units were masked that way in a
+ * single run.
+ */
+const attemptKey = (m) => `${m.mutator}@${m.line}` + (m.index == null ? '' : `#${m.index}`);
+
+/** The pre-index spelling of a key, for registers written before indexes were recorded. */
+const legacyKey = (m) => `${m.mutator}@${m.line}`;
 
 /**
  * How badly this run's evidence argues against a mutator kind. 0 = no objection.
@@ -27,10 +40,18 @@ function penalty(st) {
   return rate >= 0.6 ? -1 : 0;
 }
 
-/** Survivors we have not already attacked and failed to kill. */
+/**
+ * Survivors we have not already attacked and failed to kill.
+ *
+ * Attempt registers persist across runs, and the ones written before <index> was recorded
+ * hold the bare `Mutator@line`. Such an entry cannot say WHICH mutant on that line it
+ * meant, so it keeps its old, broad meaning: better to skip a mutant that might be fresh
+ * than to re-offer one already known to have resisted.
+ */
 function eligible(list, attempted) {
   const tried = new Set(attempted || []);
-  return (list || []).filter((m) => !tried.has(attemptKey(m)));
+  const legacy = new Set([...tried].filter((k) => !k.includes('#')));
+  return (list || []).filter((m) => !tried.has(attemptKey(m)) && !legacy.has(legacyKey(m)));
 }
 
 /** Best bet first. Stable and deterministic: same input, same round, same choice. */

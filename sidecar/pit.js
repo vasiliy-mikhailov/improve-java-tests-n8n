@@ -398,6 +398,9 @@ function parseReport(reportAbs, fileRel, fqcn) {
       method: TAG(body, 'mutatedMethod'),
       description: TAG(body, 'description'),
       block: TAG(body, 'block'),
+      // PIT's per-mutant identifier. Several mutations of one kind can share a line, and
+      // without this they share an attempt key too — so killing one writes off the rest.
+      index: TAG(body, 'index') === '' ? null : parseInt(TAG(body, 'index'), 10),
     });
   }
   // NON_VIABLE mutants cannot be killed by any test — excluding them keeps the score honest

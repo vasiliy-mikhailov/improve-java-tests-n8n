@@ -90,6 +90,19 @@ function unreachable(gaps) {
 function lastRoundBlock(gaps) {
   const lr = gaps.lastRound;
   if (!lr) return '';
+  // Three outcomes, three different fixes — and this block had two branches. A test that
+  // broke the suite is repaired once and then deleted, and the next round was told "the
+  // path is right; the assertion is not": advice about an assertion in a file that never
+  // compiled. CDL#getValue and JSONObject#parseEndOfKeyValuePair each spent their whole
+  // miss budget on that.
+  if (lr.broken) {
+    return '\n\nYOUR PREVIOUS ATTEMPT: the test DID NOT COMPILE — it broke the build and was discarded,'
+      + ' so nothing about it was measured.'
+      + (lr.error ? ` The build said:\n${String(lr.error).slice(0, 600)}\n` : ' ')
+      + 'Do not refine the assertion; the file never ran. Write a SIMPLER test that you are certain'
+      + ' compiles: call only methods and constructors you can see in the source above, with exactly'
+      + ' the argument types their signatures declare, and import only what you use.';
+  }
   if (lr.reached === false) {
     return '\n\nYOUR PREVIOUS ATTEMPT: the test compiled and passed, but it NEVER EXECUTED this method'
       + ` — coverage stayed at ${lr.coverage ?? 0}%. The entry point you chose does not flow into it.`

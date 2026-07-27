@@ -14,6 +14,7 @@ const pr = require('./pr');
 const llm = require('./llm');
 const timesheet = require('./timesheet');
 const roundsMod = require('./rounds');
+const roundoutcome = require('./roundoutcome');
 const prompts = require('./prompts');
 const parse = require('./parse');
 const select = require('./select');
@@ -374,8 +375,15 @@ function gapsFor(p) {
     targetMutant: roundsMod.targetForRound(f.targetMutant, (f.rounds || 0) + 1, f.attempts || 0),
     // whether the last round's test even executed this method — a missed round whose
     // coverage never moved off zero was never about the assertion
-    lastRound: f.lastTargetKilled === false || f.consecutiveMisses
-      ? { reached: (f.coverage ?? 0) > 0, coverage: f.coverage ?? 0 }
+    lastRound: f.lastTargetKilled === false || f.consecutiveMisses || f.lastRoundBroken
+      ? {
+        reached: (f.coverage ?? 0) > 0,
+        coverage: f.coverage ?? 0,
+        // a third outcome: the test never compiled, so neither "it did not reach the
+        // method" nor "its assertion was wrong" describes what happened
+        broken: !!f.lastRoundBroken,
+        error: f.lastRoundBroken ? (f.lastSuiteFailure || '') : '',
+      }
       : null,
     fqcn,
     package: fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '',
@@ -754,6 +762,10 @@ const routes = {
       S.upsertFile(state.currentUnit, {
         targetMutant: { ...body.targetMutant, round: (u.rounds || 0) + 1, attempt: u.attempts || 0 },
         attemptedMutants: tried,
+        // and neither must it inherit the last round's test files: those are still on disk
+        // from a committed round, so verification would find them present and report this
+        // round's mutant as having resisted a test this round never wrote
+        roundTestPaths: [],
       });
     }
     const written = [], errors = [];
@@ -763,6 +775,17 @@ const routes = {
         written.push(r.path);
         S.event(body.stage || 'improving_coverage', 'wrote ' + r.path + ' (' + r.bytes + ' bytes)');
       } catch (e) { errors.push({ path: t.path, error: e.message }); }
+    }
+    // Remember what this round put on disk, so verification can check the files are still
+    // there when PIT runs. A round whose test broke the suite gets it DELETED before
+    // verification, and the resulting unchanged score is indistinguishable from a test
+    // that ran and killed nothing — which is exactly how it was read, 41 times.
+    //
+    // Accumulated, not replaced: generation and repair are two calls within one round, and
+    // a repair that writes nothing must not erase the file generation left behind.
+    if (written.length && state.currentUnit) {
+      const had = (state.files[state.currentUnit] || {}).roundTestPaths || [];
+      S.upsertFile(state.currentUnit, { roundTestPaths: [...new Set([...had, ...written])] });
     }
     return { ok: true, written, errors };
   },
@@ -782,6 +805,12 @@ const routes = {
     if (body.stage) S.setStage(body.stage, 'running tests ' + (body.path || '(full suite)'));
     try {
       const r = await tests.runTests(body.path || null);
+      // Keep the compiler's own words. When the round's test is deleted for breaking the
+      // build, this is the only remaining account of WHY — and the next round was being
+      // told to fix an assertion in a file that never compiled.
+      if (r.passed === false && state.currentUnit) {
+        S.upsertFile(state.currentUnit, { lastSuiteFailure: String(r.summary || '').slice(0, 600) });
+      }
       return { ok: true, ...r };
     } catch (e) { return { ok: false, passed: false, error: e.message }; }
   },
@@ -895,22 +924,58 @@ const routes = {
       // round achieved nothing but not WHY; this distinguishes "the test never ran",
       // "the test ran but does not distinguish the mutation" and "it worked".
       const tm = roundsMod.targetForRound(f.targetMutant, (f.rounds || 0) + 1, f.attempts || 0);
-      if (tm && tm.line) {
-        const stillAlive = (st.survived || []).some((m) => m.line === tm.line && m.mutator === tm.mutator);
+      // Did the round's test survive to this measurement, or was it deleted for breaking
+      // the suite? Asked of the file system, because everything below is a statement about
+      // what a test did and none of it holds if there was no test.
+      const brokenKey = tm && tm.line ? select.attemptKey(tm) : null;
+      const ev = roundoutcome.roundEvidence({
+        roundTestPaths: f.roundTestPaths,
+        exists: (p) => repo.testFileExists(p),
+        survived: st.survived,
+        attempted: f.attemptedMutants,
+        targetKey: brokenKey,
+        cap: state.run.config.mutantChoices ?? 20,
+      });
+      const outcome = roundoutcome.roundOutcome({
+        targetMutant: tm,
+        survived: st.survived || [],
+        wroteAny: ev.wroteAny,
+        testsPresent: ev.testsPresent,
+        otherEligible: ev.otherEligible,
+        brokenBefore: (f.brokenMutants || {})[brokenKey] || 0,
+      });
+      if (outcome) {
         const killedNow = (st.killed ?? 0) - (f.mutation != null && f.totalMutants
           ? Math.round((f.mutation / 100) * f.totalMutants) : 0);
-        S.event('improving_mac', `targeted mutant ${tm.mutator} at line ${tm.line}: `
-          + (stillAlive ? 'STILL ALIVE — the new test does not distinguish it' : 'KILLED')
-          + (killedNow > 1 ? ` — and took ${killedNow - 1} other mutant(s) with it` : '')
+        S.event('improving_mac', `targeted mutant ${outcome.message}`
+          + (outcome.kind === 'killed' && killedNow > 1 ? ` — and took ${killedNow - 1} other mutant(s) with it` : '')
           + (st.testsRun ? ` (${st.testsRun} tests ran)` : ''));
-        S.upsertFile(file, { lastTargetKilled: !stillAlive });
-        const ms = (state.mutatorStats ||= {});
-        const e = (ms[tm.mutator] ||= { tried: 0, killed: 0 });
-        e.tried += 1;
-        if (!stillAlive) e.killed += 1;
-        if (e.tried >= 2 && e.killed === 0) {
-          S.event('improving_mac', `${tm.mutator} has survived ${e.tried} attempts in this run — `
-            + 'demoting that mutator kind behind everything else');
+        // null (broken) must not read as a kill anywhere downstream
+        S.upsertFile(file, {
+          lastTargetKilled: outcome.stillAlive === null ? null : !outcome.stillAlive,
+          // so the next round's prompt says "it did not compile" instead of "the path is
+          // right; the assertion is not" — opposite advice for opposite problems
+          lastRoundBroken: outcome.kind === 'broken',
+        });
+        if (outcome.countMutatorTry) {
+          const ms = (state.mutatorStats ||= {});
+          const e = (ms[tm.mutator] ||= { tried: 0, killed: 0 });
+          e.tried += 1;
+          if (!outcome.stillAlive) e.killed += 1;
+          if (e.tried >= 2 && e.killed === 0) {
+            S.event('improving_mac', `${tm.mutator} has survived ${e.tried} attempts in this run — `
+              + 'demoting that mutator kind behind everything else');
+          }
+        }
+        if (outcome.kind === 'broken') {
+          // it was marked attempted when the test was WRITTEN; nothing since has tested it
+          const broken = { ...(f.brokenMutants || {}) };
+          broken[brokenKey] = (broken[brokenKey] || 0) + 1;
+          const patch = { brokenMutants: broken };
+          if (outcome.unattempt) {
+            patch.attemptedMutants = (f.attemptedMutants || []).filter((k) => k !== brokenKey);
+          }
+          S.upsertFile(file, patch);
         }
         S.save();
       }
@@ -974,8 +1039,10 @@ const routes = {
         // un-attempted survivor remains and how many misses came in a row
         consecutiveMisses: f.consecutiveMisses || 0,
         maxMisses: state.run.config.maxConsecutiveMisses ?? 3,
-        survivorsLeft: (st.survived || []).filter((m) =>
-          !(f.attemptedMutants || []).includes(`${m.mutator}@${m.line}`)).length,
+        // select.eligible, not a second hand-rolled copy of its key: this one spelled the
+        // key without the mutant index, so several distinct mutants sharing a kind and a
+        // line counted as one and the round was told there was nothing left to attack
+        survivorsLeft: select.eligible(st.survived || [], f.attemptedMutants || []).length,
       });
       S.upsertFile(file, { consecutiveMisses: keepRound ? 0 : (f.consecutiveMisses || 0) + 1 });
       S.event('improving_mac', `round ${rounds + 1} of ${file}: cov ${rb.coverage}→${coverageAfter}, mut ${rb.mutation}→${st.score}, mac ${rb.mac}→${macAfter} — ${verdict}`);
