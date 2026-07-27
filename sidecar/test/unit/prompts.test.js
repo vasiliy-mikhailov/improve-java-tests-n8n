@@ -271,3 +271,24 @@ test('a fully covered method is still skipped whatever its survivors say', () =>
   assert.ok(r.skip);
   assert.match(r.reason, /fully covered/);
 });
+
+// ── collaborators the test has to build ───────────────────────────────────
+// DelegatingStatisticsCollector's tests failed to compile four rounds running with
+//   error: <anonymous ...MacMutTest$1> is not abstract and does not override abstract
+//          method incrementBatchLoadCountBy(long) in StatisticsCollector
+// The model hand-rolled an anonymous StatisticsCollector and implemented some of its
+// methods. The prompt shows the class under test but not the full contract of the
+// interfaces its test must instantiate, and java-dataloader ships concrete
+// implementations that would have done the job. Two of eight recorded failures on this
+// repo are this exact shape.
+test('the rules say how to build a collaborator without inventing half an interface', () => {
+  const r = mutationPrompt(gaps);
+  assert.match(r.system, /every abstract method|all of its abstract methods/i);
+  assert.match(r.system, /existing|concrete/i,
+    'preferring an implementation the project already has is cheaper than writing one');
+});
+
+test('the coverage prompt carries the same rule', () => {
+  const r = coveragePrompt({ ...gaps, coverage: 0, uncovered: { lines: 'all' } });
+  assert.match(r.system, /every abstract method|all of its abstract methods/i);
+});

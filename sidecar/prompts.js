@@ -16,6 +16,7 @@ const COMMON_TEST_RULES = `
 - Deterministic: no network, no clock/randomness without fixing them, no reliance on file-system state or test execution order.
 - ISOLATED from every other test, including earlier ones this pipeline generated for the same class. If the class under test holds static, singleton or ThreadLocal state, reset it in the test itself (@Before/@BeforeEach, or explicitly at the top of the method) instead of assuming a fresh value. A test that passes alone and fails beside its siblings stops mutation testing dead: PIT runs all of them in one JVM against unmutated code first and refuses to proceed unless every one passes.
 - Every test must ASSERT a value or an observable side effect; a test that only checks "does not throw" is worthless.
+- Need an instance of an interface or abstract type to build the test? Prefer a CONCRETE implementation the project already ships (look for Simple*, NoOp*, Default*, *Impl, or a builder) over writing one. If you must implement one inline, override EVERY abstract method it declares — a partial anonymous class does not compile, and "is not abstract and does not override abstract method ..." costs the whole round.
 - Be TERSE. No javadoc, no explanatory prose, at most ONE short comment naming what the test pins down. Long answers get truncated before they finish, and a truncated answer is thrown away.
 - The tests MUST compile and PASS against the CURRENT implementation.`;
 
