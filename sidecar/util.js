@@ -120,4 +120,16 @@ function redact(text) {
     .replace(/(https?:\/\/)[^/@\s:]+:[^/@\s]+@/g, '$1«redacted»@');
 }
 
-module.exports = { globsToMatcher, globToRegExp, splitGlobList, slugify, fileSlug, nowSec, round2, mac, extractJson, clamp, redact };
+/**
+ * A metric for human eyes: the number when we have one, "?" when we do not.
+ *
+ * A live round line read "cov undefined→0, mut undefined→0, mac null→0" for a unit whose
+ * every stored field was correctly null. The ledger invented nothing; the sentence did.
+ * Zero stays zero — 0% mutation is a real and common measurement, and hiding it would be
+ * the opposite error.
+ */
+function showMetric(v) {
+  return (v === null || v === undefined || Number.isNaN(v)) ? '?' : String(v);
+}
+
+module.exports = { showMetric, globsToMatcher, globToRegExp, splitGlobList, slugify, fileSlug, nowSec, round2, mac, extractJson, clamp, redact };

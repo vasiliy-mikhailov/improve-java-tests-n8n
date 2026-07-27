@@ -70,3 +70,33 @@ test('redact removes tokens, api keys and URL credentials', () => {
   assert.ok(!redact('key ' + fakeKey).includes(fakeKey));
   assert.equal(redact(null), '');
 });
+
+// ── the round line must not invent the numbers it prints ──────────────────
+// A live round reported:
+//   round 1 of ...DataLoaderInstrumentationContext.java::onCompleted:
+//   cov undefined→0, mut undefined→0, mac null→0 — MISS
+// Nothing about that unit was measured — every stored field is null, correctly — but the
+// line renders the absent baseline as the literal "undefined" and the absent result as a
+// confident 0. This is the reporting cousin of the defect this project keeps hitting: the
+// numbers were not invented in the ledger, only in the sentence a human reads to judge
+// the run.
+const { showMetric } = require('../../util');
+
+test('an absent metric reads as unmeasured, not as zero', () => {
+  assert.equal(showMetric(null), '?');
+  assert.equal(showMetric(undefined), '?');
+});
+
+test('a real zero still reads as zero', () => {
+  // 0% mutation is a measurement and a common one — it must not be hidden
+  assert.equal(showMetric(0), '0');
+});
+
+test('measured values pass through', () => {
+  assert.equal(showMetric(66.67), '66.67');
+  assert.equal(showMetric(100), '100');
+});
+
+test('NaN is not a measurement either', () => {
+  assert.equal(showMetric(NaN), '?');
+});

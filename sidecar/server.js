@@ -23,7 +23,7 @@ const measure = require('./measure');
 const purge = require('./purge');
 const javasrc = require('./javasrc');
 const { run } = require('./exec');
-const { mac, fileSlug, round2, clamp, slugify } = require('./util');
+const { mac, fileSlug, round2, clamp, slugify, showMetric } = require('./util');
 
 const PORT = parseInt(process.env.SIDECAR_PORT || '3000', 10);
 const state = S.state;
@@ -1052,7 +1052,13 @@ const routes = {
         survivorsLeft: select.eligible(st.survived || [], f.attemptedMutants || []).length,
       });
       S.upsertFile(file, { consecutiveMisses: keepRound ? 0 : (f.consecutiveMisses || 0) + 1 });
-      S.event('improving_mac', `round ${rounds + 1} of ${file}: cov ${rb.coverage}→${coverageAfter}, mut ${rb.mutation}→${st.score}, mac ${rb.mac}→${macAfter} — ${verdict}`);
+      // showMetric, not raw interpolation: this line read "cov undefined→0, mut
+      // undefined→0, mac null→0" for a unit whose every stored field was correctly null.
+      // The ledger invented nothing; the sentence a human reads to judge the run did.
+      S.event('improving_mac', `round ${rounds + 1} of ${file}: `
+        + `cov ${showMetric(rb.coverage)}→${showMetric(coverageAfter)}, `
+        + `mut ${showMetric(rb.mutation)}→${showMetric(st.score)}, `
+        + `mac ${showMetric(rb.mac)}→${showMetric(macAfter)} — ${verdict}`);
       // remembered so /api/round/accept can echo it: the loop's IF then reads the
       // verdict off its direct input instead of reaching back to a node that has
       // run several times in this execution
