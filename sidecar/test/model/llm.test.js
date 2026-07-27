@@ -242,3 +242,40 @@ test('a real production-sized mutation prompt answers within its first-attempt b
   const parsed = safeJson(a.content);
   assert.ok(parsed && Array.isArray(parsed.tests), 'and it must come back as the reply shape parse.js expects');
 });
+
+// ── the third feedback branch, against the real model ──────────────────────
+// lastRoundBlock gained a `broken` branch that pastes the compiler's error into the
+// prompt. What that risks at THIS layer is the contract: ~600 extra characters of javac
+// output could push the answer past its first-attempt budget or derail the reply shape.
+// That is what this checks.
+//
+// It deliberately does NOT try to prove the model "acts on" the error. I wrote that test
+// first — assert the new test drops the symbol javac rejected — ran it against a prompts.js
+// with the branch cut out, and it passed anyway: the old prompt never mentions the symbol,
+// so not using it is free. A green that cannot go red is worse than no test, because it
+// reads like evidence. The branch's wording is pinned by the small tests in
+// test/unit/prompts.test.js; its effect is visible in production, where a round that never
+// compiled stops being told to fix its assertion.
+const BROKEN_GAPS = {
+  ...gaps,
+  lastRound: {
+    reached: true,
+    coverage: 100,
+    broken: true,
+    error: 'DiscountMacMutTest.java:8: error: cannot find symbol\n'
+      + '    assertEquals(45, new Discount().priceForAll(5, false));\n'
+      + '                                    ^\n  symbol:   method priceForAll(int,boolean)\n'
+      + '  location: class com.example.Discount',
+  },
+};
+
+test('a compile error in the prompt does not break the reply contract', () => {
+  const plan = mutationPrompt(BROKEN_GAPS);
+  return ask(plan).then((a) => {
+    assert.notEqual(a.finish, 'length',
+      `truncated at ${a.ceiling} tokens after ${a.secs}s — the pasted javac output costs budget`);
+    const r = asPipelineWould(a, plan);
+    assert.equal(r.count, 1, 'a compile failure is not a reason to give up on the mutant');
+    assert.equal(r.tests[0].path, plan.targetPath);
+  });
+});
