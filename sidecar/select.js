@@ -30,14 +30,37 @@ const legacyKey = (m) => `${m.mutator}@${m.line}`;
  * missed at 164, 191 and 234 while staying at the top of the queue every round. Kill
  * RATE decides now, and a kind that has never killed anything is still the worst bet.
  */
-function penalty(st) {
+/**
+ * Kinds whose death can be bought with an assertion that pins nothing else.
+ *
+ * A NullReturnVals mutant returns null, so assertNotNull kills it — and proves only that
+ * something came back. Same for an empty collection or a zeroed primitive. The kill counts
+ * toward the score and is real, but it is not evidence that the method's behaviour is
+ * pinned, so a run of them should not make the kind look like a good bet.
+ *
+ * ConditionalsBoundary, Math and RemoveConditional are the opposite: there is no cheap
+ * assertion that kills them. You have to exercise the boundary, or the arithmetic, or the
+ * guarded branch — which is the behaviour worth testing.
+ */
+const SHALLOW_KILL = new Set([
+  'NullReturnValsMutator',
+  'EmptyObjectReturnValsMutator',
+  'PrimitiveReturnsMutator',
+]);
+
+function penalty(st, mutator) {
   if (!st || st.tried < 2) return 0;          // one miss is noise, not evidence
   if (st.killed === 0) return 2;              // repeatedly attacked, never once died
   const rate = st.killed / st.tried;
   if (rate < 0.4) return 1;                   // mostly missing → behind the untried kinds
-  // evidence cuts both ways: a kind this run keeps killing is a better bet than one we
-  // have never tried, even where PIT rates them equally hard
-  return rate >= 0.6 ? -1 : 0;
+  // Evidence cuts both ways: a kind this run keeps killing is a better bet than one we
+  // have never tried, even where PIT rates them equally hard.
+  //
+  // But only when the kill means something. Ranked on kill rate alone, the run harvested
+  // the cheap kinds — 63% of all kills came from the two easiest, while conditionals sat
+  // at a 4% kill rate and 173 survivors, because they were always ranked last. A bonus
+  // for being easy to kill is a bonus for testing shallowly.
+  return rate >= 0.6 && !SHALLOW_KILL.has(mutator) ? -1 : 0;
 }
 
 /**
@@ -58,7 +81,7 @@ function eligible(list, attempted) {
 function rankSurvivors(list, stats) {
   const st = stats || {};
   return (list || []).slice().sort((a, b) =>
-    penalty(st[a.mutator]) - penalty(st[b.mutator])
+    penalty(st[a.mutator], a.mutator) - penalty(st[b.mutator], b.mutator)
     || (a.difficulty ?? 1) - (b.difficulty ?? 1)
     || (a.line || 0) - (b.line || 0));
 }

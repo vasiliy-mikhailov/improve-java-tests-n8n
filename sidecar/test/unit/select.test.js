@@ -194,3 +194,42 @@ test('a unit that was never measured is not exhausted — nothing is known about
 test('a unit measured as having no survivors at all is exhausted', () => {
   assert.equal(exhausted({ lastSurvived: [], attemptedMutants: [] }), true);
 });
+
+// ── what a kill is WORTH, not just how easily it comes ────────────────────
+// Across 476 targeted mutants the pipeline killed 77, and 63% of those kills came from
+// the two cheapest kinds: VoidMethodCall (58% kill rate) and NullReturnVals (26%). The
+// mutators that pin actual logic were barely touched — RemoveConditional 4%,
+// ConditionalsBoundary 14%, Math 11%.
+//
+// That is not an accident, it is the ranking. penalty() rewards a kind for its observed
+// kill RATE, so the easiest kinds are attacked first and the hardest last. A NullReturnVals
+// kill can be bought with assertNotNull — and 48 assertNotNull calls are exactly what the
+// generated tests contain. The bonus should go to kinds whose kills prove something.
+
+test('a kind that keeps dying to a weak assertion earns no ranking bonus', () => {
+  // returns null → assertNotNull kills it and pins nothing else
+  assert.equal(penalty({ tried: 10, killed: 9 }, 'NullReturnValsMutator'), 0);
+  assert.equal(penalty({ tried: 10, killed: 9 }, 'EmptyObjectReturnValsMutator'), 0);
+});
+
+test('a kind whose kill pins real behaviour still earns one', () => {
+  assert.equal(penalty({ tried: 10, killed: 9 }, 'ConditionalsBoundaryMutator'), -1);
+  assert.equal(penalty({ tried: 10, killed: 9 }, 'MathMutator'), -1);
+  assert.equal(penalty({ tried: 10, killed: 9 }, 'RemoveConditionalMutator_EQUAL_ELSE'), -1);
+});
+
+test('a kind that never dies is still demoted whatever it would prove', () => {
+  // the original reason penalty exists: stop spending rounds on a kind nothing kills
+  assert.equal(penalty({ tried: 6, killed: 0 }, 'ConditionalsBoundaryMutator'), 2);
+  assert.equal(penalty({ tried: 6, killed: 0 }, 'NullReturnValsMutator'), 2);
+});
+
+test('a mostly-missing kind is demoted, shallow or deep', () => {
+  assert.equal(penalty({ tried: 10, killed: 2 }, 'MathMutator'), 1);
+  assert.equal(penalty({ tried: 10, killed: 2 }, 'NullReturnValsMutator'), 1);
+});
+
+test('one attempt is still not evidence', () => {
+  assert.equal(penalty({ tried: 1, killed: 0 }, 'MathMutator'), 0);
+  assert.equal(penalty(undefined, 'MathMutator'), 0);
+});
