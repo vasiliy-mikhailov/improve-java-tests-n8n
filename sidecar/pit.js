@@ -242,7 +242,7 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
   } else {
     fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript(targetClasses, targetTests, excluded));
     const task = moduleRel && moduleRel !== '.' ? `:${moduleRel.split('/').join(':')}:pitest` : 'pitest';
-    r = await run([state.runner.wrapper, '--no-daemon', '-I', INIT_SCRIPT, task],
+    r = await run([state.runner.wrapper, '--no-daemon', ...(state.runner.scanArgs || []), '-I', INIT_SCRIPT, task],
       { cwd: dir, timeoutMs: 3600000, label: 'pit', env: repo.buildEnv() });
   }
 

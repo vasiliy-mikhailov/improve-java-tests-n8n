@@ -63,7 +63,7 @@ async function runCoverage() {
     }
   } else {
     fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript());
-    r = await run([build.wrapper, '--no-daemon', '--continue', '-I', INIT_SCRIPT, 'test', 'jacocoTestReport'],
+    r = await run([build.wrapper, '--no-daemon', ...(build.scanArgs || []), '--continue', '-I', INIT_SCRIPT, 'test', 'jacocoTestReport'],
       { cwd: dir, timeoutMs: 3600000, label: 'jacoco', env: repo.buildEnv() });
   }
   const reports = findReports(dir);

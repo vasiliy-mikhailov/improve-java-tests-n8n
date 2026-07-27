@@ -10,6 +10,7 @@
 //   - Tests live in src/test/java and must be named so Surefire/Gradle pick them up.
 const fs = require('node:fs');
 const path = require('node:path');
+const gradlescan = require('./gradlescan');
 const { run } = require('./exec');
 const { state, event, upsertFile, DATA_DIR } = require('./state');
 const { slugify, globsToMatcher } = require('./util');
@@ -104,7 +105,13 @@ function detectBuild() {
   const wrapper = tool === 'maven'
     ? (fs.existsSync(path.join(dir, 'mvnw')) ? './mvnw' : 'mvn')
     : (fs.existsSync(path.join(dir, 'gradlew')) ? './gradlew' : 'gradle');
-  return { tool, wrapper, hasPom, hasGradle, gradleVersion };
+  // Decided once, here, because it is a property of the repo and it is needed by every
+  // Gradle invocation: the suite, the coverage build and PIT, once per round each.
+  const scanArgs = tool === 'gradle'
+    ? gradlescan.gradleScanArgs(['settings.gradle', 'settings.gradle.kts', 'build.gradle', 'build.gradle.kts']
+      .map((f) => readTextSafe(path.join(dir, f), 200000)))
+    : [];
+  return { tool, wrapper, hasPom, hasGradle, gradleVersion, scanArgs };
 }
 
 /**

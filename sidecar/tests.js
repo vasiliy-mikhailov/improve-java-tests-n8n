@@ -18,7 +18,7 @@ async function runTests(scope) {
     argv = [build.wrapper, '-B', '-ntp', 'test', '-DfailIfNoTests=false'];
     if (cls) argv.push(`-Dtest=${cls}`, '-DfailIfNoTests=false', '-Dsurefire.failIfNoSpecifiedTests=false');
   } else {
-    argv = [build.wrapper, '--no-daemon', 'test'];
+    argv = [build.wrapper, '--no-daemon', ...(build.scanArgs || []), 'test'];
     if (cls) argv.push('--tests', cls);
   }
   const r = await run(argv, { cwd: dir, timeoutMs: 3600000, label: 'tests', env: repo.buildEnv() });
