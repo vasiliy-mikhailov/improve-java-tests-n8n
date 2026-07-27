@@ -120,6 +120,25 @@ async function ask(plan) {
 const asPipelineWould = (answer, plan) =>
   parseGeneratedTests({ ok: true, json: safeJson(answer.content) }, plan);
 
+/**
+ * The same second chance llm.js gives every JSON call. Production does not require the
+ * first attempt to parse — it appends a repair nudge and asks again — so a test that
+ * demands first-attempt JSON is stricter than the pipeline and fails where the pipeline
+ * succeeds.
+ */
+async function askUsable(plan) {
+  const first = await ask(plan);
+  if (safeJson(first.content)) return { answer: first, repaired: false };
+  const retry = await ask({
+    ...plan,
+    prompt: plan.prompt
+      + '\n\nYour previous answer was not valid JSON. Reply again with ONLY the JSON object,'
+      + ' no prose, no markdown fences, no placeholders in angle brackets.',
+    temperature: 0.1,
+  });
+  return { answer: retry, repaired: true };
+}
+
 function safeJson(text) {
   const s = String(text || '');
   const i = s.indexOf('{'), j = s.lastIndexOf('}');
@@ -238,16 +257,31 @@ test('a repair fixes the test without abandoning the mutant', async () => {
 // report a fix as still broken.
 const REAL_GAPS = JSON.parse(fs.readFileSync(path.join(__dirname, 'prompts', 'jsonobject-isRecordStyleAccessor.json'), 'utf8'));
 
-test('a real production-sized mutation prompt answers within its first-attempt budget', async () => {
+test('a real production-sized mutation prompt is never truncated', async () => {
+  // Truncation is the expensive failure: the answer is discarded and the call is paid for
+  // again at double the ceiling. This one is strict, and it holds.
   const plan = mutationPrompt(REAL_GAPS);
   assert.ok(!plan.skip, `the fixture must produce a real prompt, not ${plan.reason}`);
   const a = await ask(plan);
   assert.notEqual(a.finish, 'length',
-    `truncated at ${a.ceiling} tokens after ${a.secs}s with ${a.reasoningChars} characters of reasoning. `
-    + 'The pipeline discards this answer, doubles the ceiling and pays for the whole call again — '
-    + `about ${a.secs * 3}s of wall-clock per round, on every round of this shape.`);
-  const parsed = safeJson(a.content);
-  assert.ok(parsed && Array.isArray(parsed.tests), 'and it must come back as the reply shape parse.js expects');
+    `truncated at ${a.ceiling} tokens after ${a.secs}s with ${a.reasoningChars} characters of `
+    + `reasoning — about ${a.secs * 3}s of wall-clock per round, on every round of this shape.`);
+});
+
+test('and it comes back usable, first time or after the repair nudge', async () => {
+  // This prompt is the largest the pipeline sends, and its FIRST attempt parses only
+  // sometimes: observed answers that stop mid-content while reporting finish_reason
+  // "stop", so the truncation guard cannot see them and safeJson finds a stray `}` from
+  // the Java body instead. llm.js already handles it by appending a repair nudge and
+  // asking again, so that — not first-attempt purity — is the contract to assert.
+  // Asserting the stricter thing produced a test that failed four runs in ten, and a test
+  // that flaky gets ignored, which is worse than one that is merely narrow.
+  const plan = mutationPrompt(REAL_GAPS);
+  const { answer, repaired } = await askUsable(plan);
+  const parsed = safeJson(answer.content);
+  assert.ok(parsed && Array.isArray(parsed.tests),
+    `unusable even after a repair nudge (finish=${answer.finish}, ${answer.completionTokens} tokens)`);
+  if (repaired) console.log('      note: first attempt did not parse — production pays for two calls here');
 });
 
 // ── the third feedback branch, against the real model ──────────────────────

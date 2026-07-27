@@ -11,7 +11,12 @@ function rules() { return state.run?.config?.rules || {}; }
 function repoContextHead() {
   const parts = [];
   for (const f of ['AGENTS.md', 'CONTRIBUTING.md', 'README.md']) {
-    const c = readFileSafe(f, 4000);
+    // Optional context, best-effort by definition. readFileSafe swallows a missing FILE
+    // but readFileSafe -> repoDir() throws outright when there is no checkout, and that
+    // exception took down the whole PR composition — a function whose job is "some docs
+    // if we have them" must not be the thing that fails.
+    let c = null;
+    try { c = readFileSafe(f, 4000); } catch { c = null; }
     if (c) parts.push(`--- ${f} (head) ---\n${c}`);
   }
   return parts.join('\n\n') || '(no AGENTS.md / CONTRIBUTING.md / README.md found)';
