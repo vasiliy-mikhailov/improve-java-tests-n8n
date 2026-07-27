@@ -93,12 +93,26 @@ test('a genuinely marginal round still stops when mutants are coarse', () => {
   assert.equal(d.continueRounds, false);
 });
 
-test('the unit time budget ends the loop even while progress continues', () => {
-  const d = decide({ ...base, macBase: 0, macAfter: 40, elapsedSec: 3000, budgetSec: 2400 });
-  assert.equal(d.keepRound, true);
-  assert.equal(d.continueRounds, false);
-  assert.equal(d.outOfTime, true);
-  assert.match(d.verdict, /time budget/);
+test('the unit time budget ends the loop once a round stops paying', () => {
+  // This asserted that the budget ends the loop even mid-climb, without saying why, and
+  // it cost DataLoaderFactory#newDataLoaderWithTry the rest of its ascent: MAC 0 → 44.45
+  // → 69.44, improving on every round, stopped at 900s. The unit the budget was written
+  // for — DataLoader#getValueCache, 984 seconds — improved on no round at all. Elapsed
+  // time cannot tell those apart; whether the last round gained can.
+  const stalled = decide({ ...base, macBase: 40, macAfter: 40, improvedAny: false, elapsedSec: 3000, budgetSec: 2400 });
+  assert.equal(stalled.continueRounds, false);
+  assert.equal(stalled.outOfTime, true);
+  assert.match(stalled.verdict, /time budget/);
+});
+
+test('a unit still climbing is given more than its budget, but not unboundedly', () => {
+  const climbing = decide({ ...base, macBase: 0, macAfter: 40, elapsedSec: 3000, budgetSec: 2400 });
+  assert.equal(climbing.keepRound, true);
+  assert.equal(climbing.continueRounds, true, '1.25x budget and still gaining — worth another round');
+
+  const runaway = decide({ ...base, macBase: 0, macAfter: 40, elapsedSec: 5000, budgetSec: 2400 });
+  assert.equal(runaway.continueRounds, false, 'past twice the budget, gaining is no longer a licence');
+  assert.equal(runaway.outOfTime, true);
 });
 
 test('thresholds are configurable', () => {
@@ -157,9 +171,11 @@ test('a miss with no un-attempted survivors left ends the unit', () => {
   assert.match(d.verdict, /no un-attempted survivors/);
 });
 
-test('a kept round still stops at the time budget', () => {
+test('a kept round past twice the budget still stops', () => {
+  // a kept round buys a reprieve, not immunity — 50 survivors left is exactly the shape
+  // that would otherwise hold the run for ever
   const d = decide({ ...miss, improvedAny: true, macAfter: 63, survivorsLeft: 50,
-    elapsedSec: 4000, budgetSec: 3600 });
+    elapsedSec: 8000, budgetSec: 3600 });
   assert.equal(d.keepRound, true);
   assert.equal(d.continueRounds, false);
 });
@@ -224,4 +240,48 @@ test('a missing or nonsense setting is one, never zero', () => {
   assert.equal(mutantsForRound({}), 1);
   assert.equal(mutantsForRound({ configured: 0 }), 1);
   assert.equal(mutantsForRound({ configured: -5 }), 1);
+});
+
+// ── the time budget must not stop a unit that is still climbing ───────────
+// DataLoaderFactory#newDataLoaderWithTry went MAC 0 → 44.45 → 69.44, improving on every
+// round, and was cut off by "unit time budget 900s spent". The budget exists because
+// DataLoader#getValueCache once spent 984 seconds producing nothing — but that unit
+// improved on NO round, and this one improved on every round, and a wall-clock number
+// alone cannot tell them apart.
+//
+// Productivity can. A unit whose latest round gained is worth another; a unit out of time
+// AND not gaining is exactly what the budget was written to stop.
+test('time is up but the round improved — the unit gets another', () => {
+  const d = decide({
+    macBase: 44.45, macAfter: 69.44, improvedAny: true, degradedAny: false,
+    rounds: 1, elapsedSec: 950, budgetSec: 900, survivorsLeft: 3,
+  });
+  assert.equal(d.keepRound, true);
+  assert.equal(d.continueRounds, true, 'still climbing — the budget is not the whole story');
+});
+
+test('time is up and the round gained nothing — stop, which is what the budget is for', () => {
+  const d = decide({
+    macBase: 20, macAfter: 20, improvedAny: false, degradedAny: false,
+    rounds: 4, elapsedSec: 950, budgetSec: 900, survivorsLeft: 3,
+  });
+  assert.equal(d.continueRounds, false);
+  assert.match(d.verdict, /time budget/);
+});
+
+test('a unit far past its budget stops even while gaining', () => {
+  // the reprieve is for a unit just over the line, not an unbounded licence
+  const d = decide({
+    macBase: 10, macAfter: 20, improvedAny: true, degradedAny: false,
+    rounds: 2, elapsedSec: 2000, budgetSec: 900, survivorsLeft: 3,
+  });
+  assert.equal(d.continueRounds, false, 'twice the budget is enough for any unit');
+});
+
+test('with no budget configured nothing changes', () => {
+  const d = decide({
+    macBase: 10, macAfter: 20, improvedAny: true, degradedAny: false,
+    rounds: 1, elapsedSec: 99999, budgetSec: 0, survivorsLeft: 3,
+  });
+  assert.equal(d.continueRounds, true);
 });

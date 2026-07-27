@@ -54,8 +54,17 @@ function decide({ macBase, macAfter, improvedAny, degradedAny, rounds = 0,
   // exhausted mutant list, or the time budget — never an arbitrary count
   const roundsLeft = !maxRounds || rounds + 1 < maxRounds;
   const marginal = keepRound && (gapClosed < effMinGapFrac || gain < effMinGain);
-  // a mutant-dense method must not hold the run for ever, however cheap each round is
-  const outOfTime = budgetSec > 0 && elapsedSec >= budgetSec;
+  // A mutant-dense method must not hold the run for ever, however cheap each round is.
+  //
+  // But wall-clock alone cannot tell a unit worth its time from one that is not.
+  // DataLoader#getValueCache spent 984 seconds and improved on no round;
+  // DataLoaderFactory#newDataLoaderWithTry went 0 → 44.45 → 69.44, improving on every
+  // round, and was cut off by the same number. So a unit that is still climbing gets a
+  // reprieve — and only a reprieve: past twice its budget it stops whatever it is doing,
+  // because "still gaining" must not become an unbounded licence.
+  const overBudget = budgetSec > 0 && elapsedSec >= budgetSec;
+  const wayOverBudget = budgetSec > 0 && elapsedSec >= budgetSec * 2;
+  const outOfTime = overBudget && (wayOverBudget || !keepRound);
   // A perfect score leaves nothing to buy. Without this the loop always spends one more
   // round to discover that — cheap on a whole class, wasteful when the unit is a single
   // method, where reaching 100 in the first round is the common case.
