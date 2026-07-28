@@ -285,3 +285,38 @@ test('with no budget configured nothing changes', () => {
   });
   assert.equal(d.continueRounds, true);
 });
+
+// ── strict one pass per method ────────────────────────────────────────────
+// The batch round already covers every surviving line of a method in one call, so a
+// second round asks for the same targets again. It happened on
+// DataLoaderFactory#newMappedPublisherDataLoaderWithTry: the generated file was deleted
+// for not compiling, the filter therefore saw nothing covered, and all six targets were
+// re-asked — three times. Under the one-mutant loop a miss cost one mutant's worth of
+// generation; batching makes it cost the batch's.
+//
+// So: mutate the method, measure it, move on. These three knobs together are what that
+// means, and their interaction is subtle enough to pin.
+const onePass = { maxRounds: 1, maxMisses: 1 };
+
+test('a round that gained still ends the method', () => {
+  const d = decide({ ...base, macBase: 0, macAfter: 60, survivorsLeft: 9, ...onePass });
+  assert.equal(d.keepRound, true, 'the work is kept');
+  assert.equal(d.continueRounds, false, 'and the method is done');
+});
+
+test('a round that missed ends it too, on the first miss', () => {
+  const d = decide({ ...miss, survivorsLeft: 9, consecutiveMisses: 0, ...onePass });
+  assert.equal(d.continueRounds, false);
+});
+
+test('survivors left over do not buy another round', () => {
+  // this is the trade: a lower ceiling per method for one measurement instead of several
+  const d = decide({ ...base, macBase: 0, macAfter: 20, survivorsLeft: 40, ...onePass });
+  assert.equal(d.continueRounds, false);
+});
+
+test('the uncapped setting still means uncapped', () => {
+  // 0 documents "no round cap" and must not be read as "zero rounds"
+  const d = decide({ ...base, macBase: 0, macAfter: 60, survivorsLeft: 9, maxRounds: 0, maxMisses: 3 });
+  assert.equal(d.continueRounds, true);
+});
