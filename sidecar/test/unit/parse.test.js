@@ -83,3 +83,39 @@ test('the planned path is the only path, however plausible the alternative looks
     assert.equal(r.tests[0].path, plan.targetPath);
   }
 });
+
+// ── a batch round aims at many lines, so it aims at no single mutant ──────
+// batchPrompt offers `{marker, line, method}`; the single-mutant prompt offers
+// `{line, mutator, status}`. parse.js read offered[0] and built `chosen` from it either
+// way, so a batch round produced chosen.mutator === undefined — which the workflow printed
+// verbatim ("targeting undefined at line 78") and, worse, stored as targetMutant, where
+// the kill check matches on mutator AND line and therefore could never match anything.
+//
+// A batch has no single target. Saying so is the honest answer; roundOutcome already
+// returns null for a round with no target mutant.
+test('a single-mutant round still reports the mutant it aimed at', () => {
+  const r = parseGeneratedTests(
+    { ok: true, json: { tests: [{ path: 'src/test/java/a/BMacMutTest.java', content: 'x'.repeat(40) }] } },
+    { targetPath: 'src/test/java/a/BMacMutTest.java', offered: [{ line: 42, mutator: 'MathMutator', status: 'SURVIVED' }] });
+  assert.deepEqual(r.chosen, { line: 42, mutator: 'MathMutator' });
+});
+
+test('a batch round reports no single target rather than an undefined one', () => {
+  const r = parseGeneratedTests(
+    { ok: true, json: { tests: [{ path: 'src/test/java/a/BMacMutTest.java', content: 'x'.repeat(40) }] } },
+    { targetPath: 'src/test/java/a/BMacMutTest.java',
+      offered: [{ marker: 'covers m:78', line: 78, method: 'm' }, { marker: 'covers m:90', line: 90, method: 'm' }] });
+  assert.equal(r.chosen, null, 'no mutator field means this was never a single-mutant round');
+});
+
+test('an offer with no mutator is never dressed up as one', () => {
+  const r = parseGeneratedTests(
+    { ok: true, json: { tests: [{ path: 'p', content: 'x'.repeat(40) }] } },
+    { targetPath: 'p', offered: [{ line: 5 }] });
+  assert.equal(r.chosen, null);
+});
+
+test('no offers at all means no target', () => {
+  const r = parseGeneratedTests({ ok: true, json: { tests: [] } }, { targetPath: 'p' });
+  assert.equal(r.chosen, null);
+});

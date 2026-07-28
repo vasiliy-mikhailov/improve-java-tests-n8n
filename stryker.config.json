@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing for the sidecar itself. The pipeline measures other repos by coverage x mutation; this holds it to the same standard. Modules that only shell out to Maven/Gradle/git are excluded: their behaviour is a subprocess, and a mutant there is killed by e2e, not by a unit test.",
+  "packageManager": "npm",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "node --test sidecar/test/unit/*.test.js"
+  },
+  "mutate": [
+    "sidecar/*.js",
+    "!sidecar/server.js",
+    "!sidecar/exec.js",
+    "!sidecar/llm.js",
+    "!sidecar/repo.js",
+    "!sidecar/pr.js",
+    "!sidecar/coverage.js",
+    "!sidecar/tests.js",
+    "!sidecar/state.js"
+  ],
+  "reporters": [
+    "clear-text",
+    "json"
+  ],
+  "clearTextReporter": {
+    "maxTestsToLog": 0
+  },
+  "concurrency": 8,
+  "timeoutMS": 60000,
+  "coverageAnalysis": "off",
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  }
+}

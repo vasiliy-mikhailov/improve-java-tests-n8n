@@ -47,9 +47,16 @@ function parseGeneratedTests(resp, plan) {
     tests,
     paths: tests.map((t) => t.path),
     count: tests.length,
-    // carried so the kill check knows which mutant this round was aiming at —
-    // read from THIS phase's plan, not from a sibling phase's node
-    chosen: first ? { line: first.line, mutator: first.mutator } : null,
+    // Carried so the kill check knows which mutant this round was aiming at — read from
+    // THIS phase's plan, not from a sibling phase's node.
+    //
+    // Only when the plan really did aim at one. A batch round offers `{marker, line,
+    // method}` for every surviving line, and reading offered[0] out of that produced
+    // `{line: 78, mutator: undefined}`: the workflow printed "targeting undefined at line
+    // 78", and the kill check — which matches on mutator AND line — could never match
+    // anything, so no batch round could report a kill. A round aimed at many lines is
+    // aimed at no single mutant, and roundOutcome already handles being told that.
+    chosen: first && first.mutator ? { line: first.line, mutator: first.mutator } : null,
   };
 }
 
