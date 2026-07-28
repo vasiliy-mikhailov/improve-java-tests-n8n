@@ -239,6 +239,21 @@ function escapeMethodForPit(m) {
   return unescapeXml(String(m || ''));
 }
 
+/**
+ * May PIT be asked again after a green-suite refusal?
+ *
+ * Cutting the offending test removes the thing that blocked PIT, so the measurement is now
+ * possible — but the clean v2 run cut it and then reported UNMEASURED anyway, throwing the
+ * salvage away. Only a cut earns a retry: if the failing test belongs to the project, or
+ * nothing was salvageable, re-running fails identically.
+ *
+ * Bounded at two, because each retry can uncover another offender and an unbounded loop
+ * would spend the unit's whole budget finding them one at a time.
+ */
+function greenSuiteRetries(spent, cut) {
+  return cut && spent < 2 ? 1 : 0;
+}
+
 // ── running ────────────────────────────────────────────────────────────────
 
 /**
@@ -246,7 +261,7 @@ function escapeMethodForPit(m) {
  * `targetTests` scopes which tests PIT runs — the class's own tests plus ours — so an
  * unrelated broken test elsewhere in the module cannot sink the measurement.
  */
-async function runPit(fileRel, { onlyMethod = null } = {}) {
+async function runPit(fileRel, { onlyMethod = null, greenRetry = 0 } = {}) {
   const dir = repo.repoDir();
   if (!state.runner?.tool) throw new Error('build not detected — call /api/repo/prepare first');
   const f = state.files[fileRel] || {};
@@ -361,12 +376,18 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
         const kept = green.method
           ? salvage.salvageSource(repo.readFileSafe(rel, 400000), new Set([green.method]))
           : null;
-        let what;
-        if (kept) { repo.writeTestFile(rel, kept); what = `cut, keeping ${(kept.match(/@Test/g) || []).length} passing test(s) in`; }
+        let what, cut = false;
+        if (kept) { repo.writeTestFile(rel, kept); cut = true; what = `cut, keeping ${(kept.match(/@Test/g) || []).length} passing test(s) in`; }
         else what = repo.deleteTestFile(rel) ? 'deleted' : 'left (already gone)';
         event('pit', `${where} passes on its own and in the suite, but FAILS on unmutated code `
           + `inside PIT's minion — PIT requires a green suite and refuses to run. It is a test `
           + `this pipeline generated, so it has been ${what}: ${rel}`);
+        // the blocker is gone, so the measurement is possible now — asking again is the
+        // whole point of having cut it
+        if (greenSuiteRetries(greenRetry, cut)) {
+          event('pit', `re-measuring now that the blocking test is gone (attempt ${greenRetry + 2})`);
+          return runPit(fileRel, { onlyMethod, greenRetry: greenRetry + 1 });
+        }
       } else {
         event('pit', `${where} fails on unmutated code and PIT requires a green suite — that test `
           + 'belongs to the project, not to this pipeline, so it is left alone and the unit is UNMEASURED');
@@ -596,5 +617,5 @@ function scopeToMethod(parsed, method) {
   };
 }
 
-module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor, gradlePitArgv, escapeMethodForPit, pitTimeoutMs, pitGreenSuiteFailure,
+module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor, gradlePitArgv, escapeMethodForPit, pitTimeoutMs, pitGreenSuiteFailure, greenSuiteRetries,
   gradlePitestPluginVersion, gradleInitScript, killDifficulty, PIT_VERSION, MUTATORS };

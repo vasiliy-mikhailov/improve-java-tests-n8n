@@ -58,3 +58,29 @@ test('the round-2 class is recognised as ours too', () => {
   const out = REAL.replace(/MacMutTest/g, 'MacMutR2Test');
   assert.equal(pitGreenSuiteFailure(out).ours, true);
 });
+
+// ── a salvage that is never re-measured is a salvage wasted ───────────────
+// The clean v2 run: PIT refused because one generated test fails on unmutated code, the
+// recovery cut that method and kept the other, and then the round reported UNMEASURED
+// anyway — the cut was applied and immediately thrown away. Having removed the thing that
+// blocked PIT, the run has to ask PIT again.
+//
+// Bounded, because each retry can uncover another offender and an unbounded loop over a
+// class of bad tests would spend the unit's whole budget discovering them one at a time.
+const { greenSuiteRetries } = require('../../pit');
+
+test('a cut earns one more measurement', () => {
+  assert.equal(greenSuiteRetries(0, true), 1, 'first cut: try again');
+});
+
+test('but the retries run out', () => {
+  assert.equal(greenSuiteRetries(1, true), 1, 'second cut: still worth one more');
+  assert.equal(greenSuiteRetries(2, true), 0, 'third: stop, this class of test is the problem');
+});
+
+test('a failure we could not cut earns nothing', () => {
+  // the offending test belongs to the project, or nothing was salvageable — re-running PIT
+  // would fail identically
+  assert.equal(greenSuiteRetries(0, false), 0);
+  assert.equal(greenSuiteRetries(1, false), 0);
+});
