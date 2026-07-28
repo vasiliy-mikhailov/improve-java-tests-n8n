@@ -309,11 +309,13 @@ const TARGETS = groupTargets([
 
 const bgaps = { ...gaps, className: 'B', mutTestPath: 'src/test/java/a/BMacBatchTest.java' };
 
-test('the batch prompt names every target test method exactly', () => {
+test('the batch prompt carries every target marker, and defers naming to the repo', () => {
   const r = batchPrompt(bgaps, TARGETS);
   assert.ok(!r.skip);
-  for (const t of TARGETS) assert.match(r.prompt, new RegExp(t.name));
-  assert.match(r.system, /exact name/i, 'the names are the contract, not a suggestion');
+  for (const t of TARGETS) assert.match(r.prompt, new RegExp(t.marker));
+  assert.match(r.system, /named the way the project|project's own tests are named/i,
+    'kill_method_line170 is not how these repos name tests, and reads as machine output');
+  assert.match(r.system, /marker comment/i, 'the marker is the contract, not the name');
 });
 
 test('every mutation on a line is shown, so one test can cover them all', () => {

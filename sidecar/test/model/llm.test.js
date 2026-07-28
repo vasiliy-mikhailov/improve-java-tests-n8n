@@ -463,13 +463,23 @@ test('a batch of eight targets answers within its budget', async () => {
   assert.ok(safeJson(a.content), 'and parses as the reply shape');
 });
 
-test('the model uses the exact target names, which the whole filter depends on', async () => {
+test('the model carries the marker comments, which the whole filter depends on', async () => {
+  // The names are the repo's business now — kill_method_line170 is not how JSON-java or
+  // java-dataloader name tests and reads as machine output in a PR. What the pipeline
+  // needs is the marker: a test without one is invisible to the filter and paid for again
+  // every run.
   const plan = batchPrompt(BATCH_GAPS, BATCH_TARGETS);
   const r = asPipelineWould(await ask(plan), plan);
   assert.equal(r.count, 1, 'one file');
   const body = r.tests[0].content;
-  const used = BATCH_TARGETS.filter((t) => new RegExp(`\\b${t.name}\\s*\\(`).test(body));
-  assert.ok(used.length >= Math.ceil(BATCH_TARGETS.length / 2),
-    `only ${used.length}/${BATCH_TARGETS.length} targets kept their given name — `
-    + 'every renamed test is one the next run pays to write again');
+  const marked = BATCH_TARGETS.filter((t) => body.includes(t.marker));
+  assert.ok(marked.length >= Math.ceil(BATCH_TARGETS.length / 2),
+    `only ${marked.length}/${BATCH_TARGETS.length} targets carry their marker`);
+});
+
+test('and names the tests the way the project does, not the way the pipeline would', async () => {
+  const plan = batchPrompt(BATCH_GAPS, BATCH_TARGETS);
+  const r = asPipelineWould(await ask(plan), plan);
+  assert.doesNotMatch(r.tests[0].content, /void\s+kill_\w+_line\d+\s*\(/,
+    'the pipeline no longer dictates names — the repo style does');
 });

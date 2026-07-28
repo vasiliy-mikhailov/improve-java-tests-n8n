@@ -25,26 +25,38 @@ function javaSafeMethod(method) {
 }
 
 /**
- * The name of the test that kills this mutant.
+ * The machine-readable link between a test and the mutant it kills.
  *
- * Keyed on METHOD and LINE, deliberately not on the mutator kind: `>` becoming `>=`,
- * becoming `<`, and the branch being removed altogether are three mutants of one
- * condition, and the single test that exercises that boundary distinguishes all three.
- * Asking the model three times buys three chances to write the same test.
+ * The first version of this made the model NAME each test `kill_<method>_line<N>`, which
+ * is not how these repos name tests — java-dataloader has clearCacheOnError and
+ * disableCache, JSON-java has emptyStringCookieList and malFormedCookieListException — and
+ * it reads as machine output in a PR a human is asked to review. It is also wrong the
+ * moment the source shifts a line.
+ *
+ * So the two jobs are separated. The model names the test the way the repo does, and
+ * carries this marker in the one short comment the rules already allow it. The filter
+ * greps the marker; the reviewer reads the name.
+ *
+ * Keyed on METHOD and LINE, deliberately not on mutator kind: `>` becoming `>=`, becoming
+ * `<`, and the branch being removed are three mutants of one condition, and the single
+ * test that exercises that boundary distinguishes all three.
+ *
+ * A marker that no longer matches a freshly measured line means the code moved, and
+ * re-asking is then the correct answer rather than a miss.
  */
-function targetName(mutant) {
-  return `kill_${javaSafeMethod(mutant && mutant.method)}_line${(mutant && mutant.line) || 0}`;
+function targetMarker(mutant) {
+  return `covers ${javaSafeMethod(mutant && mutant.method)}:${(mutant && mutant.line) || 0}`;
 }
 
 /** One target per surviving line, carrying every mutation found on it. */
 function groupTargets(survivors) {
   const byName = new Map();
   for (const mu of survivors || []) {
-    const name = targetName(mu);
-    if (!byName.has(name)) {
-      byName.set(name, { name, method: mu.method, line: mu.line, mutants: [] });
+    const marker = targetMarker(mu);
+    if (!byName.has(marker)) {
+      byName.set(marker, { marker, method: mu.method, line: mu.line, mutants: [] });
     }
-    byName.get(name).mutants.push(mu);
+    byName.get(marker).mutants.push(mu);
   }
   return [...byName.values()];
 }
@@ -53,12 +65,12 @@ function groupTargets(survivors) {
  * Targets with no test of that name yet — the only ones worth a model call.
  *
  * 1000 mutants at ~100 tokens each and 30 tokens/sec is hours of generation; a string
- * check over the test sources costs nothing. The match is anchored on the method
- * declaration so `kill_x_line17` cannot satisfy `kill_x_line170`.
+ * check over the test sources costs nothing. The match is anchored so the marker for line
+ * 17 cannot satisfy line 170.
  */
 function pendingTargets(targets, testSources) {
   const haystack = (testSources || []).join('\n');
-  return (targets || []).filter((t) => !new RegExp(`\\b${t.name}\\s*\\(`).test(haystack));
+  return (targets || []).filter((t) => !new RegExp(`${t.marker}(?![0-9])`).test(haystack));
 }
 
 /**
@@ -74,4 +86,4 @@ function targetsFor(survivors, testSources) {
   return { all, pending, covered: all.length - pending.length };
 }
 
-module.exports = { targetsFor, targetName, groupTargets, pendingTargets, javaSafeMethod };
+module.exports = { targetsFor, targetMarker, groupTargets, pendingTargets, javaSafeMethod };
