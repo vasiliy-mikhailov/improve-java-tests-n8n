@@ -258,4 +258,59 @@ function repairPrompt(gaps, failure, tests, stage = 'improving_mutation') {
     stage, stageDetail: 'repairing failing generated tests' };
 }
 
-module.exports = { coveragePrompt, mutationPrompt, repairPrompt, COMMON_TEST_RULES, MUTATOR_PLAYBOOK };
+/**
+ * One call for every surviving LINE of a class, measured once afterwards.
+ *
+ * The per-round loop asks about one mutant, re-measures, and repeats: two PIT runs per
+ * round per method-unit, 609 across 22 classes on one JSON-java run, 43% of its
+ * wall-clock, most of it re-measuring code that did not change.
+ *
+ * Here the model is handed every target at once and told the EXACT method name to give
+ * each test. That name is derived from method and line by targets.js, so the next run can
+ * see which lines already have a test with a string check instead of a model call — 1000
+ * mutants at ~100 tokens and 30 tokens/sec is not a loop worth entering twice.
+ *
+ * @param {object} gaps     the usual gaps payload for the CLASS
+ * @param {Array} targets   from targets.groupTargets(), already filtered by pendingTargets
+ */
+function batchPrompt(gaps, targets) {
+  const targetPath = gaps.mutTestPath;
+  const base = { targetPath, projectTestPath: gaps.projectTestPath || null };
+  const list = targets || [];
+  if (!list.length) return { ...base, skip: true, reason: 'no targets left to write — nothing to ask' };
+
+  const testClass = targetPath.split('/').pop().replace(/\.java$/, '');
+  const block = list.map((t) => {
+    const kinds = t.mutants.map((m) => `${m.mutator}${m.status === 'NO_COVERAGE' ? ' [NO_COVERAGE]' : ''}`);
+    const uniq = [...new Set(kinds)].join(', ');
+    const never = t.mutants.every((m) => m.status === 'NO_COVERAGE');
+    return `- ${t.name}()  → ${t.method}() line ${t.line}`
+      + `\n    mutations on that line: ${uniq}`
+      + (never ? '\n    NOTE: this line NEVER RUNS in the current suite — the test must first REACH it.' : '')
+      + (t.mutants[0].description ? `\n    e.g. ${t.mutants[0].description}` : '');
+  }).join('\n');
+
+  const system = `You are an expert Java test engineer writing ${frameworkName(gaps.testFramework)} tests that kill surviving PIT mutants.`
+    + ` A mutant dies when a test FAILS on the mutated code and PASSES on the real code, so every test must assert something that DISTINGUISHES the two.`
+    + ` Reply ONLY with JSON: {"tests":[{"path":"...","content":"full test file content"}]}.`
+    + ` ONE file: ${targetPath} (package ${gaps.package}, public class ${testClass}).`
+    + ` Each test method MUST use the EXACT name given for its target — the pipeline matches on those names and a renamed test is asked for again next run.`
+    + ` Skip any target you cannot kill honestly rather than writing a test that cannot fail.`
+    + ` Rules:${COMMON_TEST_RULES}${MUTATOR_PLAYBOOK}`
+    + constraintBlock(gaps);
+
+  const prompt = `CLASS UNDER TEST: ${gaps.fqcn}  (file ${gaps.path}, module ${gaps.module})\n`
+    + sourceBlock(gaps, 14000) + signatureBlock(gaps) + reachBlock(gaps)
+    + `\n\nTARGETS — one test method each, named exactly as given:\n${block}`
+    + `\n\nEXISTING TEST (style reference — do NOT rewrite it):\n${String(gaps.existingTest || '(none)').slice(0, 3000)}`
+    + `\n\nWrite ONE test class containing one short test method per target above, each named exactly as listed. JSON only.`;
+
+  // ~450 tokens buys a short test method with its imports; the floor covers the class
+  // shell and the ceiling is the model's hard limit, not an aspiration
+  const maxTokens = Math.min(12000, Math.max(2000, 700 + list.length * 450));
+  return { ...base, system, prompt, json: true, maxTokens, temperature: 0.25,
+    stage: 'improving_mutation', stageDetail: `writing ${list.length} mutant-killing test(s)`,
+    offered: list.map((t) => ({ name: t.name, line: t.line, method: t.method })) };
+}
+
+module.exports = { batchPrompt, coveragePrompt, mutationPrompt, repairPrompt, COMMON_TEST_RULES, MUTATOR_PLAYBOOK };

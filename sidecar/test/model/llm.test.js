@@ -428,3 +428,48 @@ test('check_changes does not approve a red suite whatever the model says', { ski
   assert.equal(r.approved, false);
   assert.match(r.reason, /red/);
 });
+
+// ── the batch shape: many targets, one call, names that must match ─────────
+// The new flow asks once per class and measures once, instead of once per mutant per
+// round. Its whole economy rests on the model using the EXACT test method name given for
+// each target: those names are how the next run skips work without a model call. A renamed
+// test is invisible to the filter and gets asked for again for ever.
+const { batchPrompt } = require('../../prompts');
+const { groupTargets } = require('../../targets');
+
+const BATCH_TARGETS = groupTargets(REAL_MULTI_SURVIVORS());
+
+function REAL_MULTI_SURVIVORS() {
+  // real survivors of org.json.XML from a live `mvn pitest` run, eight distinct lines
+  const g = JSON.parse(fs.readFileSync(path.join(__dirname, 'prompts', 'xml-parse-multi.json'), 'utf8'));
+  const seen = new Set(), out = [];
+  for (const m of g.survived) {
+    const k = `${m.method}@${m.line}`;
+    if (seen.has(k)) { out.push(m); continue; }
+    if (seen.size >= 8) continue;
+    seen.add(k); out.push(m);
+  }
+  return out;
+}
+
+const BATCH_GAPS = JSON.parse(fs.readFileSync(path.join(__dirname, 'prompts', 'xml-parse-multi.json'), 'utf8'));
+
+test('a batch of eight targets answers within its budget', async () => {
+  const plan = batchPrompt(BATCH_GAPS, BATCH_TARGETS);
+  assert.ok(!plan.skip, plan.reason);
+  const a = await ask(plan);
+  assert.notEqual(a.finish, 'length',
+    `truncated at ${a.ceiling} tokens after ${a.secs}s — ${BATCH_TARGETS.length} tests do not fit`);
+  assert.ok(safeJson(a.content), 'and parses as the reply shape');
+});
+
+test('the model uses the exact target names, which the whole filter depends on', async () => {
+  const plan = batchPrompt(BATCH_GAPS, BATCH_TARGETS);
+  const r = asPipelineWould(await ask(plan), plan);
+  assert.equal(r.count, 1, 'one file');
+  const body = r.tests[0].content;
+  const used = BATCH_TARGETS.filter((t) => new RegExp(`\\b${t.name}\\s*\\(`).test(body));
+  assert.ok(used.length >= Math.ceil(BATCH_TARGETS.length / 2),
+    `only ${used.length}/${BATCH_TARGETS.length} targets kept their given name — `
+    + 'every renamed test is one the next run pays to write again');
+});

@@ -292,3 +292,58 @@ test('the coverage prompt carries the same rule', () => {
   const r = coveragePrompt({ ...gaps, coverage: 0, uncovered: { lines: 'all' } });
   assert.match(r.system, /every abstract method|all of its abstract methods/i);
 });
+
+// ── batch prompt: one call for many targets, one measurement after ─────────
+// The per-round loop pays two PIT runs per round per method-unit — 609 across 22 classes
+// on JSON-java, 43% of wall-clock. This asks once for every surviving line of a CLASS and
+// measures once. Each test carries the deterministic name from targets.js so the next run
+// can skip it without a model call.
+const { batchPrompt } = require('../../prompts');
+const { groupTargets } = require('../../targets');
+
+const TARGETS = groupTargets([
+  { mutator: 'ConditionalsBoundaryMutator', line: 170, method: 'mustEscape', index: 3, status: 'SURVIVED', description: 'changed boundary' },
+  { mutator: 'RemoveConditionalMutator_EQUAL_ELSE', line: 170, method: 'mustEscape', index: 7, status: 'SURVIVED' },
+  { mutator: 'NullReturnValsMutator', line: 205, method: 'unescape', index: 1, status: 'NO_COVERAGE' },
+]);
+
+const bgaps = { ...gaps, className: 'B', mutTestPath: 'src/test/java/a/BMacBatchTest.java' };
+
+test('the batch prompt names every target test method exactly', () => {
+  const r = batchPrompt(bgaps, TARGETS);
+  assert.ok(!r.skip);
+  for (const t of TARGETS) assert.match(r.prompt, new RegExp(t.name));
+  assert.match(r.system, /exact name/i, 'the names are the contract, not a suggestion');
+});
+
+test('every mutation on a line is shown, so one test can cover them all', () => {
+  const r = batchPrompt(bgaps, TARGETS);
+  assert.match(r.prompt, /ConditionalsBoundaryMutator/);
+  assert.match(r.prompt, /RemoveConditionalMutator_EQUAL_ELSE/);
+  assert.match(r.prompt, /NullReturnValsMutator/);
+});
+
+test('a NO_COVERAGE target is flagged as needing to be reached, not just asserted', () => {
+  const r = batchPrompt(bgaps, TARGETS);
+  assert.match(r.prompt, /NO_COVERAGE|never runs|not executed/i);
+});
+
+test('the token ceiling scales with the number of targets', () => {
+  const few = batchPrompt(bgaps, TARGETS.slice(0, 1));
+  const many = batchPrompt(bgaps, groupTargets(
+    Array.from({ length: 12 }, (_, i) => ({ mutator: 'MathMutator', line: 100 + i, method: 'm', index: i, status: 'SURVIVED' }))));
+  assert.ok(many.maxTokens > few.maxTokens, 'twelve tests do not fit in one test’s budget');
+  assert.ok(many.maxTokens <= 12000, 'and the ceiling is still bounded');
+});
+
+test('no targets means no call', () => {
+  const r = batchPrompt(bgaps, []);
+  assert.equal(r.skip, true);
+  assert.match(r.reason, /no targets|nothing/i);
+});
+
+test('the batch still forbids reflection and pins the file path', () => {
+  const r = batchPrompt(bgaps, TARGETS);
+  assert.match(r.system, /never use reflection/i);
+  assert.equal(r.targetPath, bgaps.mutTestPath);
+});
