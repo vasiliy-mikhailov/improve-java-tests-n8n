@@ -16,6 +16,7 @@ const path = require('node:path');
 const { run } = require('./exec');
 const { state, event } = require('./state');
 const repo = require('./repo');
+const salvage = require('./salvage');
 const { round2, slugify } = require('./util');
 const { DATA_DIR } = require('./state');
 
@@ -354,10 +355,18 @@ async function runPit(fileRel, { onlyMethod = null } = {}) {
       const where = `${green.testClass}${green.method ? '#' + green.method + '()' : ''}`;
       if (green.ours) {
         const rel = `src/test/java/${green.testClass.replace(/\./g, '/')}.java`;
-        const removed = repo.deleteTestFile(rel);
+        // Cut the offending method, not the file. A batch writes several tests into one
+        // file, and deleting it whole undoes work that is passing — including work the
+        // red-suite path had just salvaged moments earlier.
+        const kept = green.method
+          ? salvage.salvageSource(repo.readFileSafe(rel, 400000), new Set([green.method]))
+          : null;
+        let what;
+        if (kept) { repo.writeTestFile(rel, kept); what = `cut, keeping ${(kept.match(/@Test/g) || []).length} passing test(s) in`; }
+        else what = repo.deleteTestFile(rel) ? 'deleted' : 'left (already gone)';
         event('pit', `${where} passes on its own and in the suite, but FAILS on unmutated code `
           + `inside PIT's minion — PIT requires a green suite and refuses to run. It is a test `
-          + `this pipeline generated, so it has been ${removed ? 'deleted' : 'left (already gone)'}: ${rel}`);
+          + `this pipeline generated, so it has been ${what}: ${rel}`);
       } else {
         event('pit', `${where} fails on unmutated code and PIT requires a green suite — that test `
           + 'belongs to the project, not to this pipeline, so it is left alone and the unit is UNMEASURED');

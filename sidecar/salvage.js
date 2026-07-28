@@ -69,4 +69,24 @@ function dropTestMethods(source, names) {
   return src;
 }
 
-module.exports = { failedTestNames, dropTestMethods, bodyEnd };
+/**
+ * The single decision both droppers make: cut the named methods, and say whether anything
+ * worth keeping is left.
+ *
+ * Two callers reach for this — the red-suite path in /api/test/delete-many and the PIT
+ * green-suite recovery in pit.js — and when only the first knew how to salvage, a batch
+ * rescued from a red suite was wiped whole moments later by the second.
+ *
+ * Returns null when there is nothing to keep: no source, no named method found in it, or
+ * every test cut. A file whose only test failed is one to delete, not to keep empty.
+ */
+function salvageSource(src, names) {
+  const s = String(src || '');
+  if (!s || !names || !names.size) return null;
+  const mine = [...names].filter((n) => new RegExp(`\\b${n}\\s*\\(`).test(s));
+  if (!mine.length) return null;
+  const kept = dropTestMethods(s, new Set(mine));
+  return /@Test/.test(kept) ? kept : null;
+}
+
+module.exports = { salvageSource, failedTestNames, dropTestMethods, bodyEnd };

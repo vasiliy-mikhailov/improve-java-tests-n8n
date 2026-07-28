@@ -117,3 +117,35 @@ test('naming a method that is not there changes nothing', () => {
   assert.equal(dropTestMethods(FILE, new Set(['kill_m_line999'])), FILE);
   assert.equal(dropTestMethods(FILE, new Set()), FILE);
 });
+
+// ── one decision, used by both places that drop tests ─────────────────────
+// delete-many learned to cut only the failing methods. The PIT green-suite recovery did
+// not, and deleted the whole file — so a batch that survived a red suite by salvage was
+// then wiped whole when PIT refused to run against one of its members. Two callers, one
+// decision, or they drift.
+const { salvageSource } = require('../../salvage');
+
+test('cutting the named methods returns the file when something still runs', () => {
+  const out = salvageSource(FILE, new Set(['kill_m_line20']));
+  assert.ok(out);
+  assert.doesNotMatch(out, /kill_m_line20/);
+  assert.match(out, /kill_m_line10/);
+});
+
+test('cutting everything returns null — there is nothing worth keeping', () => {
+  // a file of one test whose only test failed is a file to delete, not to keep empty
+  const out = salvageSource(FILE, new Set(['kill_m_line10', 'kill_m_line20', 'kill_m_line30']));
+  assert.equal(out, null);
+});
+
+test('naming nothing that is in the file returns null, not a no-op keep', () => {
+  // the caller asked us to drop something we cannot find — deleting is the safe answer,
+  // since the file demonstrably broke the build and we cannot say which part
+  assert.equal(salvageSource(FILE, new Set(['kill_other_line1'])), null);
+  assert.equal(salvageSource(FILE, new Set()), null);
+});
+
+test('a file we cannot read is not salvageable', () => {
+  assert.equal(salvageSource(null, new Set(['kill_m_line10'])), null);
+  assert.equal(salvageSource('', new Set(['kill_m_line10'])), null);
+});

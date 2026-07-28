@@ -833,16 +833,13 @@ const routes = {
       body.summary || (state.files[state.currentUnit] || {}).lastSuiteFailure || '');
     const deleted = [], salvaged = [];
     for (const p of [...new Set(body.paths || [])]) {
-      const src = repo.readFileSafe(p, 400000);
-      const mine = src ? [...failing].filter((n) => new RegExp(`\\b${n}\\s*\\(`).test(src)) : [];
-      // keep the file only if cutting the named failures leaves something that still runs
-      if (src && mine.length) {
-        const kept = salvage.dropTestMethods(src, new Set(mine));
-        if (/@Test/.test(kept)) {
-          repo.writeTestFile(p, kept);
-          salvaged.push(`${p} (dropped ${mine.length}, kept ${(kept.match(/@Test/g) || []).length})`);
-          continue;
-        }
+      // the same decision pit.js makes when PIT refuses a red suite — one function, or
+      // the two callers drift and one undoes the other's salvage
+      const kept = salvage.salvageSource(repo.readFileSafe(p, 400000), failing);
+      if (kept) {
+        repo.writeTestFile(p, kept);
+        salvaged.push(`${p} (kept ${(kept.match(/@Test/g) || []).length} passing test(s))`);
+        continue;
       }
       if (repo.deleteTestFile(p)) deleted.push(p);
     }
