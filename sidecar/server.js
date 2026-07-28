@@ -22,6 +22,7 @@ const cleanupMod = require('./cleanup');
 const measure = require('./measure');
 const purge = require('./purge');
 const targets = require('./targets');
+const salvage = require('./salvage');
 const javasrc = require('./javasrc');
 const { run } = require('./exec');
 const { mac, fileSlug, round2, clamp, slugify, showMetric } = require('./util');
@@ -822,12 +823,37 @@ const routes = {
 
   'POST /api/test/delete-many': async (q, body) => {
     needRun();
-    const deleted = [];
+    // A batch round writes N tests into one file, and deleting the file for one bad
+    // assertion costs all N — which is exactly what happened to the first unit of the v2
+    // run: three targets, two asserting wrongly, three tests lost and the round recorded
+    // as cov 0→0. When the file COMPILED and the runner named the methods that failed, the
+    // bad ones can be cut out instead. Only possible because the names were decided up
+    // front by targets.js rather than left to the model.
+    const failing = salvage.failedTestNames(
+      body.summary || (state.files[state.currentUnit] || {}).lastSuiteFailure || '');
+    const deleted = [], salvaged = [];
     for (const p of [...new Set(body.paths || [])]) {
+      const src = repo.readFileSafe(p, 400000);
+      const mine = src ? [...failing].filter((n) => new RegExp(`\\b${n}\\s*\\(`).test(src)) : [];
+      // keep the file only if cutting the named failures leaves something that still runs
+      if (src && mine.length) {
+        const kept = salvage.dropTestMethods(src, new Set(mine));
+        if (/@Test/.test(kept)) {
+          repo.writeTestFile(p, kept);
+          salvaged.push(`${p} (dropped ${mine.length}, kept ${(kept.match(/@Test/g) || []).length})`);
+          continue;
+        }
+      }
       if (repo.deleteTestFile(p)) deleted.push(p);
     }
-    S.event(body.stage || 'improving_coverage', 'deleted generated tests that broke the suite: ' + deleted.join(', '));
-    return { ok: true, deleted };
+    if (salvaged.length) {
+      S.event(body.stage || 'improving_coverage',
+        'kept the passing tests and cut only the failing ones: ' + salvaged.join(', '));
+    }
+    if (deleted.length) {
+      S.event(body.stage || 'improving_coverage', 'deleted generated tests that broke the suite: ' + deleted.join(', '));
+    }
+    return { ok: true, deleted, salvaged };
   },
 
   'POST /api/test/run': async (q, body) => {
