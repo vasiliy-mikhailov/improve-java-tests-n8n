@@ -111,3 +111,36 @@ test('no sources means everything is pending', () => {
   assert.equal(pendingTargets(targets, []).length, 1);
   assert.equal(pendingTargets(targets, null).length, 1);
 });
+
+// ── what the route has to assemble ────────────────────────────────────────
+// The filter is only as good as the sources it reads. Reading the generated test file for
+// THIS unit but not the project's own tests would re-ask for lines the project already
+// covers; reading none at all makes the filter a no-op and the whole design pointless.
+const { targetsFor } = require('../../targets');
+
+test('targets come from the survivors, minus anything already named in the sources', () => {
+  const survivors = [
+    m('MathMutator', 170, 'mustEscape'),
+    m('MathMutator', 205, 'mustEscape'),
+    m('NullReturnValsMutator', 205, 'mustEscape', 2),
+  ];
+  const written = `void ${targetName(m('MathMutator', 170, 'mustEscape'))}() {}`;
+  const r = targetsFor(survivors, [written]);
+  assert.equal(r.all.length, 2, '170 and 205');
+  assert.equal(r.pending.length, 1);
+  assert.equal(r.pending[0].line, 205);
+  assert.equal(r.covered, 1, 'and it reports what the filter saved');
+});
+
+test('with nothing written yet, every target is pending', () => {
+  const r = targetsFor([m('MathMutator', 170, 'a')], []);
+  assert.equal(r.pending.length, 1);
+  assert.equal(r.covered, 0);
+});
+
+test('no survivors is not an error, it is a finished class', () => {
+  const r = targetsFor([], ['whatever']);
+  assert.deepEqual(r.all, []);
+  assert.deepEqual(r.pending, []);
+  assert.equal(r.covered, 0);
+});

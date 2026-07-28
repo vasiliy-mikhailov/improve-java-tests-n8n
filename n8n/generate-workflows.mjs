@@ -152,9 +152,16 @@ function phase(prefix, promptEndpoint, entryNode) {
 const covDone = phase('Cov', '/api/prompt/coverage', 'Coverage Gaps');
 
 // ── mutation phase ─────────────────────────────────────────────────────────
-// ONE mutant per round, chosen from PIT's data and this run's kill record — not from the
-// model's opinion about what it can kill, which was confidently wrong four rounds running.
-const mutDone = phase('Mut', '/api/prompt/mutation', covDone);
+// ONE call for every surviving LINE of the class, then ONE measurement — instead of one
+// mutant per round with a PIT run either side of it. That loop spent 609 PIT runs across
+// 22 classes on one JSON-java run, 43% of its wall-clock, mostly re-measuring code that
+// had not changed.
+//
+// Each test is named for the line it kills (sidecar/targets.js), which makes the round
+// self-limiting: the next round reads the file this one wrote, finds every target name
+// already present, and has nothing to ask for. A test that was deleted for breaking the
+// build is absent from that file, so it — and only it — gets one more attempt.
+const mutDone = phase('Mut', '/api/prompt/batch', covDone);
 
 // =============================================================================
 // VERIFY → CHECK RULES → PR / DISCARD → LOOP

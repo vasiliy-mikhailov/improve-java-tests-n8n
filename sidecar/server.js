@@ -21,6 +21,7 @@ const select = require('./select');
 const cleanupMod = require('./cleanup');
 const measure = require('./measure');
 const purge = require('./purge');
+const targets = require('./targets');
 const javasrc = require('./javasrc');
 const { run } = require('./exec');
 const { mac, fileSlug, round2, clamp, slugify, showMetric } = require('./util');
@@ -726,6 +727,28 @@ const routes = {
   'POST /api/prompt/mutation': async (q, body) => {
     needRun();
     return prompts.mutationPrompt(gapsFor(body.path || state.currentUnit));
+  },
+
+  // One call per class instead of one per mutant per round. Survivors collapse to one
+  // target per line, anything already named in the test sources is dropped without a
+  // model call, and what is left is asked for in a single batch — then measured once.
+  'POST /api/prompt/batch': async (q, body) => {
+    needRun();
+    const file = body.path || state.currentUnit;
+    const gaps = gapsFor(file);
+    const f = state.files[file] || {};
+    // the filter is only as good as the sources it reads: this unit's generated file AND
+    // the project's own test for the class, or we re-ask for lines already covered
+    const sources = [];
+    for (const rel of [gaps.mutTestPath, gaps.covTestPath, gaps.projectTestPath].filter(Boolean)) {
+      const c = repo.readFileSafe(rel, 200000);
+      if (c) sources.push(c);
+    }
+    const t = targets.targetsFor(f.lastSurvived || [], sources);
+    S.event('improving_mutation', `${unitLabel(file)}: ${t.all.length} surviving line(s), `
+      + `${t.covered} already have a named test, asking for ${t.pending.length}`);
+    const plan = prompts.batchPrompt(gaps, t.pending);
+    return { ...plan, targetsAll: t.all.length, targetsCovered: t.covered, targetsPending: t.pending.length };
   },
 
   'POST /api/prompt/repair': async (q, body) => {

@@ -61,4 +61,17 @@ function pendingTargets(targets, testSources) {
   return (targets || []).filter((t) => !new RegExp(`\\b${t.name}\\s*\\(`).test(haystack));
 }
 
-module.exports = { targetName, groupTargets, pendingTargets, javaSafeMethod };
+/**
+ * Everything a batch round needs to know, in one place.
+ *
+ * `covered` is reported rather than inferred: it is the number of targets the filter
+ * spared a model call, and if it is always zero the filter is a no-op and the design
+ * bought nothing.
+ */
+function targetsFor(survivors, testSources) {
+  const all = groupTargets(survivors);
+  const pending = pendingTargets(all, testSources);
+  return { all, pending, covered: all.length - pending.length };
+}
+
+module.exports = { targetsFor, targetName, groupTargets, pendingTargets, javaSafeMethod };
