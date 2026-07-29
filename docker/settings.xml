@@ -1,17 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- improve-java-tests-n8n: route Maven artifact resolution through the on-host Nexus
-     group repo (service `nexus` on the mvn-cache docker network) so builds and PIT runs
-     hit a warm cache instead of upstream repositories — faster and immune to rate limits.
-     `mirrorOf` deliberately excludes nothing but the mirror itself; when Nexus is not on
-     the network Maven falls back to the repositories declared by the project (see the
-     `no-nexus` profile note in README). -->
+<!-- improve-java-tests-n8n: route Maven artifact resolution through an artifact mirror
+     (the host's Nexus group repo by default) so builds and PIT runs hit a warm cache
+     instead of upstream repositories — faster and immune to rate limits.
+
+     THIS IS A TEMPLATE, not the live file. The entrypoint substitutes __MIRROR_URL__ from
+     MAVEN_MIRROR_URL and installs it at /root/.m2/settings.xml ONLY when that URL answers.
+
+     The conditional install is not an optimisation, it is required for correctness. An
+     earlier revision of this comment claimed Maven "falls back to the repositories
+     declared by the project" when the mirror is absent. That is wrong. `mirrorOf` is a
+     redirect: every matching request goes to this URL and nowhere else, so an unreachable
+     mirror fails the build outright. Only Gradle falls back, because init.gradle probes
+     reachability before installing anything. -->
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
   <mirrors>
     <mirror>
-      <id>nexus</id>
-      <name>nexus maven-public group</name>
+      <id>ijt-mirror</id>
+      <name>artifact mirror</name>
       <mirrorOf>*,!apache.snapshots</mirrorOf>
-      <url>http://nexus:8081/repository/maven-public/</url>
+      <url>__MIRROR_URL__</url>
       <blocked>false</blocked>
     </mirror>
   </mirrors>

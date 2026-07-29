@@ -12,6 +12,32 @@ if [[ -d /app/eval ]]; then
   cp -rf /app/eval/synth-repo "$DATA_DIR/eval/" 2>/dev/null || true
 fi
 
+# ── Maven artifact mirror: install ONLY if it answers ───────────────────────
+# docker/settings.xml mirrors `*` at the host's Nexus. That is a redirect, not a
+# preference: with it in place Maven sends every artifact request to Nexus and FAILS the
+# build when Nexus is absent — it does not fall back to Central. Shipping it live is fine
+# on the deployment host and fatal anywhere else, so the decision belongs at boot.
+#
+# Gradle needs no equivalent here: docker/init.gradle probes reachability itself.
+MIRROR_URL="${MAVEN_MIRROR_URL:-}"
+mkdir -p /root/.m2
+rm -f /root/.m2/settings.xml
+if [[ -n "$MIRROR_URL" ]] && curl -sf -m 3 -o /dev/null "$MIRROR_URL"; then
+  sed "s|__MIRROR_URL__|${MIRROR_URL}|g" /app/docker/settings.xml.template > /root/.m2/settings.xml
+  echo "artifact mirror reachable, resolving through it → $MIRROR_URL"
+elif [[ -n "$MIRROR_URL" ]]; then
+  echo "artifact mirror unreachable ($MIRROR_URL) — resolving from public repositories"
+fi
+
+# ── report the JDKs that actually exist on this architecture ────────────────
+# Dangling symlinks are expected (not every JDK is published for every arch) and are
+# dropped by selection; printing them once at boot turns a later "no JDK" surprise into
+# something visible on line one of the log.
+for v in 8 11 17 21; do
+  home="/opt/java/${v}"
+  [[ -x "${home}/bin/java" ]] && echo "JDK ${v}: ${home}" || echo "JDK ${v}: not installed for $(dpkg --print-architecture)"
+done
+
 gen_secret() { head -c 32 /dev/urandom | base64 | tr -d '/+=' | cut -c1-40; }
 
 # ── persistent secrets ──────────────────────────────────────────────────────

@@ -11,23 +11,74 @@ model was asked and what it answered.
 [RESEARCH.md](RESEARCH.md) — the Definition of Done and evaluation method.
 [eval/RESULTS.md](eval/RESULTS.md) — iteration history, including the wrong turns.
 
-## Quick start (a team adapting this to their repo)
+## Run it anywhere (laptop, CI box, your own server)
+
+Clone, point it at a repo, start it. Nothing outside Docker is required — no Nexus, no
+reverse proxy, no host JDK.
 
 ```bash
-cp .env.example .env      # set REPO_URL, REPO_BRANCH, GH_TOKEN, SCOPE_GLOB, rules
-docker compose up -d --build
+git clone https://github.com/vasiliy-mikhailov/improve-java-tests-n8n
+cd improve-java-tests-n8n
+cp .env.example .env
 ```
 
-- n8n editor: `https://improve-java-tests-n8n.mikhailov.tech` (Caddy basic-auth; no n8n login —
-  a 10-year auth token is injected by Caddy)
-- Dashboard: `https://improve-java-tests-n8n.mikhailov.tech/dashboard`
-- Start a run: open workflow **Improve Java Tests** in n8n and hit *Execute*, or POST the webhook:
+Edit `.env` — six keys matter, the rest have working defaults:
+
+| key | set it to |
+|---|---|
+| `REPO_URL` | the Java repo to improve (Maven or Gradle) |
+| `REPO_BRANCH` | its default branch |
+| `GH_TOKEN` | PAT with `repo` scope — clones, pushes branches, opens PRs |
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | any OpenAI-compatible `/v1` endpoint |
+| `MAVEN_MIRROR_URL` | **empty** — the Nexus default only exists on the deployment host |
+| `WEBHOOK_URL`, `N8N_EDITOR_BASE_URL` | `http://localhost:5678/` |
+
+Then:
 
 ```bash
-curl -X POST https://improve-java-tests-n8n.mikhailov.tech/webhook/improve-run -u admin:PASSWORD -H 'Content-Type: application/json' -d '{"scopeLimit":1}'
+docker compose -f docker-compose.local.yml up -d --build
 ```
 
-Any `.env` key can be overridden per run (camelCase in the JSON body).
+- n8n editor: <http://localhost:5678> — log in as `N8N_OWNER_EMAIL` (default
+  `admin@ijt.local`); the password is generated on first boot:
+
+```bash
+docker exec ijtn8n cat /data/.owner_password
+```
+
+- Dashboard: <http://localhost:3000/dashboard>
+- Start a run — open workflow **Improve Java Tests** and hit *Execute*, or POST the webhook:
+
+```bash
+curl -X POST http://localhost:5678/webhook/improve-run -H 'Content-Type: application/json' -d '{"scopeLimit":1}'
+```
+
+Any `.env` key can be overridden per run (camelCase in the JSON body), so `scopeLimit: 1`
+is a one-file smoke test before committing to a full-repo run.
+
+Notes that save an hour:
+
+- **Use `docker-compose.local.yml`, not `docker-compose.yml`.** The latter is the deployment
+  topology: it joins two `external: true` networks (Caddy, Nexus) and publishes no host
+  ports, so it fails to start anywhere else.
+- **Memory.** A PIT run forks a JVM per mutant on top of Maven/Gradle and n8n. Docker
+  Desktop's default allowance is where laptop runs die first — exit code 137 means
+  OOM-killed, not a broken repo.
+- **First run is slow.** No warm artifact cache off the deployment host, so the initial
+  dependency resolution and baseline measurement pay full price.
+- **JDK 8 on arm64.** The image carries Temurin 8/11/17/21, but Adoptium does not publish
+  every JDK for every architecture; the boot log prints which ones exist. A repo that
+  genuinely requires the missing one will not build on that machine.
+
+## Operating the deployment on `mh`
+
+`docker-compose.yml` is that deployment: Caddy fronts n8n and the dashboard at
+`improve-java-tests-n8n.mikhailov.tech`, and Maven/Gradle resolve through the host Nexus.
+
+```bash
+./deploy.sh            # build + up + rotate the 10-year token into Caddy
+./deploy.sh --fresh    # same, but wipe /data first
+```
 
 ## How it works
 
@@ -112,13 +163,6 @@ no code change at all.
 
 `PR_MODE=github` opens real PRs via `gh`; `PR_MODE=local` (for repos you don't own) records the
 branch, patch and PR payload under `/data/prs/`.
-
-## Operating (this deployment)
-
-```bash
-./deploy.sh            # build + up + rotate the 10-year token into Caddy
-./deploy.sh --fresh    # same, but wipe /data first
-```
 
 ## Evaluation
 

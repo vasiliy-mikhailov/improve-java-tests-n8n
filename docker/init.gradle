@@ -1,8 +1,12 @@
 // improve-java-tests-n8n: same intent as docker/settings.xml — resolve Gradle
-// dependencies through the on-host Nexus group repo when it is reachable, falling
-// back to the project's own repositories otherwise.
-def nexus = 'http://nexus:8081/repository/maven-public/'
-def reachable = {
+// dependencies through an artifact mirror when it is reachable, falling back to the
+// project's own repositories otherwise.
+//
+// The URL comes from MAVEN_MIRROR_URL so that a deployment pointing somewhere other than
+// the default Nexus does not have to rebuild the image. Empty/unset disables the mirror
+// entirely, which is the correct behaviour anywhere the mirror does not exist.
+def nexus = System.getenv('MAVEN_MIRROR_URL') ?: ''
+def reachable = nexus && {
   try { new URL(nexus).openConnection().with { connectTimeout = 1500; readTimeout = 1500; connect(); true } }
   catch (Exception ignored) { false }
 }()

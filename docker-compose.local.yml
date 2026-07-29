@@ -1,0 +1,38 @@
+# Run improve-java-tests-n8n anywhere: a laptop, a CI box, any host that is not the
+# deployment server.
+#
+# Why this is a SEPARATE file and not an override of docker-compose.yml: the deployed
+# compose joins two `external: true` networks (proxy-net for Caddy, mvn-cache for Nexus)
+# and publishes no host ports, because Caddy fronts everything. Neither network exists
+# elsewhere, so `docker compose up` fails before it starts a container — and a service's
+# `networks:` list cannot be reliably emptied by an override. A standalone file has no
+# merge semantics to get wrong and cannot accidentally inherit the deployment's topology.
+#
+# Usage:
+#   cp .env.example .env      # then edit the keys listed in README "Run it anywhere"
+#   docker compose -f docker-compose.local.yml up -d --build
+#
+# Everything else — the volume name, the container name, the image tag — matches the
+# deployment, so `docker exec ijtn8n ...` in the README and eval docs works unchanged.
+
+services:
+  improve-java-tests-n8n:
+    build: .
+    image: improve-java-tests-n8n:latest
+    container_name: ijtn8n
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # host:container. The container-side ports follow N8N_PORT/SIDECAR_PORT because the
+      # processes bind to those; the host side is separate so you can move a port that is
+      # already taken on your machine without changing what the app listens on.
+      - "${HOST_N8N_PORT:-5678}:${N8N_PORT:-5678}"
+      - "${HOST_DASHBOARD_PORT:-3000}:${SIDECAR_PORT:-3000}"
+    volumes:
+      - ijt_data:/data
+    # A PIT run forks a JVM per mutant on top of Maven/Gradle and n8n. Docker Desktop's
+    # default memory allowance is where laptop runs usually die first — if builds fail
+    # with exit 137 (OOM-killed), raise Docker's memory limit before suspecting the repo.
+
+volumes:
+  ijt_data:

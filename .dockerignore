@@ -4,3 +4,14 @@ reference/
 .zcode/
 *.md
 .git
+
+# Build-context weight. None of these are used by the image — the sidecar has zero runtime
+# dependencies and n8n is installed inside the Dockerfile — but together they were sending
+# ~193 MB to the daemon on every build from a working tree (node_modules 59 MB, reports
+# 134 MB, dominated by a single Stryker mutation.json). A fresh clone has none of them
+# since they are gitignored, which is exactly why the omission went unnoticed.
+node_modules/
+reports/
+.stryker-tmp/
+*.log
+.DS_Store
