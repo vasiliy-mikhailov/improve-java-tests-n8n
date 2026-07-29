@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Aggregator for the two halves of a run.
+
+     `backend` is the domain layer (30 classes, 902 tests) and it is finished; `orchestrator`
+     is the Spring replacement for the n8n workflow, and it exists to CALL the backend. The
+     only reason this parent exists is that second sentence: the 44 HTTP hops between
+     orchestrator and domain become in-process calls, and an in-process call needs the domain
+     on the compile classpath. See docs/SPRING-MIGRATION.md.
+
+     What this parent deliberately does NOT do:
+
+     - It is not spring-boot-starter-parent. That parent is not just a version list: it turns
+       on resource filtering with @…@ delimiters, retunes surefire and the compiler, and
+       imports ~300 managed versions. Applied here it would land on `backend` too, and
+       `backend`'s stated principle is a near-empty dependency list (see its pom). The Boot
+       BOM is imported by orchestrator/pom.xml alone, where it belongs.
+
+     - It manages no dependency versions at all, for the same reason. `backend` resolves
+       exactly what it resolved when it built standalone.
+
+     Plugin VERSIONS are managed here, because an unpinned plugin version is decided by
+     whichever Maven happens to be on PATH — the image ships 3.9.9, a developer's laptop
+     ships something else, and "works in the image only" is not a build. The values below
+     are the ones Maven 3.9.9 already chooses, so pinning them changes nothing today and
+     stops it changing under us tomorrow. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>tech.mikhailov.ijt</groupId>
+  <artifactId>ijt-parent</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <name>improve-java-tests</name>
+
+  <!-- Maven orders these by the dependency graph regardless; listing backend first states
+       the direction of the arrow, which is one-way. The backend must never depend on the
+       orchestrator: it is the rollback path (BACKEND=java starts tech.mikhailov.ijt.Server
+       on its own) and that stops being true the moment Spring is on its classpath. -->
+  <modules>
+    <module>backend</module>
+    <module>orchestrator</module>
+  </modules>
+
+  <properties>
+    <!-- 25 everywhere, and only for OUR code. The image also carries JDK 8/11/17/21 to build
+         the projects being improved — PIT's forked minion dies under the wrong one — and
+         those are selected per target project at runtime. Two different jobs; the release
+         level here has nothing to say about them. -->
+    <maven.compiler.release>25</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <!-- 3.5.6 is the floor, not a preference: it is the first 3.5.x carrying Spring
+         Framework 6.2.11, and 6.2.11 is where the bundled ASM/CGLIB learned class file
+         version 69. On anything earlier the context fails to start under JDK 25 while
+         compiling perfectly, which reads as a runtime bug and is not one. If this is
+         raised, stay on 3.5.x — Boot 4 is a different baseline. -->
+    <spring-boot.version>3.5.6</spring-boot.version>
+  </properties>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.13.0</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>3.5.2</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-shade-plugin</artifactId>
+          <version>3.6.0</version>
+        </plugin>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <version>${spring-boot.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

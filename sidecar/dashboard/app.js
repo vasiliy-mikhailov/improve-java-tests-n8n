@@ -1,5 +1,19 @@
 'use strict';
-// Live dashboard: polls api/metrics (relative path — works at / and behind /dashboard/).
+// Live dashboard: subscribes to the run instead of polling it.
+//
+// ONLY THE TRANSPORT CHANGED. Every selector, format helper and line of markup below is what
+// it was when this page polled `api/metrics` every 2 s and `api/llm/log` every 5 s. What used
+// to be two timers is now a STOMP subscription over a WebSocket: `/topic/events` carries the
+// event log line by line, `/topic/stage` carries the stage banner including its progress line,
+// and the derived numbers are re-read only when something has actually happened. An idle
+// dashboard now makes no requests at all.
+//
+// The STOMP client is written out here rather than pulled in. This directory is the unported
+// dashboard and app.js is the only file in it that may change, so there is no <script> tag to
+// add and no vendored asset to serve — and a CDN is not an option for something that has to run
+// on a laptop with no network. The frames are text (CONNECT, SUBSCRIBE, MESSAGE) and the
+// orchestrator registers a plain WebSocket endpoint next to the SockJS one for exactly this
+// reason; see orchestrator/…/ws/WebSocketConfig.java.
 
 const STAGE_LABELS = {
   idle: 'Idle', starting: 'Starting run', cloning: 'Cloning repository',
@@ -23,27 +37,258 @@ const fmtDur = (sec) => {
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 };
 
-// The model exchanges belong IN the activity stream: read on their own they are just a
-// pile of prompts with no context, but interleaved with the events they sit between —
-// which mutant was chosen, which test was written, what PIT then said — they explain the
-// run. Cached here and merged into the feed at render time.
-let dialogCache = [];
-async function tickDialog() {
-  try {
-    const r = await fetch('api/llm/log', { cache: 'no-store' });
-    const d = await r.json();
-    dialogCache = d.entries || [];
-  } catch { /* keep the previous copy */ }
+// ── the feed ───────────────────────────────────────────────────────────────
+// Event lines now reach this page from three places — the snapshot read on connect, the
+// stream while it is up, and whatever `api/metrics` still carries on a refresh — so they are
+// MERGED BY `seq` rather than replacing one another. seq is the right key for it: it only ever
+// rises, and it deliberately does not reset when a run starts, which is what lets a client that
+// reconnects say where it got to. Duplicates collapse, order is by seq, and a line that arrives
+// twice by two routes is drawn once.
+const FEED_MAX = 400;              // the window the backend itself keeps
+const eventsBySeq = new Map();
+// The snapshot's seq. A streamed event at or below it is already in hand: this is what closes
+// the gap between "subscribed" and "read the snapshot" without showing anything twice.
+let streamFloor = 0;
+
+function mergeEvents(list) {
+  for (const e of list || []) if (e && e.seq != null) eventsBySeq.set(e.seq, e);
+  if (eventsBySeq.size > FEED_MAX) {
+    const oldest = [...eventsBySeq.keys()].sort((a, b) => a - b).slice(0, eventsBySeq.size - FEED_MAX);
+    for (const k of oldest) eventsBySeq.delete(k);
+  }
 }
 
-async function tick() {
+// ── reading what the stream does not carry ─────────────────────────────────
+// The cards, the files table and the work accounting are DERIVED — averages, the FTE ratio,
+// the ETA — and that derivation lives in the backend, not here. The stream says WHEN to ask
+// for them; it does not replace them.
+
+let dialogCache = [];
+
+async function getJson(path) {
+  const r = await fetch(path, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
+  return r.json();
+}
+
+let refreshedAt = 0;
+async function refresh() {
+  refreshedAt = Date.now();
   let m;
-  try {
-    const r = await fetch('api/metrics', { cache: 'no-store' });
-    m = await r.json();
-  } catch { setBanner({ name: 'offline', detail: 'sidecar unreachable' }); return; }
+  try { m = await getJson('api/metrics'); }
+  catch { setBanner({ name: 'offline', detail: 'sidecar unreachable' }); return; }
+  // The model exchanges belong IN the activity stream: read on their own they are just a pile
+  // of prompts with no context, but interleaved with the events they sit between — which
+  // mutant was chosen, which test was written, what PIT then said — they explain the run.
+  try { dialogCache = (await getJson('api/llm/log')).entries || []; } catch { /* keep the previous copy */ }
+  mergeEvents(m.events);
   render(m);
 }
+
+// At most one derived refresh a second, however chatty the run gets. Without this a build
+// printing a progress line every 50 ms would put the 2-second poll back, faster.
+const REFRESH_MIN_MS = 1000;
+let refreshQueued = null;
+function scheduleRefresh() {
+  if (refreshQueued) return;
+  refreshQueued = setTimeout(() => {
+    refreshQueued = null;
+    refresh();
+  }, Math.max(0, REFRESH_MIN_MS - (Date.now() - refreshedAt)));
+}
+
+// The snapshot: everything the stream cannot tell a page that has just been opened.
+async function loadSnapshot() {
+  const s = await getJson('api/state');
+  streamFloor = Number(s.seq) || 0;
+  mergeEvents(s.events);
+  if (s.stage) { setBanner(s.stage); stageMoved(s.stage); }
+}
+
+// ── STOMP over a native WebSocket ──────────────────────────────────────────
+const NUL = '\u0000';
+const SUB_EVENTS = 'ev';
+const SUB_STAGE = 'st';
+const DEST_EVENTS = '/topic/events';
+const DEST_STAGE = '/topic/stage';
+// Matches the server's. A unit's PIT measurement can run for forty minutes without producing a
+// single frame, and an idle connection through a reverse proxy is reaped long before that —
+// silently, leaving a page that looks healthy and is not.
+const HEARTBEAT_MS = 10000;
+const SILENCE_LIMIT_MS = 4 * HEARTBEAT_MS;
+
+function endpoint() {
+  // Resolved against the page, exactly like `fetch('api/metrics')`, so it works at / and behind
+  // Caddy's /dashboard prefix without knowing which one it is in.
+  const u = new URL('ws', document.baseURI);
+  u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+  return u.href;
+}
+
+function encodeFrame(command, headers, body) {
+  let out = command + '\n';
+  for (const [k, v] of Object.entries(headers || {})) out += `${k}:${v}\n`;
+  return `${out}\n${body || ''}${NUL}`;
+}
+
+function parseFrame(raw) {
+  // EOLs between frames are the server's heart-beat, not a frame.
+  const text = raw.replace(/^[\r\n]+/, '');
+  if (!text) return null;
+  const sep = /\r?\n\r?\n/.exec(text);
+  const head = sep ? text.slice(0, sep.index) : text;
+  const body = sep ? text.slice(sep.index + sep[0].length) : '';
+  const lines = head.split(/\r?\n/);
+  const command = lines.shift();
+  const headers = {};
+  // No header unescaping: the only headers read here are `subscription` and `destination`, and
+  // neither can contain a character STOMP escapes.
+  for (const line of lines) {
+    const i = line.indexOf(':');
+    if (i > 0) headers[line.slice(0, i)] = line.slice(i + 1);
+  }
+  return { command, headers, body };
+}
+
+let socket = null;
+let attempts = 0;
+let fallbackTimer = null;
+// Frames that arrive before the snapshot has been read. They cannot be applied yet — until
+// `streamFloor` is known there is no way to tell which of them the snapshot already contains.
+let held = [];
+let holding = true;
+
+let lastStageKey = '';
+function stageMoved(stage) {
+  const key = `${stage.name || ''}\u0000${stage.detail || ''}`;
+  if (key === lastStageKey) return false;
+  lastStageKey = key;
+  return true;
+}
+
+function connect() {
+  let ws;
+  try { ws = new WebSocket(endpoint()); } catch { retry(); return; }
+  socket = ws;
+  holding = true;
+  held = [];
+
+  let buf = '';
+  let lastRx = Date.now();
+  let beat = null;
+  let watchdog = null;
+  const stopTimers = () => { clearInterval(beat); clearInterval(watchdog); };
+
+  ws.onopen = () => {
+    ws.send(encodeFrame('CONNECT', {
+      'accept-version': '1.2',
+      host: location.hostname,
+      'heart-beat': `${HEARTBEAT_MS},${HEARTBEAT_MS}`,
+    }));
+  };
+
+  ws.onmessage = (ev) => {
+    lastRx = Date.now();
+    if (typeof ev.data !== 'string') return;
+    buf += ev.data;
+    // One WebSocket message is normally one frame, but nothing guarantees it — frames are
+    // delimited by NUL, so the buffer is drained by that and never by message boundaries.
+    let at;
+    while ((at = buf.indexOf(NUL)) >= 0) {
+      const frame = parseFrame(buf.slice(0, at));
+      buf = buf.slice(at + 1);
+      if (frame) onFrame(frame, ws);
+    }
+    // A heart-beat carries no NUL. Dropping leading EOLs keeps it from accumulating for the
+    // lifetime of the connection.
+    buf = buf.replace(/^[\r\n]+/, '');
+  };
+
+  ws.onerror = () => { try { ws.close(); } catch { /* already gone */ } };
+  ws.onclose = () => {
+    stopTimers();
+    if (socket === ws) { socket = null; retry(); }
+  };
+
+  beat = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) ws.send('\n');
+  }, HEARTBEAT_MS);
+  watchdog = setInterval(() => {
+    // Nothing at all for four beats: the socket believes it is open and the other end is gone.
+    // Closing it is what turns a frozen page into a reconnect.
+    if (Date.now() - lastRx > SILENCE_LIMIT_MS) { try { ws.close(); } catch { /* already gone */ } }
+  }, HEARTBEAT_MS);
+}
+
+async function onFrame(frame, ws) {
+  if (frame.command === 'CONNECTED') {
+    attempts = 0;
+    stopFallbackPoll();
+    ws.send(encodeFrame('SUBSCRIBE', { id: SUB_STAGE, destination: DEST_STAGE }));
+    ws.send(encodeFrame('SUBSCRIBE', { id: SUB_EVENTS, destination: DEST_EVENTS }));
+    // SUBSCRIBE first, snapshot second — which is "subscribe from the snapshot's seq" with the
+    // gap closed rather than with it left open. Reading the snapshot first would lose whatever
+    // was published while that request was in flight, and nothing would ever ask for it again.
+    // Anything that arrives early is held here and applied against the snapshot's seq, so it is
+    // neither lost nor shown twice.
+    try { await loadSnapshot(); } catch { /* the refresh below still paints the page */ }
+    holding = false;
+    for (const item of held) applyStream(item);
+    held = [];
+    await refresh();
+    return;
+  }
+  if (frame.command === 'MESSAGE') {
+    let payload;
+    try { payload = JSON.parse(frame.body); } catch { return; }
+    const item = { sub: frame.headers.subscription, dest: frame.headers.destination, payload };
+    if (holding) held.push(item); else applyStream(item);
+    return;
+  }
+  // An ERROR frame ends the session at the server; close so the reconnect path runs.
+  if (frame.command === 'ERROR') { try { ws.close(); } catch { /* already gone */ } }
+}
+
+function applyStream(item) {
+  if (item.sub === SUB_STAGE || item.dest === DEST_STAGE) {
+    const stage = item.payload || { name: 'idle' };
+    setBanner(stage);
+    // A progress line moves the banner and nothing else — re-deriving the cards for every line
+    // a Maven build prints would be the old poll wearing a new hat. A real stage change is
+    // worth a refresh: it is where files, PRs and totals move.
+    if (stageMoved(stage)) scheduleRefresh();
+    return;
+  }
+  const e = item.payload;
+  if (!e || e.seq == null || e.seq <= streamFloor) return;   // the snapshot already had it
+  mergeEvents([e]);
+  renderFeed();                 // the line appears at once; the numbers follow
+  scheduleRefresh();
+}
+
+function retry() {
+  attempts += 1;
+  // Three failures is not a blip, it is a proxy that will not upgrade or a server without the
+  // endpoint. Fall back to the poll this page used to do, so the dashboard keeps working while
+  // someone reads the console; the poll stops the moment a session connects.
+  if (attempts >= 3) startFallbackPoll();
+  setTimeout(connect, Math.min(15000, 1000 * 2 ** Math.min(attempts, 4)));
+}
+
+function startFallbackPoll() {
+  if (fallbackTimer) return;
+  console.warn('dashboard: no websocket session — falling back to polling every 2s');
+  fallbackTimer = setInterval(refresh, 2000);
+  refresh();
+}
+
+function stopFallbackPoll() {
+  if (!fallbackTimer) return;
+  clearInterval(fallbackTimer);
+  fallbackTimer = null;
+}
+
+// ── rendering ──────────────────────────────────────────────────────────────
 
 function setBanner(stage) {
   const el = $('stage-banner');
@@ -146,8 +391,16 @@ function render(m) {
     <details><summary><b>${esc(k)}</b> ${v.rule ? '· rule: “' + esc(v.rule).slice(0, 90) + '”' : '· (no rule set)'}</summary>
     <pre>${esc(JSON.stringify(v.result, null, 2)).slice(0, 2000)}</pre></details>`).join('') || '<span class="muted">none yet</span>';
 
-  // one chronological stream: plain events plus the model exchanges, newest first
-  const evs = (m.events || []).map((e) => ({ kind: 'ev', ts: e.ts, seq: e.seq, stage: e.stage, msg: e.msg }));
+  renderFeed();
+}
+
+// One chronological stream: plain events plus the model exchanges, newest first.
+//
+// Its own function now, because it is drawn on two different beats — the moment an event frame
+// lands, and again with everything else when the derived numbers are re-read. The markup is
+// unchanged; only the source of the events is (the merged store rather than the poll's copy).
+function renderFeed() {
+  const evs = [...eventsBySeq.values()].map((e) => ({ kind: 'ev', ts: e.ts, seq: e.seq, stage: e.stage, msg: e.msg }));
   const dias = dialogCache.map((d, i) => ({ kind: 'llm', ts: d.ts, seq: 1e9 + i, d }));
   const feed = evs.concat(dias).sort((a, b) => (b.ts - a.ts) || (b.seq - a.seq)).slice(0, 120);
   $('llm-count').textContent = dialogCache.length ? `· ${dialogCache.length} model exchanges inline` : '';
@@ -174,7 +427,7 @@ function render(m) {
   }).join('');
 }
 
-tick();
-setInterval(tick, 2000);
-tickDialog();
-setInterval(tickDialog, 5000);
+// A first paint over HTTP so the page is never blank while the handshake runs, and then the
+// stream. connect() reads the snapshot itself, after its SUBSCRIBE frames are on the wire.
+refresh();
+connect();

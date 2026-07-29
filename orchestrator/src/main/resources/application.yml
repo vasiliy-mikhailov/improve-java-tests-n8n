@@ -1,0 +1,184 @@
+# The orchestrator's configuration — what n8n's environment used to be.
+#
+# EVERY value here comes from an environment variable with an explicit default, and the
+# defaults are not chosen: they are copied from the code that already reads them
+# (State.envConfig, Llm.envConfig, Pit, Coverage, Server.port, Server.dashboardDir).
+# EnvironmentContractTest fails the build if the two ever disagree, because the backend still
+# reads System.getenv directly — see IjtProperties for why that is deliberate, and why a
+# second set of defaults here would be a lie the dashboard prints in bold.
+#
+# The env var names are the ones .env.example documents. They are NOT the relaxed-binding
+# names of the `ijt.*` keys below (`ijt.repo.url` would bind IJT_REPO_URL), so each one is
+# named in a placeholder. That is the only way the deployed .env keeps working unchanged.
+
+server:
+  # `parseInt(process.env.SIDECAR_PORT || '3000', 10)`, as Server.port() has it. The
+  # container publishes this port and every diagnostic in the repo talks to it; n8n's own
+  # 5678 is not replaced by anything, it is removed.
+  port: "${SIDECAR_PORT:3000}"
+
+spring:
+  application:
+    name: ijt-orchestrator
+
+  datasource:
+    # FILE-BACKED, under DATA_DIR, per docs/SPRING-MIGRATION.md ("Persistence"). The brief
+    # for this module said `jdbc:h2:mem:ijt`; the design doc reverses that decision and gives
+    # three reasons, all of them correctness rather than speed:
+    #
+    #   - improvedLedger (143 entries) is what stopped run 2 redoing run 1's work,
+    #   - measureLedger is why a full run starts in seconds instead of re-measuring 319 units
+    #     for 40 minutes,
+    #   - a hung run was recoverable ONLY because the state survived a container restart.
+    #
+    # In-memory loses all three on `docker compose up -d --force-recreate`. The volume
+    # (ijt_data:/data) is already there, so the file lives beside the state.json it replaces
+    # and `deploy.sh --fresh` wipes it — the same semantics as today.
+    #
+    # It stays ONE URL, not a refactor: everything goes through the store's repositories, so
+    # mem vs file is this line. Tests point IJT_DB_URL at jdbc:h2:mem: for exactly that reason.
+    url: "${IJT_DB_URL:jdbc:h2:file:${DATA_DIR:/data}/ijt}"
+    username: "${IJT_DB_USER:sa}"
+    password: "${IJT_DB_PASSWORD:}"
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    # `update`, and neither `create-drop` nor `validate`. create-drop would delete the
+    # ledgers on every restart, which is the whole defect the file-backed DB above exists to
+    # prevent; validate would refuse to boot the first time, when the file does not exist yet.
+    hibernate:
+      ddl-auto: update
+    # No session held open across the view. The dashboard's snapshot is assembled in a
+    # service and serialised from detached objects; open-in-view hides that and holds a
+    # connection for the length of an HTTP response, which on this application means for the
+    # length of a Maven build.
+    open-in-view: false
+
+  batch:
+    job:
+      # A RUN IS TRIGGERED, NEVER STARTED BY BOOT. With this true (Boot's default)
+      # JobLauncherApplicationRunner runs every Job bean it finds as the context comes up:
+      # restarting the container would clone the repo and start improving it, with nobody
+      # having asked and no way to say which repo. The trigger is POST /webhook/improve-run
+      # and nothing else.
+      enabled: false
+    jdbc:
+      # `always`, not the `embedded` default. The default only initialises what Boot
+      # recognises as an embedded database, and a FILE-backed H2 is not that — the tables
+      # would be missing and the first launch would fail on BATCH_JOB_INSTANCE. Boot runs the
+      # batch schema with continueOnError, so running it again against a database that
+      # already has the tables is a no-op rather than a failure.
+      initialize-schema: always
+
+  web:
+    resources:
+      # The dashboard is NOT ported and does not live in the jar: it is plain HTML/CSS/JS
+      # under DASHBOARD_DIR, which the image fills from sidecar/dashboard. Serving it from
+      # here is what makes `http://host:3000/` the dashboard, as it is today.
+      #
+      # classpath:/static/ stays second so anything this module ever ships of its own is
+      # still served; file: first means the deployed dashboard wins.
+      static-locations: "file:${ijt.dashboard.dir}/,classpath:/static/"
+      cache:
+        # The dashboard is edited in place on the host and reloaded in a browser. A cache
+        # header here means a fix appears to have done nothing.
+        period: 0
+
+ijt:
+  # ── GitHub ────────────────────────────────────────────────────────────────────
+  # Read here so the container's configuration is visible and validated at boot; the token
+  # itself is used by `gh` and by git's credential helper, which read the process environment.
+  github:
+    token: "${GH_TOKEN:}"
+    user-name: "${GIT_USER_NAME:improve-tests-bot}"
+    user-email: "${GIT_USER_EMAIL:bot@improve-tests.local}"
+
+  # ── Target repo (teams: change these two and run) ─────────────────────────────
+  repo:
+    url: "${REPO_URL:}"
+    branch: "${REPO_BRANCH:main}"
+
+  # ── Scope & loop policy ───────────────────────────────────────────────────────
+  # Every default below is State.envConfig's default, including the ones that differ from
+  # .env.example: MUTANTS_PER_ROUND is 8 in code and 1 in .env.example, because the shipped
+  # .env deliberately overrides it (one test per survivor, verified before the next).
+  loop:
+    scope-glob: "${SCOPE_GLOB:**/src/main/java/**/*.java}"
+    scope-limit: "${SCOPE_LIMIT:0}"
+    max-iterations: "${MAX_ITERATIONS:0}"
+    max-rounds-per-file: "${MAX_ROUNDS_PER_FILE:0}"
+    mutants-per-round: "${MUTANTS_PER_ROUND:8}"
+    mutant-choices: "${MUTANT_CHOICES:20}"
+    unit-budget-sec: "${UNIT_BUDGET_SEC:3600}"
+    max-consecutive-misses: "${MAX_CONSECUTIVE_MISSES:3}"
+    max-attempts-per-file: "${MAX_ATTEMPTS_PER_FILE:3}"
+    min-round-gap-frac: "${MIN_ROUND_GAP_FRAC:0}"
+    min-round-gain: "${MIN_ROUND_GAIN:0}"
+    min-mutants-per-class: "${MIN_MUTANTS_PER_CLASS:1}"
+    min-unit-lines: "${MIN_UNIT_LINES:1}"
+    max-failures: "${MAX_FAILURES:10}"
+    cov-phase-max-pct: "${COV_PHASE_MAX_PCT:0}"
+    pit-scope: "${PIT_SCOPE:method}"
+    pr-mode: "${PR_MODE:github}"
+    pr-base: "${PR_BASE:}"
+    setup-script: "${SETUP_SCRIPT:}"
+    dry-run: "${DRY_RUN:false}"
+
+  # ── Java toolchain ────────────────────────────────────────────────────────────
+  toolchain:
+    pit-version: "${PIT_VERSION:1.25.8}"
+    pit-junit5-version: "${PIT_JUNIT5_VERSION:1.2.3}"
+    pit-testng-version: "${PIT_TESTNG_VERSION:1.0.0}"
+    pit-mutators: "${PIT_MUTATORS:DEFAULTS}"
+    pit-history: "${PIT_HISTORY:false}"
+    jacoco-version: "${JACOCO_VERSION:0.8.12}"
+    maven-mirror-url: "${MAVEN_MIRROR_URL:}"
+
+  # ── Team rules, applied at every stage (free text, LLM-interpreted) ───────────
+  # Empty by default and empty in code: an unset rule must be no rule, never a default
+  # opinion about how somebody else's repository should be tested.
+  rules:
+    post-clone: "${RULES_POST_CLONE:}"
+    pre-pick: "${RULES_PRE_PICK:}"
+    pick-file: "${RULES_PICK_FILE:}"
+    write-test: "${RULES_WRITE_TEST:}"
+    check-changes: "${RULES_CHECK_CHANGES:}"
+    make-pr: "${RULES_MAKE_PR:}"
+
+  # ── LLM (OpenAI-compatible /v1) ───────────────────────────────────────────────
+  llm:
+    base-url: "${LLM_BASE_URL:}"
+    api-key: "${LLM_API_KEY:}"
+    model: "${LLM_MODEL:qwen-3.6-27b-fp8}"
+    context-length: "${LLM_CONTEXT_LENGTH:32768}"
+    enable-thinking: "${LLM_ENABLE_THINKING:false}"
+    thinking-budget: "${LLM_THINKING_BUDGET:3000}"
+    max-tokens-hard: "${LLM_MAX_TOKENS_HARD:16000}"
+
+  # ── The dashboard and its transport ───────────────────────────────────────────
+  dashboard:
+    # Server.dashboardDir(): a jar has no __dirname, so the location is stated rather than
+    # derived, defaulting to where the image already puts the files.
+    dir: "${DASHBOARD_DIR:/app/sidecar/dashboard}"
+  ws:
+    # How often the publisher looks for new events to push. 250 ms is four frames a second —
+    # under a person's perception of "live", and eight times finer than the 2-second poll of
+    # /api/state it replaces.
+    poll-millis: "${DASHBOARD_WS_POLL_MS:250}"
+
+  paths:
+    # State.DATA_DIR, and the parent of the H2 file above. One volume holds the repos, the
+    # PR patches, the event log and now the database.
+    data-dir: "${DATA_DIR:/data}"
+
+  run:
+    # How long a forced takeover waits for the run it stopped to actually end.
+    #
+    # A stop is cooperative: the improve step notices it at a UNIT boundary, and a unit that
+    # has just started a PIT run can legitimately hold it for the ceilings in
+    # config/timeouts.json (test-compile 30m + PIT 60m) plus a suite run. Two hours is longer
+    # than that composition, on purpose — a takeover that gives up early would launch nothing
+    # and the caller has already had its 202.
+    takeover-wait: "${RUN_TAKEOVER_WAIT:2h}"
+    # How often that wait re-reads the execution table. Cheap, and never on a request thread.
+    takeover-poll: "${RUN_TAKEOVER_POLL:2s}"

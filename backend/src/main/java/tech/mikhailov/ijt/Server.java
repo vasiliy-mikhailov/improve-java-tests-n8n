@@ -329,7 +329,10 @@ public final class Server {
         return out;
     }
 
-    static Map<String, Object> metricsPayload() {
+    /// Public so the Spring orchestrator can serve `GET /api/metrics` from the same code.
+    /// The alternative was a second implementation in another module, and a metrics payload
+    /// that agrees with itself only until someone edits one of them.
+    public static Map<String, Object> metricsPayload() {
         refreshTotals();
         List<Map<String, Object>> files = new ArrayList<>(allFiles());
         // `(a.mac ?? 999) - (b.mac ?? 999)`, as a comparison rather than a subtraction — the

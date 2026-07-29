@@ -131,10 +131,21 @@ COPY eval /app/eval
 # which the JavaScript workflow generator reads. That is a contract spanning two languages
 # with no compiler between them — the last time its two halves drifted, a live run hung for
 # 6h47m. Better the image fails to build than that ships again.
+# The root pom comes too. backend/pom.xml now inherits from it (the orchestrator needs this
+# jar on its compile classpath, so both are modules of one reactor), and without ../pom.xml
+# present Maven fails with "Non-resolvable parent POM" before compiling a line.
+COPY pom.xml /app/pom.xml
 COPY backend /app/backend
 RUN cd /app/backend \
   && JAVA_HOME=$BACKEND_JAVA_HOME mvn -B -ntp package \
-  && cp target/ijt-backend-*.jar /app/ijt-backend.jar \
+  # -shaded, explicitly, and NOT a glob. Since backend became a library the orchestrator
+  # compiles against, shade attaches the uber-jar under a classifier instead of replacing
+  # the main artifact — otherwise Jackson 2.18.2 ships unrelocated inside the jar Spring
+  # Boot also puts its own managed Jackson beside, and which one wins is classpath order.
+  # So target/ now holds BOTH ijt-backend-1.0.0.jar (thin, for compiling) and
+  # ijt-backend-1.0.0-shaded.jar (runnable). The old `ijt-backend-*.jar` glob matched both
+  # and `cp` would fail with two sources and a file destination.
+  && cp target/ijt-backend-*-shaded.jar /app/ijt-backend.jar \
   && rm -rf /app/backend/target
 
 COPY entrypoint.sh /app/entrypoint.sh

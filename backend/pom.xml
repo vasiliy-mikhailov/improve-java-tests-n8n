@@ -14,6 +14,26 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
+  <!-- Module of the root aggregator since the orchestrator needs this jar on its compile
+       classpath. The parent carries plugin VERSIONS and nothing else — no dependency
+       management, no Spring — so this module resolves exactly what it resolved when it
+       built standalone.
+
+       This does add one hard requirement: ../pom.xml must EXIST wherever this is built.
+       `cd backend && mvn package` in a tree that has only backend/ now fails with
+       "Non-resolvable parent POM" before it compiles a line. The Dockerfile copies the
+       root pom for that reason. -->
+  <parent>
+    <groupId>tech.mikhailov.ijt</groupId>
+    <artifactId>ijt-parent</artifactId>
+    <version>1.0.0</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <!-- Restated rather than inherited, and deliberately. `tech.mikhailov.ijt:ijt-backend:1.0.0`
+       is a published coordinate: the Dockerfile globs target/ijt-backend-*.jar and the
+       entrypoint runs it by name. Spelling it here means a future re-parenting cannot rename
+       the jar as a side effect. -->
   <groupId>tech.mikhailov.ijt</groupId>
   <artifactId>ijt-backend</artifactId>
   <version>1.0.0</version>
@@ -31,7 +51,12 @@
     <!-- The Node sidecar had zero runtime dependencies, and that is worth preserving where
          it is free. It is not free for JSON: the LLM's answers, the state file and every
          route's payload are JSON, and hand-rolling a parser for that is a bug farm, not a
-         principle. HTTP stays dependency-free — com.sun.net.httpserver is in the JDK. -->
+         principle. HTTP stays dependency-free — com.sun.net.httpserver is in the JDK.
+
+         Both versions below stay EXPLICIT. An explicit version outranks any inherited
+         dependencyManagement, so if a BOM is ever imported into the parent this module
+         keeps the Jackson and JUnit it was tested against instead of being silently retuned
+         to somebody else's opinion. -->
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
@@ -52,6 +77,17 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.5.2</version>
+        <configuration>
+          <!-- Surefire's default already, stated because a test depends on it.
+               TimeoutsContractTest reads Path.of("..", "config", "timeouts.json") — the
+               cross-language contract that stops the n8n node timeout and the subprocess
+               ceiling drifting apart again (that drift cost a live run 6h47m). The path is
+               relative, so it resolves only while the working directory is this module.
+               In a reactor build the CWD of `mvn` is the repo root, and a parent that ever
+               sets a different workingDirectory would turn a contract failure into a file
+               that simply "does not exist". -->
+          <workingDirectory>${project.basedir}</workingDirectory>
+        </configuration>
       </plugin>
       <!-- one runnable jar, so the entrypoint starts it with `java -jar` and nothing else -->
       <plugin>
@@ -68,6 +104,28 @@
                   <mainClass>tech.mikhailov.ijt.Server</mainClass>
                 </transformer>
               </transformers>
+              <!-- ATTACHED, not substituted — the one behavioural change this module needed
+                   to become a library.
+
+                   By default shade REPLACES the module's main artifact with the uber-jar.
+                   Everything downstream then consumes a jar with Jackson 2.18.2 baked into
+                   it, unrelocated, while Spring Boot puts its own managed Jackson beside it
+                   in BOOT-INF/lib. Two copies of com.fasterxml.* on one classpath, and which
+                   one wins is classpath order — a databind from one version meeting a core
+                   from another fails as NoSuchMethodError at the first deserialize, far from
+                   the cause.
+
+                   So: target/ijt-backend-1.0.0.jar stays the thin library the orchestrator
+                   compiles and links against, and target/ijt-backend-1.0.0-shaded.jar is the
+                   standalone runnable for the BACKEND=java rollback path. The Dockerfile must
+                   copy the -shaded one; a `ijt-backend-*.jar` glob now matches BOTH. -->
+              <shadedArtifactAttached>true</shadedArtifactAttached>
+              <shadedClassifierName>shaded</shadedClassifierName>
+              <!-- Stays false, now for a second reason. The reduced pom would strip Jackson
+                   from this module's published dependencies on the grounds that the uber-jar
+                   contains it — true of the shaded classifier, false of the thin main jar the
+                   orchestrator actually depends on. Consumers must keep inheriting Jackson
+                   transitively or they compile against classes that are not there. -->
               <createDependencyReducedPom>false</createDependencyReducedPom>
             </configuration>
           </execution>

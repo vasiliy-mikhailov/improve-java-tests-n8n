@@ -23,3 +23,6 @@ reports/
 # Maven build output for the Java backend. Committing target/ once cost this repo a
 # 133 MB blob in history and a rejected push; the jar is a build artefact, not a source.
 backend/target/
+
+# Maven build output for the Spring orchestrator (same reason as backend/target)
+orchestrator/target/

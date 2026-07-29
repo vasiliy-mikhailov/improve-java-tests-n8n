@@ -18,3 +18,4 @@ reports/
 # the jar is built inside the image; a host-built target/ is ~3 MB of stale context and,
 # worse, could be a jar compiled by a different JDK than the one that will run it
 backend/target/
+orchestrator/target/

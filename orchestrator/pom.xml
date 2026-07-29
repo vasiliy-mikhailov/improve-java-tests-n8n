@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The orchestrator: what replaces n8n.
+
+     66 nodes and 44 HTTP calls become a Spring Batch job calling the backend in process, and
+     the dashboard's 2-second poll of /api/state becomes a STOMP subscription. The control
+     flow being reproduced is in docs/SPRING-MIGRATION.md and, authoritatively, in
+     n8n/generate-workflows.mjs.
+
+     Deleting the HTTP hop deletes one failure mode — the client that gave up on a request
+     while the backend was still killing the process group — and no others. The hazard it
+     came from moves rather than disappears: Batch step timeouts and @Transactional timeouts
+     now sit where the HTTP timeout sat, and a step timeout at or below the subprocess
+     ceiling in config/timeouts.json reproduces the 6h47m hang exactly. That file stays the
+     single source; step configuration derives from it. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>tech.mikhailov.ijt</groupId>
+    <artifactId>ijt-parent</artifactId>
+    <version>1.0.0</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>ijt-orchestrator</artifactId>
+  <packaging>jar</packaging>
+  <name>improve-java-tests orchestrator</name>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- The Boot BOM is imported HERE and not in the parent. In the parent it would also
+           land on `backend`, whose whole dependency list is Jackson plus JUnit and whose pom
+           says why that is worth keeping. This module is the only Spring one; it is the only
+           one that needs ~300 managed versions. -->
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- The domain layer: 30 classes, 902 tests, already live. Everything the workflow used
+         to reach over HTTP — Repo, Measure, Rounds, Pit, Llm, Pr, Exec, State — is behind
+         this one dependency, and it is a dependency, not a starting point. Nothing in it
+         gets reimplemented here.
+
+         ${project.version} rather than a literal so the two never drift; they are built from
+         the same reactor and released together.
+
+         It resolves to backend's THIN jar (its shade output is attached under the `shaded`
+         classifier), so Jackson arrives transitively and the BOM above pins it to Boot's
+         version for the whole application. One Jackson on the classpath, which is the point. -->
+    <dependency>
+      <groupId>tech.mikhailov.ijt</groupId>
+      <artifactId>ijt-backend</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <!-- GET /api/state survives the move. The dashboard subscribes now, but a fresh page
+         load still needs a snapshot before the stream means anything, and every diagnostic
+         in this repo reads that route. Also serves the dashboard's static files, which are
+         not ported and live outside the jar at DASHBOARD_DIR. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- STOMP over SockJS: State.event() -> /topic/events, stage changes -> /topic/stage.
+         `seq` keeps rising across runs because a reconnecting client asks for everything
+         after the last seq it holds — reset it and every client connected across the
+         boundary silently loses events. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-websocket</artifactId>
+    </dependency>
+
+    <!-- Batch earns its place on exactly one thing: a killed run resumes at the next UNIT
+         instead of re-cloning and re-measuring from zero. Hence the shape in the design doc
+         — setupStep, improveStep as a Tasklet returning CONTINUABLE for ONE unit per
+         invocation, finishStep — with the ROUND loop left as imperative Java inside the
+         unit. Expressing fifteen decision points as JobExecutionDeciders would be less
+         readable than the n8n graph it replaces, which is a low bar to miss. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-batch</artifactId>
+    </dependency>
+
+    <!-- Run / Unit / EventRow / PrRow / LedgerRow, replacing /data/state.json. All access
+         goes through StateRepository: H2 is in-memory as specified, and in-memory loses the
+         improvedLedger (143 entries that stopped run 2 redoing run 1's work), the
+         measureLedger (why a full run starts in seconds instead of re-measuring 319 units
+         for 40 minutes), and the crash recovery that let a hung run be marked `interrupted`.
+         Keeping the seam narrow is what makes jdbc:h2:mem -> jdbc:h2:file a URL change
+         instead of a refactor. Do not scatter EntityManager through the tasklets. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+
+    <!-- Backs both the application state above and Batch's own JobRepository. Runtime scope:
+         no code compiles against H2, and the day it moves to file-backed or to Postgres, the
+         only thing that changes is this coordinate and a URL. -->
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- JobLauncherTestUtils / JobRepositoryTestUtils. The step boundaries are where restart
+         correctness lives, and asserting on them needs the step-scope test fixtures. -->
+    <dependency>
+      <groupId>org.springframework.batch</groupId>
+      <artifactId>spring-batch-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <!-- spring-boot-starter-parent sets this and we do not use that parent, so it is
+               set explicitly and only here. Without -parameters the compiler discards
+               constructor and method parameter names, and Spring falls back to guessing them:
+               @ConfigurationProperties constructor binding and derived JPA query parameters
+               start failing at CONTEXT STARTUP with "Name for argument of type [...] not
+               specified" — a build-flag problem wearing a runtime-configuration mask.
+               `backend` is left out of this on purpose; it reflects on nothing. -->
+          <parameters>true</parameters>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals><goal>repackage</goal></goals>
+          </execution>
+        </executions>
+        <configuration>
+          <!-- Stated rather than auto-detected. Auto-detection scans this module's classes
+               for a main method and there is one other main in the tree —
+               tech.mikhailov.ijt.Server, the standalone backend kept as the rollback path.
+               It is in a dependency jar so today it is not a candidate; naming the entry
+               point costs one line and removes the question permanently. -->
+          <mainClass>tech.mikhailov.ijt.orchestrator.OrchestratorApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
