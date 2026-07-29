@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The sidecar, in Java.
+     Built with Maven rather than Gradle on purpose: the image carries Gradle 8.10.2, which
+     predates Java 25, and raising it would disturb the fallback `gradle` that TARGET
+     projects use when they ship no wrapper. Maven 3.9.9 is already there and is not gated
+     on the JDK it runs under.
+
+     Note the two roles of a JDK in this image and do not conflate them. The backend RUNS on
+     25. The projects it improves are built under whichever of 8/11/17/21 they need — PIT's
+     forked minion crashes under the wrong one — so those stay installed and stay selected
+     per project. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>tech.mikhailov.ijt</groupId>
+  <artifactId>ijt-backend</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <name>improve-java-tests backend</name>
+
+  <properties>
+    <maven.compiler.release>25</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <junit.version>5.11.3</junit.version>
+    <jackson.version>2.18.2</jackson.version>
+  </properties>
+
+  <dependencies>
+    <!-- The Node sidecar had zero runtime dependencies, and that is worth preserving where
+         it is free. It is not free for JSON: the LLM's answers, the state file and every
+         route's payload are JSON, and hand-rolling a parser for that is a bug farm, not a
+         principle. HTTP stays dependency-free — com.sun.net.httpserver is in the JDK. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+      </plugin>
+      <!-- one runnable jar, so the entrypoint starts it with `java -jar` and nothing else -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>tech.mikhailov.ijt.Server</mainClass>
+                </transformer>
+              </transformers>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
