@@ -69,8 +69,21 @@ n8n import:workflow --separate --input=/app/n8n/workflows 2>&1 | tail -2 || echo
 # import deactivates workflows; re-activate so the webhook trigger registers
 n8n update:workflow --id=ijtImproveJavaTests1 --active=true 2>&1 | tail -1 || true
 
-# ── sidecar ─────────────────────────────────────────────────────────────────
-node /app/sidecar/server.js &
+# ── backend ─────────────────────────────────────────────────────────────────
+# Java 25, explicitly — NOT `java` from PATH, which is JAVA_HOME and points at 17 because
+# that is the default for building target projects. The backend needs its own JDK and the
+# two must not be confused.
+#
+# BACKEND=node falls back to the Node sidecar. It is still in the image and still passes its
+# own 484 tests; while the Java backend is proving itself on real runs, a rollback should not
+# require rebuilding.
+if [[ "${BACKEND:-java}" == "node" ]]; then
+  echo "backend: node (rollback path)"
+  node /app/sidecar/server.js &
+else
+  echo "backend: java ($("$BACKEND_JAVA_HOME/bin/java" -version 2>&1 | head -1))"
+  "$BACKEND_JAVA_HOME/bin/java" -jar /app/ijt-backend.jar &
+fi
 
 # ── post-boot: owner setup + 10-year auth token mint ────────────────────────
 (

@@ -10,12 +10,25 @@
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
-
 // A node's timeout is NOT a free choice: it must outlive the subprocess the route starts.
 // Both halves used to be written by hand and were given the same number, which cost a live
-// run seven hours — see sidecar/timeouts.js.
-const { httpTimeoutFor } = createRequire(import.meta.url)('../sidecar/timeouts.js');
+// run 6h47m.
+//
+// The backend is Java now and this generator stays JavaScript, so neither can import the
+// other. The numbers live in config/timeouts.json; Java keeps compile-time constants and a
+// test (TimeoutsContractTest) fails if they ever drift from this file.
+const TIMEOUTS = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'config', 'timeouts.json'), 'utf8'),
+);
+
+function httpTimeoutFor(route) {
+  const spec = TIMEOUTS.routes[route];
+  // Never fall back to a default. An unknown route silently given the generic timeout is how
+  // this class of bug returns; n8n treats a missing timeout as "wait forever", which is the
+  // same hang wearing a different hat.
+  if (!spec) throw new Error(`unknown route for HTTP timeout: ${route} — add it to config/timeouts.json`);
+  return spec.ceilingMs + TIMEOUTS.httpMarginMs;
+}
 import { createHash } from 'node:crypto';
 
 // Node ids are derived from node names, not minted fresh.

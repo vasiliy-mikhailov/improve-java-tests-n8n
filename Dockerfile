@@ -17,7 +17,10 @@ RUN apt-get update \
 RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public -o /usr/share/keyrings/adoptium.asc \
   && echo "deb [signed-by=/usr/share/keyrings/adoptium.asc] https://packages.adoptium.net/artifactory/deb bookworm main" > /etc/apt/sources.list.d/adoptium.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends temurin-11-jdk temurin-17-jdk temurin-21-jdk \
+  # 25 runs the BACKEND. 11/17/21 (and 8 below) build the projects it improves — a project
+  # is compiled and mutated under the JDK it actually needs, because PIT's forked minion
+  # crashes under the wrong one. Two different jobs; do not collapse them into one.
+  && apt-get install -y --no-install-recommends temurin-25-jdk temurin-11-jdk temurin-17-jdk temurin-21-jdk \
   # JDK 8 is not published for every architecture the rest of this image supports. It is
   # genuinely optional — selection drops any JDK whose path is absent — so a missing arm64
   # build must degrade to "no JDK 8 here", not fail the image for everyone.
@@ -37,14 +40,18 @@ RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public -o /
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     mkdir -p /opt/java; \
-    for v in 8 11 17 21; do ln -sfn "/usr/lib/jvm/temurin-${v}-jdk-${arch}" "/opt/java/${v}"; done; \
+    for v in 8 11 17 21 25; do ln -sfn "/usr/lib/jvm/temurin-${v}-jdk-${arch}" "/opt/java/${v}"; done; \
     ls -l /opt/java; \
     /opt/java/17/bin/java -version
 
+# JAVA_HOME_<major> is the set selection picks from for TARGET projects; 25 is deliberately
+# not among them — no repo in the corpus targets it yet, and offering it would only add a
+# wrong answer. BACKEND_JAVA_HOME is what the backend itself runs under.
 ENV JAVA_HOME_8=/opt/java/8 \
     JAVA_HOME_11=/opt/java/11 \
     JAVA_HOME_17=/opt/java/17 \
     JAVA_HOME_21=/opt/java/21 \
+    BACKEND_JAVA_HOME=/opt/java/25 \
     JAVA_HOME=/opt/java/17
 ENV PATH=$JAVA_HOME/bin:$PATH
 
@@ -105,11 +112,31 @@ ENV DATA_DIR=/data \
     MAVEN_OPTS="-Xmx2g" \
     GRADLE_OPTS="-Dorg.gradle.daemon=false"
 
+# sidecar/ is no longer the backend, and is still here on purpose: it holds the dashboard's
+# static files (DASHBOARD_DIR, unported — plain HTML/CSS/JS), and it is the rollback path
+# while the Java backend proves itself on real runs. Node is in the image regardless; n8n is
+# a Node application.
 COPY sidecar /app/sidecar
 COPY n8n /app/n8n
+COPY config /app/config
 # eval harness + batch driver ship with the image; entrypoint refreshes the copy
 # in /data on boot so the driver can never lag the deployed code
 COPY eval /app/eval
+# ── the backend ─────────────────────────────────────────────────────────────
+# Built under JDK 25 (BACKEND_JAVA_HOME); the 8/11/17/21 beside it exist to build the
+# projects being improved and are chosen per project.
+#
+# Tests RUN here rather than being skipped. They are fast (~10s) and one of them,
+# TimeoutsContractTest, compares Java's compile-time constants against config/timeouts.json,
+# which the JavaScript workflow generator reads. That is a contract spanning two languages
+# with no compiler between them — the last time its two halves drifted, a live run hung for
+# 6h47m. Better the image fails to build than that ships again.
+COPY backend /app/backend
+RUN cd /app/backend \
+  && JAVA_HOME=$BACKEND_JAVA_HOME mvn -B -ntp package \
+  && cp target/ijt-backend-*.jar /app/ijt-backend.jar \
+  && rm -rf /app/backend/target
+
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh && node /app/n8n/generate-workflows.mjs
 

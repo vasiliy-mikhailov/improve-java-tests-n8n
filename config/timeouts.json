@@ -1,0 +1,49 @@
+{
+  "_comment": [
+    "One contract, one file. The backend decides how long a subprocess may run; the n8n node",
+    "decides how long to wait for the answer. Those were once written independently and given",
+    "the SAME number, which reads as agreement and is in fact a guaranteed loss for the caller:",
+    "n8n starts its clock when the request arrives, the route sets the stage and only then",
+    "spawns the child, so the client always reaches its deadline first. It abandons the request",
+    "while the backend is still killing the process group and composing a reply.",
+    "",
+    "Nothing errored. A live run sat in `improving_mutation / running tests (full suite)` for",
+    "6h47m with the dashboard showing it in progress, and 312 of 457 units were never attempted.",
+    "",
+    "The backend is Java and the workflow generator is JavaScript, so neither can require the",
+    "other's module. Re-typing these numbers in two languages is exactly the defect above.",
+    "They live here, and both sides read this file.",
+    "",
+    "ceilingMs is a SUM over a route's child processes, not a per-call limit — reading it as",
+    "per-call is how /api/coverage/run came to allow half of what it needs. A Java test asserts",
+    "each ceiling still equals the composition of perCallMs described in `composedOf`."
+  ],
+
+  "perCallMs": {
+    "suiteRun": 3600000,
+    "coverageRun": 3600000,
+    "pitCompile": 1800000,
+    "pitRunMax": 3600000
+  },
+
+  "routes": {
+    "/api/test/run": {
+      "ceilingMs": 3600000,
+      "composedOf": ["suiteRun"],
+      "why": "one full suite run"
+    },
+    "/api/coverage/run": {
+      "ceilingMs": 7200000,
+      "composedOf": ["coverageRun", "coverageRun"],
+      "why": "the project's own JaCoCo, then a full retry with our agent when that produces no report because its agent sits in an inactive profile — two sequential builds, not one"
+    },
+    "/api/pit/run": {
+      "ceilingMs": 5400000,
+      "composedOf": ["pitCompile", "pitRunMax"],
+      "why": "test-compile and then PIT. The compile is not optional: `mvn <plugin>:<goal>` runs no lifecycle phase, so without it PIT finds no classes and reports a score of zero"
+    }
+  },
+
+  "httpMarginMs": 300000,
+  "_httpMarginWhy": "How much longer the caller waits than the work can take. Not a rounding allowance: when a run does hit its ceiling the backend still has to kill a process group — Maven and Gradle fork Surefire and PIT minion JVMs — drain what they wrote, parse a report and serialise a reply. Five minutes is generous on purpose; the cost of being too generous is noticing a dead run late, and the cost of being too tight is the defect above."
+}
