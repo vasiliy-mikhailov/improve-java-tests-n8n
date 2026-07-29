@@ -552,7 +552,66 @@ public final class State {
         writeStateFile();
     }
 
+    /// Where the store's bytes go. Defaults to state.json + events.jsonl, which is exactly what
+    /// this class always did; the orchestrator replaces it with an H2-backed one at startup.
+    ///
+    /// A static rather than a constructor argument, deliberately and temporarily: every one of
+    /// the ~62 call sites reaches `State` statically, and converting them is the DI work in
+    /// StateStore. Storage should not have to wait for that — H2 currently stores nothing while
+    /// state.json is rewritten whole, 470 KB at a time, on every flush.
+    ///
+    /// `volatile` because the orchestrator installs this from the Spring startup thread while
+    /// the debounce flusher may already be reading it from its own.
+    private static volatile StatePersistence persistence = new FilePersistence();
+
+    /// Install a different backing store. Call before a run starts.
+    ///
+    /// Passing null restores the file writer, which is what a test wants in an @AfterEach — this
+    /// is process-wide, and a leaked H2 store would silently follow the next test.
+    public static void persistence(StatePersistence p) {
+        persistence = p == null ? new FilePersistence() : p;
+    }
+
+    public static StatePersistence persistence() {
+        return persistence;
+    }
+
     private static void writeStateFile() {
+        persistence.writeSnapshot(STATE);
+    }
+
+    /// The default: a temp file and an atomic rename, unchanged from when this was inline.
+    static final class FilePersistence implements StatePersistence {
+        @Override
+        public void writeSnapshot(State.Store store) {
+            writeStateFileNow();
+        }
+
+        @Override
+        public void appendEvent(State.Event event) {
+            appendEventLine(event);
+        }
+
+        @Override
+        public boolean load(State.Store into) {
+            // State.load() already owns the file-reading path and its migrations; this exists so
+            // an H2 store can answer false and let the caller fall back to it.
+            return Files.exists(stateFile());
+        }
+    }
+
+    private static void appendEventLine(State.Event entry) {
+        try {
+            Files.writeString(eventsFile(), MAPPER.writeValueAsString(entry) + "\n",
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+            // Best effort, exactly as in the JS: the directory is created by the flush, so the
+            // first events of a cold boot can land before it exists. Losing a log line must never
+            // be able to fail a round.
+        }
+    }
+
+    private static void writeStateFileNow() {
         try {
             Files.createDirectories(DATA_DIR);
             Path tmp = DATA_DIR.resolve("state.json.tmp");
@@ -609,14 +668,7 @@ public final class State {
                 STATE.events.subList(0, STATE.events.size() - MAX_EVENTS_IN_STATE).clear();
             }
         }
-        try {
-            Files.writeString(eventsFile(), MAPPER.writeValueAsString(entry) + "\n",
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (Exception ignored) {
-            // Best effort, exactly as in the JS: the directory is created by the flush, so the
-            // first events of a cold boot can land before it exists. Losing a log line must never
-            // be able to fail a round.
-        }
+        persistence.appendEvent(entry);
         save();
         // the RAW message, not the redacted one — as in the JS. The container log is not the
         // dashboard: it is where a secret that leaked into tool output is diagnosed.
