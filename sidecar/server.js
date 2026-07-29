@@ -511,6 +511,16 @@ const routes = {
     state.decisions = {};
     state.prs = [];
     state.pickFailures = 0;
+    // The event log belongs to a run, like everything else reset here. Left behind — and
+    // because it is a ring buffer persisted in state.json, it survived restarts too — a live
+    // run against stleary/JSON-java opened with entries naming DelegatingDataLoader#clear and
+    // Assertions#nonNull, units of java-dataloader from a different run hours earlier against
+    // a different repo. The dashboard's log is what a person reads to judge a run, so a reader
+    // could not tell which lines belonged to the run in front of them.
+    //
+    // `seq` deliberately does NOT reset: /api/events?after= pages on it, and rewinding would
+    // make new events look older than ones a polling client already holds.
+    state.events = [];
     if (body.clearLedger) delete state.improvedLedger[slugify(state.run.config.repoUrl)];
     S.setStage('starting', `run ${state.run.id} on ${state.run.config.repoUrl}#${state.run.config.repoBranch}`);
     S.save();

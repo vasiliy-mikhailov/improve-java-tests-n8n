@@ -1027,10 +1027,12 @@ public final class Server {
                         + state().stage.name() + ", " + idleSec + "s since last stage change) — "
                         + "stop it first or pass force:true");
             }
-            if (active) {
-                State.event("starting", "taking over stale/forced run " + state().run.id
-                        + " (idle " + idleSec + "s)");
-            }
+            // Held, not logged yet: the reset below clears the event log, and a line written
+            // before it would be wiped. It belongs to the NEW run's log anyway — it explains
+            // why this run exists.
+            String takeover = active
+                    ? "taking over stale/forced run " + state().run.id + " (idle " + idleSec + "s)"
+                    : null;
             synchronized (State.STATE) {
                 state().run = State.freshRun(body);
                 // what this run learns about mutator kinds is about THIS repo and THIS run:
@@ -1041,10 +1043,28 @@ public final class Server {
                 state().decisions = new LinkedHashMap<>();
                 state().prs = new ArrayList<>();
                 state().pickFailures = 0;
+                // The event log belongs to a run, like everything else reset here.
+                //
+                // It was the one thing left behind, and because it is a ring buffer persisted in
+                // state.json it survived restarts too: a live run against stleary/JSON-java
+                // opened with entries naming DelegatingDataLoader#clear and Assertions#nonNull —
+                // units of java-dataloader, from a different run hours earlier against a
+                // different repository. Every unit this run actually measured was org/json.
+                //
+                // The dashboard's log is what a person reads to judge what a run is doing, so a
+                // reader could not tell which lines belonged to the run in front of them. Same
+                // family as the rest of this project's scars: the work was real, the record
+                // describing it was not.
+                //
+                // `seq` deliberately does NOT reset — GET /api/events?after= pages on it, and
+                // rewinding it would make a new run's events look older than ones a polling
+                // client already holds, so they would never be delivered.
+                state().events.clear();
                 if (State.jsTruthy(body.get("clearLedger"))) {
                     state().improvedLedger.remove(Util.slugify(state().run.config.repoUrl()));
                 }
             }
+            if (takeover != null) State.event("starting", takeover);
             // the reachability memo is keyed by repo-RELATIVE path, so it would answer for the
             // previous repo's file of the same name
             clearReachCache();
