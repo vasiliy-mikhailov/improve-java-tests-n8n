@@ -10,7 +10,28 @@
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
+
+// A node's timeout is NOT a free choice: it must outlive the subprocess the route starts.
+// Both halves used to be written by hand and were given the same number, which cost a live
+// run seven hours — see sidecar/timeouts.js.
+const { httpTimeoutFor } = createRequire(import.meta.url)('../sidecar/timeouts.js');
+import { createHash } from 'node:crypto';
+
+// Node ids are derived from node names, not minted fresh.
+//
+// randomUUID() meant every regeneration rewrote all 66 ids, so `npm run check` always
+// dirtied the workflow with ~130 lines of pure churn. The cost is not tidiness: a real
+// change to the workflow became indistinguishable from noise, and `git add -A` swept the
+// noise into unrelated commits. n8n only requires that ids be unique and stable.
+const seenNames = new Set();
+function nodeId(name) {
+  if (seenNames.has(name)) throw new Error(`duplicate node name: ${name} — ids are derived from names, so they must be unique`);
+  seenNames.add(name);
+  const h = createHash('sha1').update(`ijt-node:${name}`).digest('hex');
+  const variant = ((parseInt(h[16], 16) & 0x3) | 0x8).toString(16);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT = join(__dirname, 'workflows');
@@ -24,7 +45,7 @@ let _x = 0, _y = 0;
 const pos = () => { _x += 220; if (_x > 3600) { _x = 220; _y += 200; } return [_x, _y]; };
 const w = { name: 'Improve Java Tests', nodes: [], connections: {} };
 function add(type, name, parameters = {}, typeVersion = 1) {
-  w.nodes.push({ parameters, type, typeVersion, position: pos(), id: randomUUID(), name });
+  w.nodes.push({ parameters, type, typeVersion, position: pos(), id: nodeId(name), name });
   return name;
 }
 function link(from, to, out = 0) {
@@ -68,7 +89,7 @@ Http('Start Run', { path: '/api/run/start', body: '={{ $json.body || {} }}' });
 Http('Clone Repo', { path: '/api/repo/clone', timeout: 1200000 });
 Http('Rules: post-clone', { path: '/api/rules/apply', body: `={{ { stage: 'post_clone' } }}` });
 Http('Build & Detect', { path: '/api/repo/prepare', timeout: 3000000 });
-Http('Baseline Coverage', { path: '/api/coverage/run', body: `={{ { phase: 'baseline', stage: 'measuring_baseline' } }}`, timeout: 3600000 });
+Http('Baseline Coverage', { path: '/api/coverage/run', body: `={{ { phase: 'baseline', stage: 'measuring_baseline' } }}`, timeout: httpTimeoutFor('/api/coverage/run') });
 Http('Rules: pre-pick', { path: '/api/rules/apply', body: `={{ { stage: 'pre_pick' } }}` });
 Http('Rules: write-test', { path: '/api/rules/apply', body: `={{ { stage: 'write_test' } }}` });
 
@@ -81,7 +102,7 @@ IfNum('File Picked?', `={{ $json.result && $json.result.file ? 1 : 0 }}`, 'equal
 // every candidate) → finish. The sidecar caps consecutive transient retries.
 IfNum('Pick Retryable?', `={{ ($json.result && $json.result.retry) ? 1 : 0 }}`, 'equal', 1);
 Http('Start Iteration', { path: '/api/iteration/start', body: `={{ { file: $('Rules: pick file').first().json.result.file } }}` });
-Http('Baseline Mutation', { path: '/api/pit/run', body: `={{ { file: $('Start Iteration').first().json.file, phase: 'baseline', stage: 'improving_mutation' } }}`, timeout: 3600000 });
+Http('Baseline Mutation', { path: '/api/pit/run', body: `={{ { file: $('Start Iteration').first().json.file, phase: 'baseline', stage: 'improving_mutation' } }}`, timeout: httpTimeoutFor('/api/pit/run') });
 // a class PIT finds (almost) nothing to mutate in — annotation, marker interface,
 // constants holder — cannot be improved, so skip it without spending the round budget
 IfNum('Has Mutants?', `={{ $json.skip ? 0 : 1 }}`, 'equal', 1);
@@ -113,7 +134,7 @@ function phase(prefix, promptEndpoint, entryNode) {
   Http(B('LLM Write Tests'), { path: '/api/llm/chat', body: '={{ $json }}', timeout: 900000 });
   Http(B('Parse Tests'), { path: '/api/tests/parse', body: `={{ { resp: $json, plan: $('${B('Build Prompt')}').first().json } }}` });
   Http(B('Write Tests'), { path: '/api/test/write-many', body: `={{ { tests: $json.tests, stage: '${stage}', note: $json.chosen ? ('targeting ' + $json.chosen.mutator + ' at line ' + $json.chosen.line) : null, targetMutant: $json.chosen || null } }}` });
-  Http(B('Run Tests'), { path: '/api/test/run', body: `={{ { stage: '${stage}' } }}`, timeout: 3600000 });
+  Http(B('Run Tests'), { path: '/api/test/run', body: `={{ { stage: '${stage}' } }}`, timeout: httpTimeoutFor('/api/test/run') });
   IfNum(B('Green?'), '={{ $json.passed ? 1 : 0 }}', 'equal', 1);
   IfNum(B('Wrote Any?'), `={{ $('${B('Parse Tests')}').first().json.count }}`, 'larger', 0);
   Http(B('Build Repair'), {
@@ -123,7 +144,7 @@ function phase(prefix, promptEndpoint, entryNode) {
   Http(B('LLM Repair'), { path: '/api/llm/chat', body: '={{ $json }}', timeout: 900000 });
   Http(B('Parse Repair'), { path: '/api/tests/parse-repair', body: `={{ { resp: $json, prev: $('${B('Parse Tests')}').first().json } }}` });
   Http(B('Write Repair'), { path: '/api/test/write-many', body: `={{ { tests: $json.tests } }}` });
-  Http(B('Re-run Tests'), { path: '/api/test/run', body: `={{ {} }}`, timeout: 3600000 });
+  Http(B('Re-run Tests'), { path: '/api/test/run', body: `={{ {} }}`, timeout: httpTimeoutFor('/api/test/run') });
   IfNum(B('Green After Repair?'), '={{ $json.passed ? 1 : 0 }}', 'equal', 1);
   Http(B('Delete Broken Tests'), {
     path: '/api/test/delete-many',

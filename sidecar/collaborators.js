@@ -19,8 +19,14 @@
 const { stripNonCode } = require('./javasrc');
 
 // A test never has to "construct" these.
+//
+// Primitives are deliberately NOT listed. The only consumer of this set is guarded by
+// /^[A-Z]/, so `int`, `long`, `void` and friends are already excluded by capitalisation
+// and can never reach the lookup — mutation testing found this by leaving exactly nine
+// unkillable mutants on the nine primitive entries that used to sit here. Dead data that
+// reads as deliberate is worse than no data: the next person adds `short` to it and
+// believes that is what excludes short.
 const BUILT_IN = new Set([
-  'int', 'long', 'short', 'byte', 'char', 'boolean', 'float', 'double', 'void',
   'String', 'Integer', 'Long', 'Short', 'Byte', 'Character', 'Boolean', 'Float', 'Double',
   'Object', 'Number', 'CharSequence', 'Class', 'Throwable', 'Exception', 'RuntimeException',
   'List', 'Map', 'Set', 'Collection', 'Optional', 'Iterable',

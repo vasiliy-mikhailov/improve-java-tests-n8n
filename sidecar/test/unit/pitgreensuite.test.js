@@ -59,6 +59,33 @@ test('the round-2 class is recognised as ours too', () => {
   assert.equal(pitGreenSuiteFailure(out).ours, true);
 });
 
+test('a failure that names the class but not the method still identifies the class', () => {
+  // Not every PIT/engine combination prints the [method:...] part — TestNG and older
+  // JUnit platforms report the description differently. Returning null there would throw
+  // away the one fact we did get and send the run back to "UNMEASURED, cause unknown",
+  // which is the exact dead end this module was written to end.
+  const out = `PIT >> SEVERE : Description [testClass=org.dataloader.FooMacMutTest] did not pass without mutation.
+Exception in thread "main" org.pitest.help.PitHelpError: Mutation testing requires a green suite.`;
+  const f = pitGreenSuiteFailure(out);
+  assert.ok(f, 'the class name is right there in the output');
+  assert.equal(f.testClass, 'org.dataloader.FooMacMutTest');
+  assert.equal(f.method, null, 'no method was reported — say so rather than invent one');
+  assert.equal(f.ours, true, 'still ours, so still safe to cut');
+});
+
+test('a class-only failure that is not ours is still not ours', () => {
+  const out = `PIT >> SEVERE : Description [testClass=org.dataloader.TheirOwnTest] did not pass without mutation.`;
+  const f = pitGreenSuiteFailure(out);
+  assert.equal(f.testClass, 'org.dataloader.TheirOwnTest');
+  assert.equal(f.ours, false);
+});
+
+test('the failure banner with no test class at all yields nothing', () => {
+  // Better to report nothing than to hand the caller a record with an empty class name,
+  // which the salvage path would then try to match against test sources.
+  assert.equal(pitGreenSuiteFailure('did not pass without mutation'), null);
+});
+
 // ── a salvage that is never re-measured is a salvage wasted ───────────────
 // The clean v2 run: PIT refused because one generated test fails on unmutated code, the
 // recovery cut that method and kept the other, and then the round reported UNMEASURED

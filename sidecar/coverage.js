@@ -13,6 +13,9 @@ const path = require('node:path');
 const { run } = require('./exec');
 const { state, event, upsertFile } = require('./state');
 const repo = require('./repo');
+// This route may run TWO of these builds in sequence (see the hasJacoco fallback below),
+// which is why its HTTP ceiling is double this. See sidecar/timeouts.js.
+const { COVERAGE_RUN_MS } = require('./timeouts');
 const tests = require('./tests');
 const { round2 } = require('./util');
 
@@ -52,19 +55,19 @@ async function runCoverage() {
       : [`${g}:prepare-agent`, 'test', `${g}:report`];
     r = await run([build.wrapper, '-B', '-ntp', ...goals,
       '-Dmaven.test.failure.ignore=true', '-DfailIfNoTests=false'],
-    { cwd: dir, timeoutMs: 3600000, label: 'jacoco', env: repo.buildEnv() });
+    { cwd: dir, timeoutMs: COVERAGE_RUN_MS, label: 'jacoco', env: repo.buildEnv() });
     // If deferring to the project produced nothing (its agent sits in an inactive
     // profile, say), fall back to supplying ours.
     if (build.hasJacoco && !findReports(dir).length) {
       event('coverage', 'the project’s own JaCoCo produced no report — retrying with our agent');
       r = await run([build.wrapper, '-B', '-ntp', `${g}:prepare-agent`, 'test', `${g}:report`,
         '-Dmaven.test.failure.ignore=true', '-DfailIfNoTests=false'],
-      { cwd: dir, timeoutMs: 3600000, label: 'jacoco', env: repo.buildEnv() });
+      { cwd: dir, timeoutMs: COVERAGE_RUN_MS, label: 'jacoco', env: repo.buildEnv() });
     }
   } else {
     fs.writeFileSync(path.join(dir, INIT_SCRIPT), gradleInitScript());
     r = await run([build.wrapper, '--no-daemon', ...(build.scanArgs || []), '--continue', '-I', INIT_SCRIPT, 'test', 'jacocoTestReport'],
-      { cwd: dir, timeoutMs: 3600000, label: 'jacoco', env: repo.buildEnv() });
+      { cwd: dir, timeoutMs: COVERAGE_RUN_MS, label: 'jacoco', env: repo.buildEnv() });
   }
   const reports = findReports(dir);
   if (!reports.length) {

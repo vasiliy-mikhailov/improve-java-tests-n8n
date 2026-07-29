@@ -193,7 +193,10 @@ function pitGreenSuiteFailure(out) {
 
 /** Never below this: a doomed run teaches nothing. Never above it: the old hard ceiling. */
 const PIT_TIMEOUT_MIN_MS = 120000;
-const PIT_TIMEOUT_MAX_MS = 3600000;
+// Shared with the workflow generator — /api/pit/run's HTTP node must outlive the compile
+// AND the PIT run that follow it. See sidecar/timeouts.js.
+const { PIT_COMPILE_MS, PIT_RUN_MAX_MS } = require('./timeouts');
+const PIT_TIMEOUT_MAX_MS = PIT_RUN_MAX_MS;
 
 /**
  * How long this unit's PIT run may take.
@@ -261,6 +264,41 @@ function greenSuiteRetries(spent, cut) {
  * `targetTests` scopes which tests PIT runs — the class's own tests plus ours — so an
  * unrelated broken test elsewhere in the module cannot sink the measurement.
  */
+/**
+ * Where PIT is pointed for one unit: which classes to mutate, which tests to run it
+ * against, and which methods to exclude so that only the target is mutated.
+ *
+ * Pure, and separated from runPit deliberately — every rule below is a scar, and each one
+ * failed *silently*, as "this method has no mutation surface" rather than as an error:
+ *
+ *  - targetTests carries a LEADING wildcard because a project's tests often sit in a
+ *    sibling package (org.json.junit.XMLTest for org.json.XML); a package-anchored glob
+ *    matched none of them.
+ *  - targetClasses carries a TRAILING one so inner classes come along.
+ *  - PIT has no "mutate this method" option, only excludedMethods — so targeting one
+ *    method means naming every other one.
+ *  - Both sides are escaped before comparison. The known list arrives with constructors
+ *    spelled `&lt;init&gt;` while onlyMethod is `<init>`, so a constructor unit did not
+ *    recognise itself in its own sibling list, failed to remove itself, and shipped a
+ *    target that was ALSO excluded — leaving PIT nothing to mutate at all.
+ *
+ * @param {{fqcn:string, onlyMethod:?string, siblingMethods?:string[], statMethods?:string[]}} o
+ */
+function pitScope({ fqcn, onlyMethod, siblingMethods = [], statMethods = [] }) {
+  const name = String(fqcn || '');
+  const cls = name.slice(name.lastIndexOf('.') + 1);
+  const known = siblingMethods.length ? siblingMethods : statMethods;
+  const target = escapeMethodForPit(onlyMethod);
+  return {
+    targetTests: `*${cls}*Test*`,
+    targetClasses: `${name}*`,
+    target,
+    excluded: onlyMethod
+      ? [...new Set(known.map(escapeMethodForPit))].filter((m) => m !== target)
+      : [],
+  };
+}
+
 async function runPit(fileRel, { onlyMethod = null, greenRetry = 0 } = {}) {
   const dir = repo.repoDir();
   if (!state.runner?.tool) throw new Error('build not detected — call /api/repo/prepare first');
@@ -270,35 +308,16 @@ async function runPit(fileRel, { onlyMethod = null, greenRetry = 0 } = {}) {
   const moduleRel = f.module || repo.moduleOf(srcPath);
   // the unit IS a method: mutate only it unless explicitly asked for the whole class
   if (onlyMethod === undefined || onlyMethod === null) onlyMethod = f.method || null;
-  const pkg = fqcn.includes('.') ? fqcn.slice(0, fqcn.lastIndexOf('.')) : '';
-  const cls = fqcn.slice(fqcn.lastIndexOf('.') + 1);
-  // the class's own tests, ours, and anything else named after it
-  // Leading wildcard on purpose: a project's tests frequently sit in a sibling package
-  // (org.json.junit.XMLTest for org.json.XML), and a package-anchored glob matches none
-  // of them.
-  const targetTests = `*${cls}*Test*`;
-  const targetClasses = `${fqcn}*`;   // includes inner classes
-
-  // Method scoping. PIT's cost is (mutants × suite time) and a class-wide run re-mutates
-  // everything on every round, which dominates wall-clock. PIT has no "target method"
-  // option, but it has excludedMethods — so mutating one method means excluding all the
-  // others. The method list comes from the class's own baseline report (bytecode truth,
-  // including constructors as <init>), not from parsing source.
-  // Everything except the target method. The method list comes from the class's sibling
-  // units (JaCoCo enumerated every method at baseline) or, failing that, from a previous
-  // PIT report — never from parsing source.
-  const siblings = Object.values(state.files)
-    .filter((u) => u.path === srcPath && u.method)
-    .map((u) => u.method);
-  const known = siblings.length ? siblings : Object.keys(f.methodStats?.byMethod || {});
-  // Normalise BOTH sides before comparing. The list arrives with constructors spelled
-  // `&lt;init&gt;` while onlyMethod is `<init>`, so a constructor unit did not recognise
-  // itself in its own sibling list, failed to remove itself, and shipped a target that was
-  // also excluded — PIT then had nothing to mutate at all.
-  const target = escapeMethodForPit(onlyMethod);
-  const excluded = onlyMethod
-    ? [...new Set(known.map(escapeMethodForPit))].filter((m) => m !== target)
-    : [];
+  const { targetTests, targetClasses, excluded } = pitScope({
+    fqcn,
+    onlyMethod,
+    // the class's sibling units — JaCoCo enumerated every method at baseline
+    siblingMethods: Object.values(state.files)
+      .filter((u) => u.path === srcPath && u.method)
+      .map((u) => u.method),
+    // failing that, whatever a previous PIT report knew about — never parsed from source
+    statMethods: Object.keys(f.methodStats?.byMethod || {}),
+  });
 
   // Delete any previous report FIRST. findReport() falls back to "newest mutations.xml
   // anywhere", so when a run produces nothing it used to return the PREVIOUS unit's
@@ -324,7 +343,7 @@ async function runPit(fileRel, { onlyMethod = null, greenRetry = 0 } = {}) {
     // That silently made every file's BASELINE 0 and flattered every improvement.
     const compileArgv = [state.runner.wrapper, '-B', '-ntp', 'test-compile'];
     if (moduleRel && moduleRel !== '.') compileArgv.push('-pl', moduleRel, '-am');
-    const c = await run(compileArgv, { cwd: dir, timeoutMs: 1800000, label: 'compile', env: repo.buildEnv() });
+    const c = await run(compileArgv, { cwd: dir, timeoutMs: PIT_COMPILE_MS, label: 'compile', env: repo.buildEnv() });
     if (c.code !== 0) throw new Error('test-compile before PIT failed: ' + (c.stderr || c.stdout).slice(-600));
     // Incremental analysis would be ideal here — rounds re-measure the same method over
     // and over — but PIT 1.25 moved history behind the commercial arcmutate plugin:
@@ -617,5 +636,9 @@ function scopeToMethod(parsed, method) {
   };
 }
 
+// findReport/findAllReports are exported for their own sake, not merely to be reachable
+// from a test: choosing WHICH mutations.xml to read is a decision with four layouts and a
+// newest-wins fallback behind it, and reading the wrong module's report is silent — the
+// numbers look plausible and describe a different class.
 module.exports = { runPit, ensureMavenWiring, parseReport, scopeToMethod, platformVersionFor, gradlePitArgv, escapeMethodForPit, pitTimeoutMs, pitGreenSuiteFailure, greenSuiteRetries,
-  gradlePitestPluginVersion, gradleInitScript, killDifficulty, PIT_VERSION, MUTATORS };
+  gradlePitestPluginVersion, gradleInitScript, killDifficulty, findReport, findAllReports, pitPluginXml, pitScope, PIT_VERSION, MUTATORS };

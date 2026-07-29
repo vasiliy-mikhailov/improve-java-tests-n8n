@@ -4,6 +4,9 @@
 const { run } = require('./exec');
 const { state, event } = require('./state');
 const repo = require('./repo');
+// Shared with the workflow generator: the n8n node calling this route derives its own
+// timeout from this number, and must outlive it. See sidecar/timeouts.js.
+const { SUITE_RUN_MS } = require('./timeouts');
 
 /**
  * @param scope  repo-relative test file path, a test class name, or null for everything
@@ -21,7 +24,7 @@ async function runTests(scope) {
     argv = [build.wrapper, '--no-daemon', ...(build.scanArgs || []), 'test'];
     if (cls) argv.push('--tests', cls);
   }
-  const r = await run(argv, { cwd: dir, timeoutMs: 3600000, label: 'tests', env: repo.buildEnv() });
+  const r = await run(argv, { cwd: dir, timeoutMs: SUITE_RUN_MS, label: 'tests', env: repo.buildEnv() });
   const out = r.stdout + '\n' + r.stderr;
   const passed = r.code === 0;
   event('tests', `${scope || 'full suite'}: ${passed ? 'green' : 'RED (exit ' + r.code + ')'}`);
