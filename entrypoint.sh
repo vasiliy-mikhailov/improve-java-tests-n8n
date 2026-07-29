@@ -74,16 +74,31 @@ n8n update:workflow --id=ijtImproveJavaTests1 --active=true 2>&1 | tail -1 || tr
 # that is the default for building target projects. The backend needs its own JDK and the
 # two must not be confused.
 #
-# BACKEND=node falls back to the Node sidecar. It is still in the image and still passes its
-# own 484 tests; while the Java backend is proving itself on real runs, a rollback should not
-# require rebuilding.
-if [[ "${BACKEND:-java}" == "node" ]]; then
-  echo "backend: node (rollback path)"
-  node /app/sidecar/server.js &
-else
-  echo "backend: java ($("$BACKEND_JAVA_HOME/bin/java" -version 2>&1 | head -1))"
-  "$BACKEND_JAVA_HOME/bin/java" -jar /app/ijt-backend.jar &
-fi
+# Three backends, and both older ones stay in the image on purpose. This is the TRANSITION
+# step: `spring` becomes the default, n8n is still installed and still importable, and a
+# rollback is one environment variable — not a rebuild — for as long as the orchestrator is
+# unproven on real work.
+#
+#   spring  the Spring Batch orchestrator. Owns the run loop that the n8n workflow used to
+#           drive, and serves the dashboard and /api/* itself.
+#   java    tech.mikhailov.ijt.Server standalone. n8n drives it over HTTP, as before.
+#   node    the original sidecar. Still passes its own 484 tests.
+case "${BACKEND:-spring}" in
+  node)
+    echo "backend: node (rollback path)"
+    node /app/sidecar/server.js &
+    ;;
+  java)
+    echo "backend: java standalone ($("$BACKEND_JAVA_HOME/bin/java" -version 2>&1 | head -1)) — n8n drives it"
+    "$BACKEND_JAVA_HOME/bin/java" -jar /app/ijt-backend.jar &
+    ;;
+  *)
+    echo "backend: spring orchestrator ($("$BACKEND_JAVA_HOME/bin/java" -version 2>&1 | head -1))"
+    # Binds SIDECAR_PORT (3000), same as every backend before it, so Caddy and compose need
+    # no change. DATA_DIR is where H2 and state.json both live.
+    "$BACKEND_JAVA_HOME/bin/java" -jar /app/ijt-orchestrator.jar &
+    ;;
+esac
 
 # ── post-boot: owner setup + 10-year auth token mint ────────────────────────
 (

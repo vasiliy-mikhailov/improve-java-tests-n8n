@@ -8,13 +8,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git curl ca-certificates jq procps unzip gnupg \
-  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+  && curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
   && apt-get update && apt-get install -y --no-install-recommends gh \
   && rm -rf /var/lib/apt/lists/*
 
 # ── JDKs: Temurin 8/11/17/21 (Adoptium apt repo) ────────────────────────────
-RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public -o /usr/share/keyrings/adoptium.asc \
+RUN curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused https://packages.adoptium.net/artifactory/api/gpg/key/public -o /usr/share/keyrings/adoptium.asc \
   && echo "deb [signed-by=/usr/share/keyrings/adoptium.asc] https://packages.adoptium.net/artifactory/deb bookworm main" > /etc/apt/sources.list.d/adoptium.list \
   && apt-get update \
   # 25 runs the BACKEND. 11/17/21 (and 8 below) build the projects it improves — a project
@@ -136,8 +136,13 @@ COPY eval /app/eval
 # present Maven fails with "Non-resolvable parent POM" before compiling a line.
 COPY pom.xml /app/pom.xml
 COPY backend /app/backend
-RUN cd /app/backend \
+COPY orchestrator /app/orchestrator
+# One reactor build: the orchestrator compiles against the backend jar, so building them
+# separately would need `install` into ~/.m2 between the two.
+RUN cd /app \
   && JAVA_HOME=$BACKEND_JAVA_HOME mvn -B -ntp package \
+  && cp orchestrator/target/ijt-orchestrator-*.jar /app/ijt-orchestrator.jar \
+  && cd /app/backend \
   # -shaded, explicitly, and NOT a glob. Since backend became a library the orchestrator
   # compiles against, shade attaches the uber-jar under a classifier instead of replacing
   # the main artifact — otherwise Jackson 2.18.2 ships unrelocated inside the jar Spring
@@ -146,7 +151,7 @@ RUN cd /app/backend \
   # ijt-backend-1.0.0-shaded.jar (runnable). The old `ijt-backend-*.jar` glob matched both
   # and `cp` would fail with two sources and a file destination.
   && cp target/ijt-backend-*-shaded.jar /app/ijt-backend.jar \
-  && rm -rf /app/backend/target
+  && rm -rf /app/backend/target /app/orchestrator/target
 
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh && node /app/n8n/generate-workflows.mjs
