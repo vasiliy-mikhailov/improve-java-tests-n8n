@@ -221,6 +221,47 @@ class SnapshotShapeTest extends StoreTestSupport {
         }
     }
 
+    // ── a restored run is not a running one ───────────────────────────────
+
+    @Test
+    void aRunRestoredAsRunningIsMarkedInterrupted() {
+        // The process that owned that run is gone — that is what a restore MEANS. `State.load()`
+        // has always relabelled it; the H2 path reimplemented the restore and left the migration
+        // behind, and the two guards then deadlocked against each other:
+        //
+        //     POST /webhook/improve-run  -> 409 "a run is already active (stage idle)"
+        //     POST /api/run/stop         -> {"ok":true,"stopped":[]}   nothing to stop
+        //
+        // Unstartable and unstoppable for the 900s the staleness window takes to expire, with no
+        // way out but force:true. Server's guard reads exactly this stage name — see
+        // "'interrupted' means the sidecar restarted" in POST /api/run/start.
+        H2StatePersistence h2 = new H2StatePersistence(store);
+        State.Store written = storeWith(2);
+        written.run.status = "running";
+        h2.writeSnapshot(written);
+        reload();
+
+        State.Store restored = new State.Store();
+        assertTrue(h2.load(restored));
+        assertEquals("interrupted", restored.stage.name(),
+                "the run's process is gone, so it cannot be a real concurrency conflict");
+    }
+
+    @Test
+    void aRunThatFINISHEDIsLeftAlone() {
+        // the negative half: relabelling a finished run would invent an interruption that never
+        // happened, and the dashboard renders this stage
+        H2StatePersistence h2 = new H2StatePersistence(store);
+        State.Store written = storeWith(2);
+        written.run.status = "done";
+        h2.writeSnapshot(written);
+        reload();
+
+        State.Store restored = new State.Store();
+        assertTrue(h2.load(restored));
+        assertEquals("idle", restored.stage.name());
+    }
+
     private static IllegalArgumentException assertThrowsIllegalArgument(Runnable r) {
         return org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, r::run);
     }

@@ -133,6 +133,15 @@ public class H2StatePersistence implements StatePersistence {
             }
 
             into.run = fromRow(run);
+            // THE MIGRATION State.load() DOES, which this path reimplemented without. A run
+            // restored as `running` has no process behind it — that is what a restore means —
+            // and Server's start guard reads this exact stage name to tell a genuine
+            // concurrency conflict from a corpse. Without it the run is both unstartable (409,
+            // "a run is already active") and unstoppable (nothing to stop) until the 900s
+            // staleness window expires.
+            if (into.run != null && "running".equals(into.run.status)) {
+                into.stage = new State.Stage("interrupted", "orchestrator restarted", Util.nowSec(), null);
+            }
             into.files = new LinkedHashMap<>(store.unitsAsMap(run.getId()));
             into.prs = new ArrayList<>(store.prsAsMaps(run.getId()));
             into.seq = store.lastSeq();
