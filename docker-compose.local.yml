@@ -45,3 +45,14 @@ services:
 
 volumes:
   ijt_data:
+    # PINNED, and not decoration. Compose derives its project name from the directory, so
+    # the volume is normally <dir>_ijt_data — and renaming the checkout from
+    # improve-java-tests-n8n to -spring would therefore have pointed the container at a
+    # brand-new empty volume, silently orphaning 807 MB: the improvedLedger and
+    # measureLedger, every prepared PR patch, the cloned repos and the whole run history.
+    # Nothing would have errored; the next run would simply have started from zero and
+    # re-improved files that already have open PRs.
+    #
+    # An explicit name makes the volume independent of what the directory is called, so the
+    # next rename is free.
+    name: ijt_data
