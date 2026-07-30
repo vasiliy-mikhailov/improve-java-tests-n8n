@@ -135,15 +135,19 @@ class UnitStoreTest extends StoreTestSupport {
         assertTrue(unit.getUpdatedAt() > 1L);
     }
 
-    /// The record's `path` IS the unit key. Letting a patch change it would leave the unit's
-    /// ledger entries, its branch and its PR pointing at a name that no longer exists.
+    /// The record's `key` is the unit's identity. Letting a patch change it would leave the
+    /// unit's ledger entries, its branch and its PR pointing at a name that no longer exists.
+    ///
+    /// This guard used to sit on `path`, on the belief that a record's path IS its key. It is
+    /// not — `path` is the FILE — so it fired for every unit the pipeline wrote and for no
+    /// actual rename, and took the rest of each snapshot down with it. See SnapshotShapeTest.
     @Test
     void aPatchCannotRenameAUnit() {
         store.upsertUnit(RUN, KEY, null);
         assertThrows(IllegalArgumentException.class,
-                () -> store.upsertUnit(RUN, KEY, patch("path", "src/main/java/org/json/JSONML.java::toJSONArray")));
-        // the seed's own `path` is the key and must not trip the guard
-        assertNotNull(store.upsertUnit(RUN, KEY, patch("path", KEY, "status", "improving")));
+                () -> store.upsertUnit(RUN, KEY, patch("key", "src/main/java/org/json/JSONML.java::toJSONArray")));
+        // a patch restating the unit's own key must not trip the guard
+        assertNotNull(store.upsertUnit(RUN, KEY, patch("key", KEY, "status", "improving")));
     }
 
     /// The record the pipeline and the dashboard read — `state.files[key]`.
@@ -155,7 +159,11 @@ class UnitStoreTest extends StoreTestSupport {
 
         Map<String, Object> record = store.unit(RUN, KEY).orElseThrow().toMap();
         assertAll(
+                // no `path` was ever patched in, so this is the legacy-row fallback — a row
+                // seeded during discovery, before methods existed and the two really were the
+                // same string. A record carrying its own file is SnapshotShapeTest's business.
                 () -> assertEquals(KEY, record.get("path")),
+                () -> assertEquals(KEY, record.get("key")),
                 () -> assertEquals(40.0, record.get("coverage")),
                 // present and null, exactly as the seed record had them: the dashboard reads the
                 // presence of a key

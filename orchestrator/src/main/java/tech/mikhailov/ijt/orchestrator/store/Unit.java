@@ -41,12 +41,23 @@ public class Unit {
     @Column(name = "run_id", length = 64, nullable = false)
     private String runId;
 
-    /// `src/main/java/org/json/XML.java::parse` — the key `state.files` was keyed by, and the
-    /// value the record's own `path` field carries. One spelling, not two: the JS record's
-    /// `path` IS the key, and callers pass `f.path` back into `upsertFile` expecting to reach
-    /// the same unit.
+    /// `src/main/java/org/json/XML.java::parse` — the key `state.files` is keyed by, and the
+    /// value the record carries as `key`. This is the identity and nothing may rename it.
     @Column(name = "unit_key", length = 512, nullable = false)
     private String unitKey;
+
+    /// `src/main/java/org/json/XML.java` — the FILE, and a different thing from the key.
+    ///
+    /// This column existed only as a comment claiming the two were the same, and the store paid
+    /// for it: `patch` read the record's `path` as the key, so every real unit — whose path is
+    /// its file and whose key is `path::method` — was rejected as an attempted rename, and the
+    /// exception took the rest of the snapshot with it. See SnapshotShapeTest.
+    ///
+    /// They are not interchangeable. `path` is what a PR is opened against, what the prompt
+    /// shows the model and what groups 319 units into 26 files; `key` is what the ledgers,
+    /// `state.files` and this table are keyed by.
+    @Column(name = "path", length = 512)
+    private String path;
 
     @Column(name = "method", length = 256)
     private String method;
@@ -151,7 +162,7 @@ public class Unit {
     /// written even when null, because the dashboard reads the presence of a key and the JS
     /// object has them from the moment the unit exists.
     private static final List<String> SEEDED = List.of(
-            "path", "coverage", "mutation", "mac", "macBefore", "macAfter",
+            "path", "key", "coverage", "mutation", "mac", "macBefore", "macAfter",
             "status", "attempts", "branch", "prUrl", "prPatch", "updatedAt");
 
     /// Apply one patch, key by key, exactly as `state.files[p] = {...f, ...patch}` did.
@@ -173,10 +184,14 @@ public class Unit {
             String k = e.getKey();
             Object v = e.getValue();
             switch (k) {
-                case "path" -> {
-                    // The record's `path` is the unit key and the key is the identity. Renaming
-                    // a unit through a patch would leave its ledger entries, its branch and its
-                    // PR pointing at a unit that no longer exists under that name.
+                // An ordinary column. It is the FILE, it is not the identity, and a caller
+                // correcting it is not renaming anything.
+                case "path" -> path = str(v);
+                case "key" -> {
+                    // THIS is the identity. Renaming a unit through a patch would leave its
+                    // ledger entries, its branch and its PR pointing at a unit that no longer
+                    // exists under that name. The guard used to sit on `path`, where it fired
+                    // for every unit the pipeline ever wrote and for no actual rename.
                     if (v != null && !unitKey.equals(String.valueOf(v))) {
                         throw new IllegalArgumentException(
                                 "patch would rename unit " + unitKey + " to " + v + "; a unit's key is its identity");
@@ -210,7 +225,10 @@ public class Unit {
     /// `state.files[key]` had.
     public Map<String, Object> toMap() {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("path", unitKey);
+        // The file, falling back to the key for rows written before `path` was a column of its
+        // own — those were seeded during discovery, when the two really were the same string.
+        out.put("path", path == null ? unitKey : path);
+        out.put("key", unitKey);
         out.put("coverage", coverage);
         out.put("mutation", mutation);
         out.put("mac", mac);
@@ -261,6 +279,8 @@ public class Unit {
     public String getRunId() { return runId; }
 
     public String getUnitKey() { return unitKey; }
+
+    public String getPath() { return path == null ? unitKey : path; }
 
     public String getMethod() { return method; }
 

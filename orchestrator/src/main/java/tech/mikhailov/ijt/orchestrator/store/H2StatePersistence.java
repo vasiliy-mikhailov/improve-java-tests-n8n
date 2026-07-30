@@ -68,17 +68,21 @@ public class H2StatePersistence implements StatePersistence {
             // Without this the row exists and currentRun() still returns empty, because it
             // resolves through IJT_STORE.current_run_id rather than guessing from status.
             store.setCurrentRun(runId);
+            // Per ROW, not per snapshot. One rejected unit used to abort the whole flush —
+            // every unit after it, every PR, both ledgers and the budget, on every flush for the
+            // life of the run — and the only trace was a single line on stderr. A record the
+            // store cannot accept is one lost row; it is not grounds for losing 42 PRs.
             for (Map.Entry<String, Map<String, Object>> e : s.files.entrySet()) {
-                store.upsertUnit(runId, e.getKey(), e.getValue());
+                guarded("unit " + e.getKey(), () -> store.upsertUnit(runId, e.getKey(), e.getValue()));
             }
             for (Object pr : s.prs) {
-                store.addPr(prRow(runId, asMap(pr)));
+                guarded("pr", () -> store.addPr(prRow(runId, asMap(pr))));
             }
             // The ledgers are per-REPO and outlive the run: that is what stops a restart
             // re-improving files that already have open PRs.
-            writeLedger(s.improvedLedger, store::putImproved);
-            writeLedger(s.measureLedger, store::putMeasured);
-            if (s.llmBudget != null) store.saveLlmBudget(asMap(s.llmBudget));
+            guarded("improvedLedger", () -> writeLedger(s.improvedLedger, store::putImproved));
+            guarded("measureLedger", () -> writeLedger(s.measureLedger, store::putMeasured));
+            if (s.llmBudget != null) guarded("llmBudget", () -> store.saveLlmBudget(asMap(s.llmBudget)));
             store.bumpSeqTo(s.seq);
         } catch (Exception e) {
             // Never throw into the caller. A persistence failure has to degrade to a lost
@@ -114,6 +118,20 @@ public class H2StatePersistence implements StatePersistence {
             var run = store.currentRun().orElse(null);
             if (run == null) return false;
 
+            // A THINNER STORE MUST NOT WIN. While the dual-write is on, state.json is the
+            // complete copy and this is the mirror, so a restore that would hand back fewer
+            // units than the file already holds is not a restore — it is a deletion with extra
+            // steps, and it happened: 26 rows replaced 319 units and 42 PRs in memory, and the
+            // next flush would have written that over the file. Fall back and let State.load()
+            // read the file, exactly as it does on a fresh deployment.
+            long inDb = store.unitCount(run.getId());
+            long inFile = unitsInStateFile();
+            if (inFile > inDb) {
+                System.err.println("H2 holds " + inDb + " units against state.json's " + inFile
+                        + " — falling back to the file, which is authoritative while both are written");
+                return false;
+            }
+
             into.run = fromRow(run);
             into.files = new LinkedHashMap<>(store.unitsAsMap(run.getId()));
             into.prs = new ArrayList<>(store.prsAsMaps(run.getId()));
@@ -146,6 +164,22 @@ public class H2StatePersistence implements StatePersistence {
             // file, rather than starting a run against a half-populated store.
             System.err.println("H2 load failed, falling back: " + e);
             return false;
+        }
+    }
+
+    /// How many units the file on disk holds, or 0 if there is no readable file.
+    ///
+    /// Counted rather than trusted: the comparison above is only worth making against a number
+    /// that came from the file itself. An unreadable or absent file answers 0, which lets the
+    /// database win — the fresh-deployment case, where there is nothing to lose.
+    private static long unitsInStateFile() {
+        try {
+            java.nio.file.Path f = State.stateFile();
+            if (!java.nio.file.Files.exists(f)) return 0;
+            Map<String, Object> raw = MAPPER.readValue(java.nio.file.Files.readString(f), MAP);
+            return raw.get("files") instanceof Map<?, ?> m ? m.size() : 0;
+        } catch (Exception e) {
+            return 0;
         }
     }
 
@@ -200,6 +234,27 @@ public class H2StatePersistence implements StatePersistence {
 
     private static String str(Object o) {
         return o == null ? null : String.valueOf(o);
+    }
+
+    /// Run one piece of a snapshot, and let the rest of the snapshot happen regardless.
+    ///
+    /// Loud, and counted: a store quietly dropping rows is how this one stayed write-dead for
+    /// the life of three runs while every request it served looked fine. The count is what makes
+    /// the boot-time comparison in BackendBootstrap meaningful rather than a coincidence.
+    private void guarded(String what, Runnable piece) {
+        try {
+            piece.run();
+        } catch (Exception e) {
+            dropped++;
+            System.err.println("H2 snapshot dropped " + what + ": " + e);
+        }
+    }
+
+    private volatile long dropped;
+
+    /// How many rows this process has failed to write. Read by the boot-time reconciliation.
+    public long droppedRows() {
+        return dropped;
     }
 
     private void writeLedger(Map<String, Map<String, Map<String, Object>>> ledger,
