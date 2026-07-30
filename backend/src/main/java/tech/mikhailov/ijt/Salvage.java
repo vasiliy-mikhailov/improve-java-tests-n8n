@@ -41,6 +41,48 @@ public final class Salvage {
         return out;
     }
 
+    /// Boilerplate that says nothing a reader of this event does not already know.
+    ///
+    /// "BUILD FAILURE" is why we are here; "-> [Help 1]" is Maven advertising. Neither
+    /// distinguishes a test that would not compile from one that asserted the wrong thing, which
+    /// is the only distinction this line exists to make.
+    /// `Tests run: 3, Failures: 1` is a COUNT, not a cause. It is also the line Surefire prints
+    /// first, so leaving it in would hide the very next line — the one naming the test that
+    /// failed, which is the whole point.
+    private static final List<String> NOISE = List.of(
+            "BUILD FAILURE", "-> [Help", "----", "To see the full stack trace",
+            "Re-run Maven using", "For more information about the errors", "Tests run:");
+
+    /// The single most informative line of a suite failure, or "" when there is none.
+    ///
+    /// 814 rounds were deleted for breaking the suite without one word about the cause, which is
+    /// 58% of every miss this pipeline has recorded. The remedy for a test that will not compile
+    /// (more type context in the prompt) and the remedy for a test that compiles and asserts
+    /// wrongly (a better description of the mutant) are opposites, and nothing in the log said
+    /// which was happening.
+    ///
+    /// An empty answer means NOT CAPTURED and must read that way. Guessing a cause here would put
+    /// a fabricated explanation into the record people use to judge the run — this project has
+    /// invented two verdicts before and paid for both.
+    public static String whyItBroke(String log) {
+        if (log == null || log.isBlank()) return "";
+        String best = null;
+        for (String raw : log.split("\\R")) {
+            String line = raw.strip();
+            if (line.isEmpty()) continue;
+            if (NOISE.stream().anyMatch(line::contains)) continue;
+            // strip the level marker; it is the same on every line and costs width
+            String bare = line.replaceFirst("^\\[(?:ERROR|WARNING|INFO)\\]\\s*", "").strip();
+            if (bare.isEmpty() || bare.equals("COMPILATION ERROR :")) continue;
+            // The FIRST real error explains the build; Maven repeats and then trails off into
+            // help text, so later lines are progressively less informative.
+            best = bare;
+            break;
+        }
+        if (best == null) return "";
+        return best.length() <= 200 ? best : best.substring(0, 197) + "...";
+    }
+
     /// Where the method's body ends, counting braces over code only.
     ///
     /// Braces inside string literals and comments are not structure: a test asserting on "}"

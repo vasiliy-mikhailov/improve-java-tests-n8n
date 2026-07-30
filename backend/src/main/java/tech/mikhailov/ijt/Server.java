@@ -1816,7 +1816,15 @@ public final class Server {
                     + String.join(", ", salvaged));
         }
         if (!deleted.isEmpty()) {
-            State.event(stage, "deleted generated tests that broke the suite: " + String.join(", ", deleted));
+            // WITH THE REASON. This event fired 814 times in run-1785444794893 — 58% of every
+            // miss the pipeline has ever recorded — and said only that something broke. The text
+            // was in hand the whole time: `summary` above is lastSuiteFailure, read three lines
+            // up to decide what to salvage. A test that will not compile and a test that asserts
+            // the wrong thing need opposite remedies, and this is the only line that can tell
+            // them apart. Empty means not captured, and reads that way rather than as a guess.
+            String why = Salvage.whyItBroke(summary);
+            State.event(stage, "deleted generated tests that broke the suite: " + String.join(", ", deleted)
+                    + (why.isEmpty() ? " (no reason captured)" : " — " + why));
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
