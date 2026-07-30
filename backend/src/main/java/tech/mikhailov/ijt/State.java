@@ -581,7 +581,7 @@ public final class State {
     }
 
     /// The default: a temp file and an atomic rename, unchanged from when this was inline.
-    static final class FilePersistence implements StatePersistence {
+    public static final class FilePersistence implements StatePersistence {
         @Override
         public void writeSnapshot(State.Store store) {
             writeStateFileNow();

@@ -37,10 +37,31 @@ import tech.mikhailov.ijt.State;
 @Component
 public class BackendBootstrap {
 
+    private final tech.mikhailov.ijt.orchestrator.store.H2StatePersistence h2;
+
+    public BackendBootstrap(tech.mikhailov.ijt.orchestrator.store.H2StatePersistence h2) {
+        this.h2 = h2;
+    }
+
     @PostConstruct
     public void install() {
         Exec.setProgressSink(State::setProgress);
-        State.load();
+
+        // H2 becomes the store, and the ORDER here is the whole migration.
+        //
+        // Install first, then try to restore from the database. If it answers false — a fresh
+        // deployment, or the first boot after this change — fall through to State.load(), which
+        // reads /data/state.json exactly as before. That one-time fallback is not politeness:
+        // the running deployment carries 222 improved units and 238 measurements, and losing the
+        // improvedLedger means re-improving files that already have open PRs.
+        //
+        // After that read, the next flush writes everything into H2 and the file stops being
+        // the source. state.json keeps being written for now — it costs little and it is the
+        // only way back if this turns out to be wrong.
+        State.persistence(h2);
+        if (!h2.load(State.STATE)) {
+            State.load();
+        }
         // after the load: the rules engine seeds its per-stage token ceilings from the
         // budget the state file carries, and reads the run's rule text through it
         Server.installCollaborators();

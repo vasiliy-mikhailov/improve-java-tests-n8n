@@ -137,6 +137,25 @@ public class StateRepository {
         return runs.save(run);
     }
 
+    /// Point the store at a run, with none of startRun's semantics.
+    ///
+    /// currentRun() resolves through IJT_STORE.current_run_id rather than guessing from status,
+    /// so a snapshot that saves the run row without setting this leaves currentRun() empty and
+    /// a restart restores nothing — which reads as "H2 stores nothing" and is not that at all.
+    ///
+    /// NOT startRun(): that clears the incoming run's event log and marks the previous run
+    /// interrupted. Correct when a run actually starts, and destructive from the snapshot
+    /// flusher, which writes the SAME run every few seconds and would erase its own log each
+    /// time.
+    public void setCurrentRun(String runId) {
+        if (runId == null) return;
+        StoreRow s = storeRow();
+        if (!runId.equals(s.getCurrentRunId())) {
+            s.setCurrentRunId(runId);
+            store.save(s);
+        }
+    }
+
     /// `POST /api/run/finish`.
     public Optional<Run> finishRun(String runId, String status) {
         return runs.findById(runId).map(run -> {
