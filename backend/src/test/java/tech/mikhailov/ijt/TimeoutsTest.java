@@ -49,91 +49,9 @@ import static tech.mikhailov.ijt.Timeouts.SUITE_RUN_MS;
 /// guaranteed to lose, because the client's clock starts earlier.
 class TimeoutsTest {
 
-    /// One HTTP node of the generated workflow. `route` and `timeout` are both boxed because
-    /// the JSON can leave either out, and a 0 in place of a missing timeout would read as a
-    /// declared timeout of zero rather than as "this node declares none".
-    private record HttpNode(String name, String route, Long timeout) {}
 
-    // Not `new URI()`: an n8n url may be an expression rather than a literal, e.g.
-    // `=http://127.0.0.1:3000/api/files/gaps?path={{ ... }}`, which URI rejects outright.
-    private static final Pattern ROUTE = Pattern.compile("https?://[^/]+(/[^?{\\s]*)");
 
-    // Declared AFTER the pattern it uses: static initialisers run in source order, and loading
-    // the nodes above ROUTE leaves the pattern null at the moment routeOf() needs it.
-    private static final List<HttpNode> NODES = loadNodes();
 
-    private static String routeOf(String url) {
-        Matcher m = ROUTE.matcher(url == null ? "" : url);
-        if (!m.find()) return null;
-        String route = m.group(1);
-        return route.isEmpty() ? null : route;
-    }
-
-    private static List<HttpNode> loadNodes() {
-        Path wf = workflowFile();
-        JsonNode root;
-        try {
-            root = new ObjectMapper().readTree(Files.readString(wf));
-        } catch (IOException e) {
-            throw new UncheckedIOException("cannot read " + wf, e);
-        }
-        List<HttpNode> out = new ArrayList<>();
-        for (JsonNode n : root.path("nodes")) {
-            if (!n.path("type").asText("").contains("httpRequest")) continue;
-            JsonNode params = n.path("parameters");
-            JsonNode timeout = params.path("options").path("timeout");
-            out.add(new HttpNode(
-                    n.path("name").asText(""),
-                    routeOf(params.path("url").asText("")),
-                    timeout.isNumber() ? timeout.asLong() : null));
-        }
-        return List.copyOf(out);
-    }
-
-    /// The workflow is generated at the repo root, not inside the backend module, and Surefire
-    /// runs with the module as its working directory. Walking up to whichever ancestor holds it
-    /// beats a fixed `../`, which would break the day the module moves — and a broken path here
-    /// would retire the whole guard, silently.
-    private static Path workflowFile() {
-        Path base = Path.of(System.getProperty("basedir", System.getProperty("user.dir"))).toAbsolutePath();
-        for (Path d = base; d != null; d = d.getParent()) {
-            Path p = d.resolve("n8n/workflows/Improve-Java-Tests.json");
-            if (Files.isRegularFile(p)) return p;
-        }
-        throw new IllegalStateException("n8n/workflows/Improve-Java-Tests.json not found from " + base);
-    }
-
-    @Test
-    void theGeneratedWorkflowActuallyContainsHttpNodesToCheck() {
-        // a guard against the assertions below passing vacuously if the shape ever changes
-        assertTrue(NODES.size() > 20, "only found " + NODES.size() + " HTTP nodes");
-        assertTrue(NODES.stream().allMatch(n -> n.timeout() != null), "every node must declare a timeout");
-    }
-
-    @Test
-    void noHttpNodeGivesUpBeforeTheSubprocessItStarts() {
-        List<String> bad = NODES.stream()
-                .filter(n -> SUBPROCESS_CEILING_MS.get(n.route()) != null)
-                // A missing timeout counts as bad here, where the JS comparison against
-                // `undefined` was NaN and quietly false. n8n reads no timeout as "wait
-                // forever", which is the very hang this file exists to prevent.
-                .filter(n -> n.timeout() == null
-                        || n.timeout() < SUBPROCESS_CEILING_MS.get(n.route()) + HTTP_MARGIN_MS)
-                .map(n -> n.name() + " (" + n.route() + "): http " + n.timeout()
-                        + " vs subprocess " + SUBPROCESS_CEILING_MS.get(n.route()))
-                .toList();
-        assertEquals(List.of(), bad, "these nodes abandon work that is still running:\n  " + String.join("\n  ", bad));
-    }
-
-    @Test
-    void everyLongRunningRouteIsActuallyCoveredByTheCeilingTable() {
-        // The table is the contract. A route that runs a subprocess but is missing from it would
-        // silently opt out of the check above — which is exactly how this defect survived.
-        for (String route : SUBPROCESS_CEILING_MS.keySet()) {
-            assertTrue(NODES.stream().anyMatch(n -> route.equals(n.route())),
-                    route + " is in the table but no node calls it");
-        }
-    }
 
     @Test
     void theMarginIsBigEnoughToBeWorthHaving() {
@@ -191,17 +109,4 @@ class TimeoutsTest {
         assertThrows(UnsupportedOperationException.class, () -> SUBPROCESS_CEILING_MS.put("/api/test/run", 1L));
     }
 
-    @Test
-    void aRouteIsReadOutOfAnN8nExpressionUrlToo() {
-        // The url is not always a literal: a node may compute it, and the leading `=` plus the
-        // `{{ }}` placeholders make it something no URI parser will accept. Stopping at `?` and
-        // at `{` is what keeps the query string and the expression out of the route.
-        assertEquals("/api/files/gaps",
-                routeOf("=http://127.0.0.1:3000/api/files/gaps?path={{ encodeURIComponent($json.file) }}"));
-        assertEquals("/api/test/run", routeOf("http://127.0.0.1:3000/api/test/run"));
-        assertEquals("/api/run/", routeOf("=http://127.0.0.1:3000/api/run/{{ $json.id }}"));
-        // a node whose url we cannot read is not a node on some route we happen to know
-        assertNull(routeOf("not a url at all"));
-        assertNull(routeOf(""));
-    }
 }

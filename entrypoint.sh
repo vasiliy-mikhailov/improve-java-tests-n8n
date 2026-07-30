@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DATA_DIR="${DATA_DIR:-/data}"
-mkdir -p "$DATA_DIR" "$DATA_DIR/repos" "$DATA_DIR/prs" "$DATA_DIR/.n8n"
+mkdir -p "$DATA_DIR" "$DATA_DIR/repos" "$DATA_DIR/prs" 
 
 # keep the eval harness / batch driver in the volume in sync with the image,
 # preserving run artifacts (results/, synth-origin) that only live in /data
@@ -40,17 +40,6 @@ done
 
 gen_secret() { head -c 32 /dev/urandom | base64 | tr -d '/+=' | cut -c1-40; }
 
-# ── persistent secrets ──────────────────────────────────────────────────────
-if [[ -z "${N8N_ENCRYPTION_KEY:-}" ]]; then
-  KEY_FILE="$DATA_DIR/.encryption_key"
-  [[ -f "$KEY_FILE" ]] || { gen_secret > "$KEY_FILE"; chmod 600 "$KEY_FILE"; }
-  export N8N_ENCRYPTION_KEY="$(cat "$KEY_FILE")"
-fi
-PW_FILE="$DATA_DIR/.owner_password"
-[[ -f "$PW_FILE" ]] || { echo "Ijt-$(gen_secret | cut -c1-16)-1" > "$PW_FILE"; chmod 600 "$PW_FILE"; }
-OWNER_EMAIL="${N8N_OWNER_EMAIL:-admin@ijt.local}"
-OWNER_PASSWORD="$(cat "$PW_FILE")"
-
 # ── git identity ────────────────────────────────────────────────────────────
 git config --global user.name  "${GIT_USER_NAME:-improve-tests-bot}"
 git config --global user.email "${GIT_USER_EMAIL:-bot@improve-tests.local}"
@@ -64,70 +53,27 @@ if [[ -n "${GH_TOKEN:-}" ]]; then
     || git config --global credential.'https://github.com'.helper '!gh auth git-credential'
 fi
 
-# ── import workflows (by fixed id → idempotent re-import on each boot) ──────
-n8n import:workflow --separate --input=/app/n8n/workflows 2>&1 | tail -2 || echo "workflow import failed"
-# import deactivates workflows; re-activate so the webhook trigger registers
-n8n update:workflow --id=ijtImproveJavaTests1 --active=true 2>&1 | tail -1 || true
 
 # ── backend ─────────────────────────────────────────────────────────────────
 # Java 25, explicitly — NOT `java` from PATH, which is JAVA_HOME and points at 17 because
 # that is the default for building target projects. The backend needs its own JDK and the
 # two must not be confused.
 #
-# Three backends, and both older ones stay in the image on purpose. This is the TRANSITION
-# step: `spring` becomes the default, n8n is still installed and still importable, and a
-# rollback is one environment variable — not a rebuild — for as long as the orchestrator is
-# unproven on real work.
+# The orchestrator, and nothing else.
 #
-#   spring  the Spring Batch orchestrator. Owns the run loop that the n8n workflow used to
-#           drive, and serves the dashboard and /api/* itself.
-#   java    tech.mikhailov.ijt.Server standalone. n8n drives it over HTTP, as before.
-#   node    the original sidecar. Still passes its own 484 tests.
-case "${BACKEND:-spring}" in
-  node)
-    echo "backend: node (rollback path)"
-    node /app/sidecar/server.js &
-    ;;
-  java)
-    echo "backend: java standalone ($("$BACKEND_JAVA_HOME/bin/java" -version 2>&1 | head -1)) — n8n drives it"
-    "$BACKEND_JAVA_HOME/bin/java" -jar /app/ijt-backend.jar &
-    ;;
-  *)
-    echo "backend: spring orchestrator ($("$BACKEND_JAVA_HOME/bin/java" -version 2>&1 | head -1))"
-    # Binds SIDECAR_PORT (3000), same as every backend before it, so Caddy and compose need
-    # no change. DATA_DIR is where H2 and state.json both live.
-    "$BACKEND_JAVA_HOME/bin/java" -jar /app/ijt-orchestrator.jar &
-    ;;
-esac
+# The three-way BACKEND switch is gone with n8n. `java` ran tech.mikhailov.ijt.Server
+# standalone and was only useful because n8n drove it over HTTP; `node` was the original
+# sidecar behind the same workflow. With no workflow there is nothing to drive either, so
+# rollback now means redeploying an earlier image rather than flipping a variable.
+#
+# $BACKEND_JAVA_HOME explicitly, NOT `java` from PATH: PATH resolves to JAVA_HOME, which is
+# 17 because that is the default for building TARGET projects. Two different jobs.
+#
+# `exec`, so the JVM is PID 1 and receives SIGTERM directly — `docker stop` then reaches the
+# orchestrator instead of a shell that ignores it and waits out the 10-second kill timer.
+# A JVM does not reap children it did not spawn, and PIT/Surefire orphans get reparented to
+# PID 1 on a process-group kill, so compose sets `init: true` to supply a reaper.
+echo "backend: spring orchestrator ($("$BACKEND_JAVA_HOME/bin/java" -version 2>&1 | head -1))"
+exec "$BACKEND_JAVA_HOME/bin/java" -jar /app/ijt-orchestrator.jar
 
-# ── post-boot: owner setup + 10-year auth token mint ────────────────────────
-(
-  set +e
-  for i in $(seq 1 120); do
-    sleep 2
-    curl -sf http://127.0.0.1:5678/healthz >/dev/null && break
-  done
-  # login → n8n-auth cookie (valid N8N_USER_MANAGEMENT_JWT_DURATION_HOURS = 10 years).
-  # Owner setup is retried INSIDE the loop: /healthz turns green before /rest is ready
-  # to serve it, and a setup request that lands too early leaves every later login
-  # 401-ing with no owner ever created.
-  for i in $(seq 1 20); do
-    # create owner if the instance is fresh (4xx once it already exists — ignored)
-    curl -sS -X POST http://127.0.0.1:5678/rest/owner/setup \
-      -H 'Content-Type: application/json' \
-      -d "{\"email\":\"$OWNER_EMAIL\",\"firstName\":\"IJT\",\"lastName\":\"Bot\",\"password\":\"$OWNER_PASSWORD\"}" >/dev/null 2>&1
-    COOKIE=$(curl -sS -D - -o /dev/null -X POST http://127.0.0.1:5678/rest/login \
-      -H 'Content-Type: application/json' \
-      -d "{\"emailOrLdapLoginId\":\"$OWNER_EMAIL\",\"password\":\"$OWNER_PASSWORD\"}" \
-      | grep -i '^set-cookie: n8n-auth=' | sed -E 's/^[Ss]et-[Cc]ookie: n8n-auth=([^;]+).*/\1/')
-    if [[ -n "$COOKIE" ]]; then
-      printf '%s' "$COOKIE" > "$DATA_DIR/n8n-auth-token.txt"
-      chmod 600 "$DATA_DIR/n8n-auth-token.txt"
-      echo "n8n auth token minted → $DATA_DIR/n8n-auth-token.txt"
-      break
-    fi
-    sleep 3
-  done
-) &
 
-exec n8n start

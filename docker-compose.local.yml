@@ -20,13 +20,22 @@ services:
     build: .
     image: improve-java-tests-n8n:latest
     container_name: ijtn8n
+    # A reaper. PIT and Surefire fork JVMs; Exec kills the whole process group, and the
+    # dead children are then reparented to PID 1 — which reaps them only if it knows to.
+    # Measured on the live box after 3 hours: 5 <defunct> java processes and climbing. They
+    # cost no CPU or memory, just PID-table entries, so this leaks slowly rather than
+    # breaking loudly. It gets worse once n8n goes and the JVM itself is PID 1: a JVM does
+    # not reap children it did not spawn.
+    init: true
     restart: unless-stopped
     env_file: .env
     ports:
-      # host:container. The container-side ports follow N8N_PORT/SIDECAR_PORT because the
-      # processes bind to those; the host side is separate so you can move a port that is
-      # already taken on your machine without changing what the app listens on.
-      - "${HOST_N8N_PORT:-5678}:${N8N_PORT:-5678}"
+      # host:container. The container side follows SIDECAR_PORT because that is what the
+      # orchestrator binds; the host side is separate so you can move a port that is already
+      # taken on your machine without changing what the app listens on.
+      #
+      # One port now. n8n's 5678 is gone with n8n — the orchestrator serves the dashboard,
+      # the API and the run webhook on this one.
       - "${HOST_DASHBOARD_PORT:-3000}:${SIDECAR_PORT:-3000}"
     volumes:
       - ijt_data:/data

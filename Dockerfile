@@ -1,7 +1,12 @@
-# improve-java-tests-n8n: n8n orchestrator + sidecar runner + dashboard, one container.
-# The sidecar drives real Java tooling, so the image carries several JDKs (a project's
-# build floor can exceed its declared bytecode target, and PIT's forked minion dies
-# under the wrong JDK), plus Maven and Gradle.
+# improve-java-tests: one container running the Spring Batch orchestrator.
+#
+# n8n and the Node sidecar are gone — the orchestrator owns the run loop and serves the
+# dashboard and API itself. The image still carries several JDKs because it BUILDS other
+# people's projects: a project's build floor can exceed its declared bytecode target, and
+# PIT's forked minion dies under the wrong JDK. Plus Maven and Gradle, for the same reason.
+#
+# The base is still a Node image, for one remaining reason: eval/*.mjs. Those three harness
+# scripts are the only Node left, and until they are ported the runtime has to stay.
 FROM node:22-bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -84,40 +89,17 @@ RUN curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused \
 COPY docker/settings.xml /app/docker/settings.xml.template
 COPY docker/init.gradle /root/.gradle/init.gradle
 
-ARG N8N_VERSION=2.32.0
-# Same reasoning as the Maven/Gradle download above, and observed the same way: this step
-# failed once with `npm error code ECONNRESET ... socket disconnected before secure TLS
-# connection was established` on a build where nothing but a comment had changed. n8n is
-# the largest download in the image, so it has the widest window to catch a reset.
-RUN npm install -g --omit=dev n8n@${N8N_VERSION} \
-      --fetch-retries=5 --fetch-retry-mintimeout=5000 --fetch-retry-maxtimeout=60000 \
-  && npm cache clean --force
 
-# n8n + runtime defaults (overridable via compose env_file)
+# runtime defaults (overridable via compose env_file)
 ENV DATA_DIR=/data \
-    N8N_USER_FOLDER=/data \
-    N8N_PORT=5678 \
     SIDECAR_PORT=3000 \
-    N8N_USER_MANAGEMENT_JWT_DURATION_HOURS=87600 \
-    N8N_SECURE_COOKIE=false \
-    N8N_PROXY_HOPS=1 \
-    N8N_DIAGNOSTICS_ENABLED=false \
-    N8N_PERSONALIZATION_ENABLED=false \
-    N8N_VERSION_NOTIFICATIONS_ENABLED=false \
-    N8N_TEMPLATES_ENABLED=false \
-    N8N_HIRING_BANNER_ENABLED=false \
-    EXECUTIONS_TIMEOUT=-1 \
-    N8N_RUNNERS_TASK_TIMEOUT=7200 \
     GENERIC_TIMEZONE=UTC \
     MAVEN_OPTS="-Xmx2g" \
     GRADLE_OPTS="-Dorg.gradle.daemon=false"
 
-# sidecar/ is no longer the backend, and is still here on purpose: it holds the dashboard's
-# static files (DASHBOARD_DIR, unported — plain HTML/CSS/JS), and it is the rollback path
-# while the Java backend proves itself on real runs. Node is in the image regardless; n8n is
-# a Node application.
-COPY sidecar /app/sidecar
-COPY n8n /app/n8n
+# The dashboard is static HTML/CSS/JS and was never ported; it is served from DASHBOARD_DIR
+# by the orchestrator, not from the jar, so it can be edited without a rebuild.
+COPY dashboard /app/dashboard
 COPY config /app/config
 # eval harness + batch driver ship with the image; entrypoint refreshes the copy
 # in /data on boot so the driver can never lag the deployed code
@@ -154,8 +136,8 @@ RUN cd /app \
   && rm -rf /app/backend/target /app/orchestrator/target
 
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh && node /app/n8n/generate-workflows.mjs
+RUN chmod +x /app/entrypoint.sh
 
 VOLUME /data
-EXPOSE 5678 3000
+EXPOSE 3000
 ENTRYPOINT ["/app/entrypoint.sh"]

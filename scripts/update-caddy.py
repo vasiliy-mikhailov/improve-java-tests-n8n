@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Rewrite ONLY the improve-java-tests-n8n.mikhailov.tech block of the shared
-Caddyfile: keep the existing basic_auth hash, inject the (new) 10-year n8n-auth
-JWT passed as argv[1]. Brace-aware — never touches other site blocks."""
+"""Rewrite ONLY the improve-java-tests-n8n.mikhailov.tech block of the shared Caddyfile,
+keeping the existing basic_auth hash. Brace-aware — never touches other site blocks.
+
+Took an n8n-auth JWT as argv[1] and injected it as a cookie on every non-/dashboard
+request, because n8n owned those routes and Caddy logged you into it. The Spring
+orchestrator serves them itself behind Caddy's own basic_auth, so there is no second
+credential to forward and no ten-year token to rotate."""
 import re
-import sys
 
 CADDYFILE = "/home/vmihaylov/java_8_11_17_to_java_21/proxy/Caddyfile"
 SITE = "improve-java-tests-n8n.mikhailov.tech"
 
 def main():
-    token = sys.argv[1].strip()
-    assert token and "." in token, "usage: update-caddy.py <n8n-auth-jwt>"
     text = open(CADDYFILE).read()
 
     start = text.find(SITE + " {")
@@ -42,16 +43,14 @@ def main():
 		reverse_proxy ijtn8n:3000
 	}}
 	handle {{
-		reverse_proxy ijtn8n:5678 {{
-			header_up Cookie "n8n-auth={token}"
-		}}
+		reverse_proxy ijtn8n:3000
 	}}
 }}"""
     if new_block == old_block:
         print("caddy block already up to date")
         return
     open(CADDYFILE, "w").write(text[:start] + new_block + text[end:])
-    print("caddy block updated (token rotated)")
+    print("caddy block updated")
 
 if __name__ == "__main__":
     main()

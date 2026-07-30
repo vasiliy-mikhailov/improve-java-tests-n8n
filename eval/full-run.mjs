@@ -5,7 +5,8 @@
 // n8n execution small and lets the run survive restarts.
 import { readFileSync } from 'node:fs';
 
-const N8N = 'http://127.0.0.1:5678';
+// The orchestrator serves the webhook itself now; n8n is gone and so is :5678.
+const API = 'http://127.0.0.1:3000';
 const API = 'http://127.0.0.1:3000';
 const BATCH_FILES = 25;
 const BATCH_MAX_ITER = 0; // unlimited picks within a batch; scopeLimit bounds it
@@ -48,7 +49,7 @@ for (let batch = 1; batch <= 200; batch++) {
   // sidecar's run marked active — the driver is the owner here
   const body = { scopeLimit: BATCH_FILES, maxIterations: BATCH_MAX_ITER, force: true, ...overrides };
   log(`batch ${batch}: triggering (${JSON.stringify(body)}), ledger=${before}`);
-  const trig = await fetch(`${N8N}/webhook/improve-run`, {
+  const trig = await fetch(`${API}/webhook/improve-run`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   if (trig.status >= 400) { log('webhook failed: ' + trig.status); process.exit(1); }

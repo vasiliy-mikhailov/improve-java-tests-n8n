@@ -16,7 +16,7 @@ import java.nio.file.Path;
 /// Serving the dashboard's static files.
 ///
 /// It is not in the jar and is not going to be. It is plain HTML/CSS/JS that was never ported,
-/// it lives in the image at /app/sidecar/dashboard, and it is mounted from the filesystem so it
+/// it lives in the image at /app/dashboard, and it is mounted from the filesystem so it
 /// can be edited without a rebuild. So this is a FILE resource handler, not a classpath one —
 /// the usual `static/` convention would silently serve nothing.
 ///
@@ -28,7 +28,7 @@ public class DashboardConfig implements WebMvcConfigurer {
 
     private final Path root;
 
-    public DashboardConfig(@Value("${ijt.dashboard-dir:${DASHBOARD_DIR:/app/sidecar/dashboard}}") String dashboardDir) {
+    public DashboardConfig(@Value("${ijt.dashboard-dir:${DASHBOARD_DIR:/app/dashboard}}") String dashboardDir) {
         this.root = Path.of(dashboardDir).toAbsolutePath().normalize();
     }
 

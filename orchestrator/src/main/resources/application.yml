@@ -73,7 +73,7 @@ spring:
   web:
     resources:
       # The dashboard is NOT ported and does not live in the jar: it is plain HTML/CSS/JS
-      # under DASHBOARD_DIR, which the image fills from sidecar/dashboard. Serving it from
+      # under DASHBOARD_DIR, which the image fills from dashboard/. Serving it from
       # here is what makes `http://host:3000/` the dashboard, as it is today.
       #
       # classpath:/static/ stays second so anything this module ever ships of its own is
@@ -159,7 +159,7 @@ ijt:
   dashboard:
     # Server.dashboardDir(): a jar has no __dirname, so the location is stated rather than
     # derived, defaulting to where the image already puts the files.
-    dir: "${DASHBOARD_DIR:/app/sidecar/dashboard}"
+    dir: "${DASHBOARD_DIR:/app/dashboard}"
   ws:
     # How often the publisher looks for new events to push. 250 ms is four frames a second —
     # under a person's perception of "live", and eight times finer than the 2-second poll of

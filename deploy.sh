@@ -18,16 +18,10 @@ for i in $(seq 1 60); do
 done
 docker exec ijtn8n curl -sf http://127.0.0.1:3000/api/health >/dev/null
 
-echo "waiting for n8n + auth token mint..."
-TOK=""
-for i in $(seq 1 120); do
-  TOK=$(docker exec ijtn8n cat /data/n8n-auth-token.txt 2>/dev/null || true)
-  [[ -n "$TOK" ]] && break
-  sleep 2
-done
-[[ -n "$TOK" ]] || { echo "ERROR: no auth token minted"; exit 1; }
-
-python3 scripts/update-caddy.py "$TOK"
+# No token to mint. Caddy used to inject an n8n-auth cookie on every non-/dashboard
+# request because n8n owned those routes; the orchestrator serves them itself behind
+# Caddy's basic_auth, so the ten-year JWT and the file it lived in are both gone.
+python3 scripts/update-caddy.py
 docker exec inference-caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 \
   || docker restart inference-caddy >/dev/null
 

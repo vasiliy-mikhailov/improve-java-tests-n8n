@@ -3,6 +3,13 @@ services:
     build: .
     image: improve-java-tests-n8n:latest
     container_name: ijtn8n
+    # A reaper. PIT and Surefire fork JVMs; Exec kills the whole process group, and the
+    # dead children are then reparented to PID 1 — which reaps them only if it knows to.
+    # Measured on the live box after 3 hours: 5 <defunct> java processes and climbing. They
+    # cost no CPU or memory, just PID-table entries, so this leaks slowly rather than
+    # breaking loudly. It gets worse once n8n goes and the JVM itself is PID 1: a JVM does
+    # not reap children it did not spawn.
+    init: true
     restart: unless-stopped
     env_file: .env
     volumes:

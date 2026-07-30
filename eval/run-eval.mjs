@@ -1,11 +1,12 @@
 // Eval runner — executes INSIDE the ijst-n8n container:
 //   docker exec ijst-n8n node /data/eval/run-eval.mjs <name|synth>
-// Triggers the n8n webhook (so the real workflow runs), polls the sidecar,
+// Triggers the orchestrator's run webhook, polls its state,
 // writes /data/eval/results/<name>.json
 import { readFileSync, writeFileSync, mkdirSync, rmSync, cpSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 
-const N8N = 'http://127.0.0.1:5678';
+// The orchestrator serves the webhook itself now; n8n is gone and so is :5678.
+const API = 'http://127.0.0.1:3000';
 const API = 'http://127.0.0.1:3000';
 const EVAL_DIR = '/data/eval';
 
@@ -54,7 +55,7 @@ try {
 
 const t0 = Date.now();
 console.log(`triggering run for ${cfg.name}: ${JSON.stringify(body)}`);
-const trig = await fetch(`${N8N}/webhook/improve-run`, {
+const trig = await fetch(`${API}/webhook/improve-run`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
 });
 console.log('webhook response: ' + trig.status);

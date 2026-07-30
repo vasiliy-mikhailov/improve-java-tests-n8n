@@ -710,7 +710,7 @@ class ServerTest {
 
     @Test
     void theDashboardRootServesIndexHtml() {
-        Path root = Path.of("/app/sidecar/dashboard");
+        Path root = Path.of("/app/dashboard");
         assertEquals(root.resolve("index.html"), Server.resolveStatic(root, "/"));
         assertEquals(root.resolve("index.html"), Server.resolveStatic(root, ""));
         assertEquals(root.resolve("index.html"), Server.resolveStatic(root, null));
@@ -718,7 +718,7 @@ class ServerTest {
 
     @Test
     void aRequestThatClimbsOutOfTheDashboardIsRefused() {
-        Path root = Path.of("/app/sidecar/dashboard");
+        Path root = Path.of("/app/dashboard");
         assertNull(Server.resolveStatic(root, "/../../etc/passwd"));
         assertNull(Server.resolveStatic(root, "/a/../../secrets"));
         // stricter than the JS string-prefix check, which would have accepted a sibling directory
@@ -728,7 +728,7 @@ class ServerTest {
 
     @Test
     void aNormalAssetResolvesUnderTheDashboard() {
-        Path root = Path.of("/app/sidecar/dashboard");
+        Path root = Path.of("/app/dashboard");
         assertEquals(root.resolve("app.js"), Server.resolveStatic(root, "/app.js"));
         assertEquals(root.resolve("assets/style.css"), Server.resolveStatic(root, "/assets/style.css"));
     }

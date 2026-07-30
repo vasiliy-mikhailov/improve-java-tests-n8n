@@ -192,9 +192,9 @@ public record IjtProperties(
     }
 
     /// Where the dashboard's static files live. Not ported and not in the jar: plain HTML/CSS/JS
-    /// the image copies from sidecar/dashboard. `application.yml` serves this directory, so the
+    /// the image copies from dashboard/. `application.yml` serves this directory, so the
     /// two cannot drift.
-    public record Dashboard(@DefaultValue("/app/sidecar/dashboard") String dir) {}
+    public record Dashboard(@DefaultValue("/app/dashboard") String dir) {}
 
     /// The STOMP transport that replaces the 2-second poll.
     public record Ws(@DefaultValue("250") Long pollMillis) {}

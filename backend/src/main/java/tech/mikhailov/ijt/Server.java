@@ -58,7 +58,7 @@ public final class Server {
     /// served as-is), so its location is stated instead, defaulting to where the image already
     /// puts it.
     public static Path dashboardDir() {
-        return Path.of(env("DASHBOARD_DIR", "/app/sidecar/dashboard"));
+        return Path.of(env("DASHBOARD_DIR", "/app/dashboard"));
     }
 
     private static String env(String name, String fallback) {
