@@ -938,7 +938,10 @@ public final class Server {
             // nothing. CandidateEligibilityTest asserts against THIS list, not the predicate.
             Select.Unit candidate = new Select.Unit(key, method, num(f.get("mac")), num(f.get("coverage")), reach,
                     intOrNull(f.get("executableLines")), intOrNull(f.get("lines")),
-                    (int) State.asLong(f.get("missesEver")), boolOrNull(f.get("everReached")));
+                    (int) State.asLong(f.get("missesEver")), boolOrNull(f.get("everReached")),
+                    // the baseline this run measured, so the ranking can see a unit that has
+                    // been attempted and has not moved
+                    num(f.get("macBefore")));
             int mutants = (int) State.asLong(f.get("totalMutants"));
             boolean measured = f.get("totalMutants") != null;
             // Only judge a unit PIT has actually measured. An unmeasured one has no mutant

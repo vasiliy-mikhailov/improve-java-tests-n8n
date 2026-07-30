@@ -103,5 +103,43 @@ class SelectEligibilityTest {
     // Select.java. Demoting on misses contradicts a deliberate rule with its own test, and the
     // data Unit carries cannot tell "reached but hopeless" from "reached but badly tested".
 
+    // ── measured futility: a before and an after that are equal ───────────
+    @Test
+    void aUnitMeasuredTwiceAndUnmovedSinks() {
+        // JSONObject#isRecordType on a from-scratch run: cov 40->40, mut 16.67->16.67, three
+        // misses, stop — then the WHOLE attempt again, because MAX_ATTEMPTS_PER_FILE is 3.
+        // Twelve rounds, each a full JaCoCo build and PIT run, on a method three separate
+        // measurements said would not move.
+        Unit stuck = new Unit("a/JSONObject.java::isRecordType", "isRecordType",
+                6.67, 40.0, "public", 6, 6, 3, true, 6.67);
+        Unit fresh = unit("a/XML.java::parse", 2.0, 10.0);
+        assertEquals("a/XML.java::parse", Select.rankUnits(List.of(stuck, fresh)).units().get(0).path(),
+                "a lower MAC still loses to a unit the run has proven will not move");
+    }
 
+    @Test
+    void aUnitThatMOVEDIsNotStuckHoweverManyMissesItHas() {
+        // it is going somewhere, slowly — that is the opposite of stuck
+        Unit moving = new Unit("a/A.java::m", "m", 40.0, 80.0, "public", 10, 10, 5, true, 10.0);
+        Unit other = unit("a/B.java::m", 60.0, 90.0);
+        assertEquals("a/A.java::m", Select.rankUnits(List.of(moving, other)).units().get(0).path());
+    }
+
+    @Test
+    void noBaselineIsNotEvidenceOfBeingStuck() {
+        // THE distinction that makes this safe. A null macBefore means nobody has measured a
+        // before — the state every fresh unit is in. Treating it as evidence is what broke
+        // aUnitThatHasBeenReachedIsNeverDemotedForMissing when this was tried on miss count.
+        Unit noBaseline = new Unit("a/A.java::m", "m", 0.0, 50.0, "public", 10, 10, 5, true, null);
+        Unit other = unit("a/B.java::m", 30.0, 60.0);
+        assertEquals("a/A.java::m", Select.rankUnits(List.of(noBaseline, other)).units().get(0).path(),
+                "unmeasured is not proven hopeless");
+    }
+
+    @Test
+    void oneMissWithNoMovementIsStillNoise() {
+        Unit onceMissed = new Unit("a/A.java::m", "m", 5.0, 50.0, "public", 10, 10, 1, true, 5.0);
+        Unit other = unit("a/B.java::m", 30.0, 60.0);
+        assertEquals("a/A.java::m", Select.rankUnits(List.of(onceMissed, other)).units().get(0).path());
+    }
 }

@@ -216,8 +216,20 @@ public final class Select {
     /// @param reach           `public` | `route` | `none`, null meaning `public`
     /// @param misses          rounds that wrote a passing test and still executed none of it
     /// @param everReached     null until a round has measured it — see {@link #provenUnexecutable}
+    /// @param macBefore the MAC this unit was measured at when the run first took it on. With
+    ///                   `mac`, this is the before/after the ranking needs to tell "reached but
+    ///                   hopeless" from "reached but badly tested" — see provenStuck.
     public record Unit(String path, String method, Double mac, Double coverage, String reach,
-                       Integer executableLines, Integer lines, Integer misses, Boolean everReached) {}
+                       Integer executableLines, Integer lines, Integer misses, Boolean everReached,
+                       Double macBefore) {
+
+        /// Without a baseline. Kept so existing callers and fixtures read the same; a null
+        /// macBefore means "never measured a before", which provenStuck treats as no evidence.
+        public Unit(String path, String method, Double mac, Double coverage, String reach,
+                    Integer executableLines, Integer lines, Integer misses, Boolean everReached) {
+            this(path, method, mac, coverage, reach, executableLines, lines, misses, everReached, null);
+        }
+    }
 
     /// @param unreachable always 0. Units no public path reaches are RANKED LAST, never
     ///                    dropped; the count stays in the answer so the callers and the
@@ -242,6 +254,10 @@ public final class Select {
             int c = Integer.compare(provenUnexecutable(a) ? 1 : 0, provenUnexecutable(b) ? 1 : 0);
             if (c != 0) return c;
             // a unit with no MAC yet is not a perfect one — rank it on the coverage we do have
+            // measured futility next: a unit the run has taken on and left exactly where it
+            // started outranks a lower MAC, because the misses are evidence and the MAC is not
+            c = Integer.compare(provenStuck(a) ? 1 : 0, provenStuck(b) ? 1 : 0);
+            if (c != 0) return c;
             c = Double.compare(weakness(a), weakness(b));
             if (c != 0) return c;
             c = Integer.compare(isCtor(a.method()) ? 1 : 0, isCtor(b.method()) ? 1 : 0);
@@ -270,7 +286,28 @@ public final class Select {
         return Double.MAX_VALUE;
     }
 
-    // NOT IMPLEMENTED, deliberately, and recorded because the next person will try it.
+    /// Has the run MEASURED this unit twice and seen it not move?
+    ///
+    /// The distinction the miss count alone cannot make. A unit whose code a test reaches can
+    /// miss because the tests were bad — demoting on misses broke
+    /// aUnitThatHasBeenReachedIsNeverDemotedForMissing, correctly. What separates that from a
+    /// genuinely stuck unit is a BEFORE and an AFTER that are equal: measured, attempted, and
+    /// still exactly where it started.
+    ///
+    /// JSONObject#isRecordType on a from-scratch run: cov 40->40, mut 16.67->16.67, three
+    /// misses, stop — then the whole attempt again, because MAX_ATTEMPTS_PER_FILE is 3. Twelve
+    /// rounds, every one paying a full JaCoCo build and PIT run, on a method three separate
+    /// measurements said would not move.
+    ///
+    /// A null macBefore is NOT evidence: it means nobody has measured a baseline, which is the
+    /// state every fresh unit is in and must not be penalised for.
+    private static boolean provenStuck(Unit u) {
+        if ((u.misses() == null ? 0 : u.misses()) < 2) return false;   // one miss is noise
+        return u.macBefore() != null && u.mac() != null
+                && Double.compare(u.mac(), u.macBefore()) == 0;
+    }
+
+    // Superseded by provenStuck above; kept as the record of what did NOT work.
     //
     // JSONObject#isRecordType burned all three misses with mutation 0 -> 0 and was immediately
     // re-picked at rank 1, because provenUnexecutable only demotes units at exactly zero
