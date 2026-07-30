@@ -49,6 +49,17 @@ printf "  api/health:             "
 docker exec ijtspring curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/health
 printf "  dashboard served:       "
 docker exec ijtspring curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/dashboard/
-printf "  run webhook reachable:  "
-docker exec ijtspring curl -s -o /dev/null -w "%{http_code}\n" -X POST -H 'Content-Type: application/json' -d '{"dryProbe":true}' http://127.0.0.1:3000/webhook/improve-run
+# A SMOKE CHECK MUST NOT START A RUN. This used to POST {"dryProbe":true}, on the belief that
+# an obviously fake key made the call a no-op. There is no such key: the pipeline reads the
+# fields it knows and ignored the rest, so the body was a valid configuration and every deploy
+# launched a real run against the real repository, with the model and the token budget attached.
+# It went unseen because it normally 409'd on the run already in flight — until one deploy where
+# the previous run had just been marked interrupted, and it reset a seven-hour run's units and
+# PR list out from under it.
+#
+# The route now answers 400 to a key nothing reads, so that body is refused rather than obeyed.
+# This asks for the same proof — the route exists, is mapped, and is parsing bodies — and 400 is
+# the PASSING answer. 202 here would mean a run just started.
+printf "  run webhook refuses junk (400): "
+docker exec ijtspring curl -s -o /dev/null -w "%{http_code}\n" -X POST -H 'Content-Type: application/json' -d '{"deployProbeNotAConfigKey":true}' http://127.0.0.1:3000/webhook/improve-run
 echo "deploy done."

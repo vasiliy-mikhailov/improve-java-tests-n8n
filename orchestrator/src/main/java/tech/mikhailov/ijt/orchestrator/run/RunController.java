@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import tech.mikhailov.ijt.State;
+
 /// The trigger, at the path n8n served it from.
 ///
 /// `POST /webhook/improve-run` is the webhook node, spelling and all: the batch driver, the eval
@@ -54,6 +56,16 @@ public class RunController {
     @PostMapping(path = "/webhook/improve-run", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> improveRun(@RequestBody(required = false) String raw) {
         Map<String, Object> body = parameters.body(raw);
+        // A key nothing reads is a typo, and this route spends money. `{"dryProbe":true}` — a
+        // deploy smoke check meaning to prove the route was reachable — was accepted as a valid
+        // configuration and started real runs. See OverrideKeysTest.
+        List<String> unknown = State.unknownOverrideKeys(body);
+        if (!unknown.isEmpty()) {
+            throw new RunFailure(HttpStatus.BAD_REQUEST,
+                    "unrecognised key(s) in the run body: " + String.join(", ", unknown)
+                            + " — this route starts a real run, so a key nothing reads is refused"
+                            + " rather than ignored");
+        }
         RunLauncher.Launched launched = launcher.launch(body);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);

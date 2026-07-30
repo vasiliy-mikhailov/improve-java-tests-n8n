@@ -224,6 +224,30 @@ public final class State {
     /// @param overrides the raw request body. Only the keys named below can override anything,
     ///                  which is what keeps `force` and `clearLedger` — posted in the same body
     ///                  by /api/run/start — out of the run's configuration.
+    /// Keys the run-start body may carry that are not configuration.
+    ///
+    /// `force` and `clearLedger` decide whether a start resumes or begins again; `executionId`
+    /// addresses a running job. They are read by the launcher and deliberately kept out of the
+    /// run's configuration — see applyOverrides.
+    private static final java.util.Set<String> CONTROL_KEYS =
+            java.util.Set.of("force", "clearLedger", "executionId");
+
+    /// The keys in a run-start body that nothing will ever read, in the order given.
+    ///
+    /// Silently dropping them is how `{"dryProbe":true}` — a deploy smoke check meaning to prove
+    /// a route was reachable — became a valid run configuration and started a real run against
+    /// the real repository on every deploy. A route that spends money on a model must not treat
+    /// a misspelled `maxRoundsPerFile` as "use the default".
+    ///
+    /// Derived from the record's own components rather than a hand-kept list, so a field added
+    /// to Config is accepted the moment it exists.
+    public static List<String> unknownOverrideKeys(Map<String, Object> overrides) {
+        if (overrides == null || overrides.isEmpty()) return List.of();
+        java.util.Set<String> known = new java.util.HashSet<>(CONTROL_KEYS);
+        for (var c : Config.class.getRecordComponents()) known.add(c.getName());
+        return overrides.keySet().stream().filter(k -> !known.contains(k)).toList();
+    }
+
     public static Config applyOverrides(Config base, Map<String, Object> overrides) {
         Map<String, Object> o = overrides == null ? Map.of() : overrides;
 
