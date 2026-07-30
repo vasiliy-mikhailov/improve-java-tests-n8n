@@ -175,6 +175,37 @@ public final class Select {
         return (x.misses() == null ? 0 : x.misses()) >= 2 && Boolean.FALSE.equals(x.everReached());
     }
 
+    /// Compiler-generated methods. `lambda$foo$2`, `access$100` — no test can name them, and
+    /// the prompt cannot show the model a method that is absent from the source. The `$` is
+    /// the marker: somebody's real `lambdaFactory` is not synthetic.
+    private static final java.util.regex.Pattern SYNTHETIC =
+            java.util.regex.Pattern.compile("^(lambda\\$|access\\$)");
+
+    /// Can this unit yield a kill at all?
+    ///
+    /// One predicate rather than three special cases, because the run produced three shapes of
+    /// the same waste and each cost a baseline coverage run, a PIT run, a model call and a
+    /// verification to discover it was never work:
+    ///
+    ///   no mutation surface  `public Cookie() { }`, `public void flush() { }`. PIT emits
+    ///                        nothing for an empty body and reports "no tests to run"; the
+    ///                        round then records UNMEASURED and the unit stays a candidate.
+    ///   already perfect      0 survivors and mutation at 100 — Statistics#combine,
+    ///                        DataLoaderRegistry#combine, PromisedValues#allOf.
+    ///   synthetic            lambda$dispatchQueueBatch$3, lambda$invokeLoader$7.
+    ///
+    /// @param mutants   how many PIT found for it; 0 means there is nothing to kill
+    /// @param exhausted every surviving mutant has already been attempted
+    public static boolean eligibleUnit(Unit u, int mutants, boolean exhausted) {
+        if (u == null) return false;
+        if (exhausted) return false;
+        // Zero mutants covers BOTH the empty body and the already-perfect unit: nothing to
+        // mutate and nothing left alive are the same fact from the selector's point of view.
+        if (mutants <= 0) return false;
+        String m = u.method() == null ? "" : u.method();
+        return !SYNTHETIC.matcher(m).find();
+    }
+
     /// A candidate unit, with the measurements the ranking reads.
     ///
     /// Every metric is boxed on purpose. `mac ?? (coverage ?? 0) / 2` is load-bearing — a
@@ -226,10 +257,34 @@ public final class Select {
         return new Ranking(units, 0);
     }
 
+    /// How much MAC there is to win here. Lower is more urgent.
     private static double weakness(Unit u) {
         if (u.mac() != null) return u.mac();
-        return (u.coverage() == null ? 0.0 : u.coverage()) / 2;
+        // Coverage IS a measurement, so estimate from it as before.
+        if (u.coverage() != null) return u.coverage() / 2;
+        // Neither measured. This used to fall through to 0 — which ranked a unit nothing is
+        // known about as the weakest thing in the repo and picked it at rank 1, repeatedly.
+        // Unmeasurable is not weak, it is UNKNOWN, and unknown must not outrank a measured
+        // gap. Sorting it last costs nothing: if it turns out to have a real gap, the next
+        // run measures it and it takes its proper place.
+        return Double.MAX_VALUE;
     }
+
+    // NOT IMPLEMENTED, deliberately, and recorded because the next person will try it.
+    //
+    // JSONObject#isRecordType burned all three misses with mutation 0 -> 0 and was immediately
+    // re-picked at rank 1, because provenUnexecutable only demotes units at exactly zero
+    // coverage (everReached == false) and this one has 33%. Up to nine rounds on a method three
+    // measurements say will not move.
+    //
+    // Demoting on the miss count instead fails aUnitThatHasBeenReachedIsNeverDemotedForMissing,
+    // and that test is RIGHT: a unit whose code a test does reach can miss because the tests
+    // were bad, and demoting it throws away work a better prompt would win. Nor does a measured
+    // MAC of 0 separate the two — the fixture there is also 0.0 with five misses.
+    //
+    // The signal that would actually distinguish them is whether the mutation score MOVED
+    // across an attempt, and Unit does not carry a before/after. Fixing this properly means
+    // adding that, not sharpening a predicate over data that cannot answer the question.
 
     private static int codeSize(Unit u) {
         if (u.executableLines() != null) return u.executableLines();
