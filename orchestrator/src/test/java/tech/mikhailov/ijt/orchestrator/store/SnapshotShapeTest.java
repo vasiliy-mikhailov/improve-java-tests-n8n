@@ -162,6 +162,62 @@ class SnapshotShapeTest extends StoreTestSupport {
                 () -> assertEquals(1, store.improvedLedger("r").size(), "so is the ledger"));
     }
 
+    // ── a snapshot is a statement of fact, not an append ──────────────────
+
+    @Test
+    void flushingTwiceDoesNotDuplicateThePrs() {
+        // Found in production the moment the units started landing. writeSnapshot builds a fresh
+        // PrRow per PR per flush and calls save(), and PrRow's id is an IDENTITY surrogate with
+        // no natural key — so every flush INSERTS again. The snapshot is debounced but frequent,
+        // and one real PR had become 958 rows within the hour.
+        //
+        // Invisible until now for the reason everything else here was: the flush always died at
+        // the first unit, above the PR loop, so addPr had never run twice.
+        H2StatePersistence h2 = new H2StatePersistence(store);
+        State.Store s = storeWith(2);
+
+        h2.writeSnapshot(s);
+        h2.writeSnapshot(s);
+        h2.writeSnapshot(s);
+        reload();
+
+        assertEquals(1, store.prs(s.run.id).size(), "one PR is one row, however often it is flushed");
+    }
+
+    @Test
+    void aPrThatGAINSItsUrlIsUpdatedNotDuplicated() {
+        // A PR is prepared locally first and only later gets its url, so the same PR is flushed
+        // repeatedly with changing content. That must update the row, not add one.
+        H2StatePersistence h2 = new H2StatePersistence(store);
+        State.Store s = storeWith(1);
+        h2.writeSnapshot(s);
+        reload();
+
+        ((Map<String, Object>) s.prs.get(0)).put("url", "https://github.com/o/r/pull/7");
+        h2.writeSnapshot(s);
+        reload();
+
+        assertEquals(1, store.prs(s.run.id).size());
+        assertEquals("https://github.com/o/r/pull/7", store.prsAsMaps(s.run.id).get(0).get("url"));
+    }
+
+    @Test
+    void twoDifferentPrsAreTwoRows() {
+        // the negative half: collapsing everything to one row would pass both tests above
+        H2StatePersistence h2 = new H2StatePersistence(store);
+        State.Store s = storeWith(1);
+        Map<String, Object> second = new LinkedHashMap<>();
+        second.put("file", "src/main/java/org/json/XML.java");
+        second.put("branch", "tests/improve-xml");
+        s.prs.add(second);
+
+        h2.writeSnapshot(s);
+        h2.writeSnapshot(s);
+        reload();
+
+        assertEquals(2, store.prs(s.run.id).size());
+    }
+
     // ── a thinner store must not win a restore ────────────────────────────
 
     @Test

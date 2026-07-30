@@ -329,7 +329,21 @@ public class StateRepository {
 
     // ── PRs ───────────────────────────────────────────────────────────────────
 
+    /// Record a PR, or update the one already recorded for that unit.
+    ///
+    /// UPSERT, not append. `writeSnapshot` restates every PR of the run on every flush and the id
+    /// is an IDENTITY surrogate, so a blind `save` inserted a fresh row each time — one real PR
+    /// had become 958 rows within an hour of the units starting to land. It was invisible before
+    /// that because the flush always aborted above the PR loop.
+    ///
+    /// Keyed on the unit, falling back to the branch when a PR carries no unit key. Both are
+    /// looked up as lists rather than Optional: the duplicates already written are real rows, and
+    /// a finder that threw on finding two would turn a cosmetic mess into a broken store.
     public PrRow addPr(PrRow pr) {
+        List<PrRow> existing = pr.getUnitKey() != null
+                ? prs.findByRunIdAndUnitKey(pr.getRunId(), pr.getUnitKey())
+                : (pr.getBranch() == null ? List.of() : prs.findByRunIdAndBranch(pr.getRunId(), pr.getBranch()));
+        if (!existing.isEmpty()) pr.adoptRow(existing.get(0).getId());
         return prs.save(pr);
     }
 

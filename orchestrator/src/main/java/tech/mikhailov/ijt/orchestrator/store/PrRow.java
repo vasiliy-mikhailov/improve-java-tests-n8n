@@ -27,6 +27,16 @@ public class PrRow {
     @Column(name = "id")
     private Long id;
 
+    /// Adopt the id of the row this PR already occupies, so `save` updates instead of inserting.
+    ///
+    /// Package-private and deliberately not a general setter: the only legitimate caller is
+    /// {@link StateRepository#addPr}, matching a re-flushed PR to its existing row. A snapshot
+    /// restates every PR every time, and without this each flush inserted again — 958 rows for
+    /// one PR.
+    void adoptRow(Long existing) {
+        this.id = existing;
+    }
+
     @Column(name = "run_id", length = 64, nullable = false)
     private String runId;
 
