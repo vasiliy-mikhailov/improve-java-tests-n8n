@@ -219,15 +219,25 @@ public final class Select {
     /// @param macBefore the MAC this unit was measured at when the run first took it on. With
     ///                   `mac`, this is the before/after the ranking needs to tell "reached but
     ///                   hopeless" from "reached but badly tested" — see provenStuck.
+    /// @param attempts   completed attempts on this unit. NOT `misses`: that field counts only
+    ///                    rounds whose test executed nothing (it pairs with everReached as
+    ///                    evidence of unexecutability), so a unit with real coverage never
+    ///                    increments it and reading it as a general miss count is wrong.
     public record Unit(String path, String method, Double mac, Double coverage, String reach,
                        Integer executableLines, Integer lines, Integer misses, Boolean everReached,
-                       Double macBefore) {
+                       Double macBefore, Integer attempts) {
 
-        /// Without a baseline. Kept so existing callers and fixtures read the same; a null
-        /// macBefore means "never measured a before", which provenStuck treats as no evidence.
+        /// Without a baseline or an attempt count. Kept so existing callers and fixtures read
+        /// the same and mean "nothing recorded", which provenStuck treats as no evidence.
         public Unit(String path, String method, Double mac, Double coverage, String reach,
                     Integer executableLines, Integer lines, Integer misses, Boolean everReached) {
-            this(path, method, mac, coverage, reach, executableLines, lines, misses, everReached, null);
+            this(path, method, mac, coverage, reach, executableLines, lines, misses, everReached, null, null);
+        }
+
+        public Unit(String path, String method, Double mac, Double coverage, String reach,
+                    Integer executableLines, Integer lines, Integer misses, Boolean everReached,
+                    Double macBefore) {
+            this(path, method, mac, coverage, reach, executableLines, lines, misses, everReached, macBefore, null);
         }
     }
 
@@ -302,7 +312,15 @@ public final class Select {
     /// A null macBefore is NOT evidence: it means nobody has measured a baseline, which is the
     /// state every fresh unit is in and must not be penalised for.
     private static boolean provenStuck(Unit u) {
-        if ((u.misses() == null ? 0 : u.misses()) < 2) return false;   // one miss is noise
+        // A COMPLETED ATTEMPT, not a miss count. `misses` (missesEver) is incremented only when
+        // a round's test executed nothing at all — it exists as evidence of unexecutability and
+        // pairs with everReached. JSONObject#isRecordType has 33% coverage, so it never
+        // increments, and an earlier version of this read it as a general miss count and
+        // therefore never fired: the unit finished its whole three-miss attempt, was re-picked,
+        // and did it again.
+        if ((u.attempts() == null ? 0 : u.attempts()) < 1) return false;
+        // and the attempt left the score exactly where it started. A null on either side means
+        // nobody measured it, which is not evidence.
         return u.macBefore() != null && u.mac() != null
                 && Double.compare(u.mac(), u.macBefore()) == 0;
     }

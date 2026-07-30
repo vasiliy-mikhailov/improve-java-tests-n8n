@@ -939,9 +939,9 @@ public final class Server {
             Select.Unit candidate = new Select.Unit(key, method, num(f.get("mac")), num(f.get("coverage")), reach,
                     intOrNull(f.get("executableLines")), intOrNull(f.get("lines")),
                     (int) State.asLong(f.get("missesEver")), boolOrNull(f.get("everReached")),
-                    // the baseline this run measured, so the ranking can see a unit that has
-                    // been attempted and has not moved
-                    num(f.get("macBefore")));
+                    // the baseline this run measured, plus the completed attempts, so the
+                    // ranking can see a unit that has been taken on and has not moved
+                    num(f.get("macBefore")), (int) State.asLong(f.get("attempts")));
             int mutants = (int) State.asLong(f.get("totalMutants"));
             boolean measured = f.get("totalMutants") != null;
             // Only judge a unit PIT has actually measured. An unmeasured one has no mutant
