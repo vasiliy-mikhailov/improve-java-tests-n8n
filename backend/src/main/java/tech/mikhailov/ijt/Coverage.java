@@ -57,7 +57,7 @@ public final class Coverage {
 
     public static String gradleInitScript() {
         return """
-                // injected by improve-java-tests-n8n — applies JaCoCo and forces an XML report
+                // injected by improve-java-tests-spring — applies JaCoCo and forces an XML report
                 allprojects { p ->
                   p.plugins.withId('java') {
                     p.apply plugin: 'jacoco'

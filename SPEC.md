@@ -1,6 +1,6 @@
 # Implementation spec
 
-How `improve-java-tests-n8n` actually works, as built. See PROBLEM.md for what it is for
+How `improve-java-tests-spring` actually works, as built. See PROBLEM.md for what it is for
 and how it is scored; eval/RESULTS.md for why several of these decisions look the way they
 do (most were forced by a defect found while running).
 
@@ -10,7 +10,7 @@ do (most were forced by a defect found while running).
                      Caddy (basic auth, injects a 10-year n8n JWT)
                                      │
    ┌─────────────────────────────────┴──────────────────────────────────┐
-   │  one container (ijtn8n)                                            │
+   │  one container (ijtspring)                                            │
    │                                                                    │
    │   n8n — 66 nodes, native only ──HTTP──▶ sidecar :3000 (zero-dep)   │
    │     Trigger / HTTP Request / IF / NoOp            ├─ git, gh        │

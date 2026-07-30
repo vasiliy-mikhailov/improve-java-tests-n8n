@@ -1,4 +1,4 @@
-# Research: improve-java-tests-n8n — an adaptable n8n pipeline that raises test quality of any Java repo
+# Research: improve-java-tests-spring — an adaptable n8n pipeline that raises test quality of any Java repo
 
 > Scope note: this document holds the **Definition of Done** and the **evaluation method**.
 > The problem statement, improvement loop and reward formula live in
@@ -65,10 +65,10 @@ These are the constraints the implementation must absorb (sources: `improve-java
 
 ### Deployment constraints (this instance)
 
-- Host: `mikhailov.tech` (ssh alias `mh`), folder `~/improve-java-tests-n8n`.
+- Host: `mikhailov.tech` (ssh alias `mh`), folder `~/improve-java-tests-spring`.
 - LLM: `https://inference.mikhailov.tech/qwen-3.6-27b-fp8/v1` (OpenAI-compatible vLLM).
-- n8n UI: `https://improve-java-tests-n8n.mikhailov.tech`,
-  dashboard: `https://improve-java-tests-n8n.mikhailov.tech/dashboard`.
+- n8n UI: `https://improve-java-tests-spring.mikhailov.tech`,
+  dashboard: `https://improve-java-tests-spring.mikhailov.tech/dashboard`.
 - Access protected by **Caddy** (basic auth). **No n8n login screen**: a 10-year n8n auth JWT
   (`N8N_USER_MANAGEMENT_JWT_DURATION_HOURS=87600`) is minted once and injected by Caddy via
   `header_up Cookie`.
@@ -88,7 +88,7 @@ Each item scores 0 (absent), 0.5 (partial), or 1 (fully met). `DoD_score` = mean
 | **D7** | **Per-stage rules**: free-text rules for all six stages are configurable via env and demonstrably applied at their stage (LLM-interpreted, with mechanical guardrails). | Set a distinctive rule per stage and observe it obeyed in run artifacts. |
 | **D8** | **n8n-native workflow only**: workflow contains only native nodes (Trigger, HTTP Request, IF, SplitInBatches, Set/NoOp, Wait). All OS work — and all logic — behind the sidecar HTTP API; the workflow orchestrates and nothing else. | Static scan of workflow JSON: node-type whitelist; zero Code nodes; every HTTP node's path resolves to a route `sidecar/server.js` defines. |
 | **D9** | **Adaptable across Java builds**: auto-detects Maven vs Gradle (wrapper preferred), JDK required to build, JUnit 4/5/6 vs TestNG, and injects the correct PIT + JaCoCo wiring when the project has none. | Eval covers both build tools, ≥2 JDK levels, JUnit 4 and 5, and repos without PIT preconfigured. |
-| **D10** | **Protected access, no n8n login**: Caddy basic auth in front of `improve-java-tests-n8n.mikhailov.tech`; 10-year n8n JWT injected by Caddy; dashboard at `/dashboard`; n8n never shows its login screen. | Open both URLs: only Caddy asks for credentials, then the n8n editor / dashboard loads. |
+| **D10** | **Protected access, no n8n login**: Caddy basic auth in front of `improve-java-tests-spring.mikhailov.tech`; 10-year n8n JWT injected by Caddy; dashboard at `/dashboard`; n8n never shows its login screen. | Open both URLs: only Caddy asks for credentials, then the n8n editor / dashboard loads. |
 | **D11** | **No reasoning leakage in committed artifacts**: LLM chain-of-thought never appears in PR'd test files. Model thinking stays in the thinking channel; a cleanup pass strips residual scratch commentary; at most one short intent comment per test. | Grep PR'd tests for scratch-comment patterns; inspect samples across repos. |
 | **D12** | **No dead-weight tests**: every committed test earns its place — it kills ≥1 mutant or covers previously uncovered code; vacuous tests are pruned by a **verified** cleanup pass (suite stays green and mutation score does not drop, else the cleanup is reverted). | Review PR diffs; cleanup events show prune/revert decisions backed by re-measurement. |
 | **D14** | **LLM token accounting**: input and output tokens are measured for every model call (including retries and repair passes), attributed to the unit being improved, and shown per unit and cumulatively — with tokens per improved unit, so the cost of an improvement is visible next to its value. | Dashboard shows in/out tokens per unit and for the run; totals match the `usage` reported by the LLM endpoint. |
@@ -153,7 +153,7 @@ until reward plateaus (2 consecutive iterations with no gain)
         Caddy (basic auth, injects 10-year n8n JWT)
                  │
    ┌─────────────┴─────────────────────────────┐
-   │  improve-java-tests-n8n container         │
+   │  improve-java-tests-spring container         │
    │                                           │
    │   n8n (native nodes only) ──HTTP──▶ sidecar (:3000, zero-dep Node)
    │                                        ├─ git / gh

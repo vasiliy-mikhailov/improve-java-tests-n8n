@@ -23,7 +23,7 @@ import java.util.Map;
 /// Found by probing a running orchestrator rather than by reading the code, after the audit
 /// agents that should have caught them died mid-run:
 ///
-///   GET /api/health   — deploy.sh gates on it (`docker exec ijtn8n curl -sf .../api/health`).
+///   GET /api/health   — deploy.sh gates on it (`docker exec ijtspring curl -sf .../api/health`).
 ///                       A 404 makes the deploy loop spin for two minutes and then fail with
 ///                       no explanation of what it was waiting for.
 ///   GET /dashboard/   — Caddy reverse-proxies /dashboard to this port, and deploy.sh smoke
@@ -42,10 +42,11 @@ public class ApiController {
     public Map<String, Object> health() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
-        // "ijt-sidecar" is now three backends out of date as a name. It stays: deploy.sh and the
-        // dashboard match on it, and renaming a string that only exists to be matched buys
-        // nothing and breaks whatever was matching.
-        out.put("service", "ijt-sidecar");
+        // Renamed from "ijt-sidecar" along with everything else. Safe only because every
+        // consumer is in this repo — deploy.sh gates on the HTTP status, not this field, and
+        // the dashboard is versioned with the backend. An externally-matched string would not
+        // have been worth renaming.
+        out.put("service", "improve-java-tests");
         out.put("stage", State.STATE.stage.name());
         out.put("ts", System.currentTimeMillis());
         return out;

@@ -972,7 +972,7 @@ public final class Server {
         r.put("GET /api/health", (q, body) -> {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
-            out.put("service", "ijt-sidecar");
+            out.put("service", "improve-java-tests");
             out.put("stage", state().stage.name());
             out.put("ts", System.currentTimeMillis());
             return out;

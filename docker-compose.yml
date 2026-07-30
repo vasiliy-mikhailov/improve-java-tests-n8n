@@ -1,8 +1,8 @@
 services:
-  improve-java-tests-n8n:
+  improve-java-tests-spring:
     build: .
-    image: improve-java-tests-n8n:latest
-    container_name: ijtn8n
+    image: improve-java-tests-spring:latest
+    container_name: ijtspring
     # A reaper. PIT and Surefire fork JVMs; Exec kills the whole process group, and the
     # dead children are then reparented to PID 1 — which reaps them only if it knows to.
     # Measured on the live box after 3 hours: 5 <defunct> java processes and climbing. They
@@ -18,7 +18,7 @@ services:
       - proxy-net
       - mvn-cache
     # no host ports: Caddy (inference-caddy, same proxy-net) fronts everything at
-    # https://improve-java-tests-n8n.mikhailov.tech (n8n) and /dashboard (sidecar)
+    # https://improve-java-tests-spring.mikhailov.tech (n8n) and /dashboard (sidecar)
 
 volumes:
   ijt_data:

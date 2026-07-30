@@ -13,10 +13,10 @@ docker compose up -d --force-recreate
 
 echo "waiting for sidecar health..."
 for i in $(seq 1 60); do
-  docker exec ijtn8n curl -sf http://127.0.0.1:3000/api/health >/dev/null 2>&1 && break
+  docker exec ijtspring curl -sf http://127.0.0.1:3000/api/health >/dev/null 2>&1 && break
   sleep 2
 done
-docker exec ijtn8n curl -sf http://127.0.0.1:3000/api/health >/dev/null
+docker exec ijtspring curl -sf http://127.0.0.1:3000/api/health >/dev/null
 
 # No token to mint. Caddy used to inject an n8n-auth cookie on every non-/dashboard
 # request because n8n owned those routes; the orchestrator serves them itself behind
@@ -26,13 +26,15 @@ docker exec inference-caddy caddy reload --config /etc/caddy/Caddyfile >/dev/nul
   || docker restart inference-caddy >/dev/null
 
 # copy eval harness into the data volume (used by docker-exec eval runs)
-docker cp eval ijtn8n:/data/ 2>/dev/null || true
+docker cp eval ijtspring:/data/ 2>/dev/null || true
 
 echo "smoke checks:"
 printf "  caddy 401 without auth: "
-curl -s -o /dev/null -w "%{http_code}\n" https://improve-java-tests-n8n.mikhailov.tech/ || true
-printf "  token accepted by n8n:  "
-docker exec ijtn8n curl -s -o /dev/null -w "%{http_code}\n" -H "Cookie: n8n-auth=$TOK" http://127.0.0.1:5678/rest/active-workflows
+curl -s -o /dev/null -w "%{http_code}\n" https://improve-java-tests-spring.mikhailov.tech/ || true
+printf "  api/health:             "
+docker exec ijtspring curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/health
 printf "  dashboard served:       "
-docker exec ijtn8n curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/dashboard/
+docker exec ijtspring curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/dashboard/
+printf "  run webhook reachable:  "
+docker exec ijtspring curl -s -o /dev/null -w "%{http_code}\n" -X POST -H 'Content-Type: application/json' -d '{"dryProbe":true}' http://127.0.0.1:3000/webhook/improve-run
 echo "deploy done."

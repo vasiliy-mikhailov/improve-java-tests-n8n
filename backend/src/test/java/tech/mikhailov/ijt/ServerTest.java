@@ -955,7 +955,7 @@ class ServerTest {
         Object out = Server.routes().get("GET /api/health").handle(Server.Query.EMPTY, Map.of());
         Map<?, ?> m = (Map<?, ?>) out;
         assertEquals(true, m.get("ok"));
-        assertEquals("ijt-sidecar", m.get("service"));
+        assertEquals("improve-java-tests", m.get("service"));
         assertEquals("idle", m.get("stage"));
     }
 

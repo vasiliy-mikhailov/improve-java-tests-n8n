@@ -6,4 +6,4 @@
 set -euo pipefail
 rsync -az --delete \
   --exclude .git --exclude node_modules --exclude .env --exclude repo \
-  "$(dirname "$0")/" mh:~/improve-java-tests-n8n/
+  "$(dirname "$0")/" mh:~/improve-java-tests-spring/

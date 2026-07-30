@@ -9,7 +9,7 @@ reward = DoD_score × implementation_performance (see RESEARCH.md §3)
 
 ## Iteration 1 — 2026-07-25 — bring-up on the synthetic repo
 
-First implementation of `improve-java-tests-n8n`: research artifacts (PROBLEM.md verbatim brief,
+First implementation of `improve-java-tests-spring`: research artifacts (PROBLEM.md verbatim brief,
 RESEARCH.md with DoD D1–D13 and the reward formula), the Docker deliverable (n8n 2.32 + zero-dep
 Node sidecar + dashboard; Temurin 8/11/17/21, Maven 3.9.9, Gradle 8.10.2, gh; Nexus-mirrored
 artifact resolution), the 64-node native-only workflow, and the Java execution layer

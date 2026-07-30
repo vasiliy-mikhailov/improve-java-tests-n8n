@@ -1,4 +1,4 @@
-// improve-java-tests-n8n: same intent as docker/settings.xml — resolve Gradle
+// improve-java-tests-spring: same intent as docker/settings.xml — resolve Gradle
 // dependencies through an artifact mirror when it is reachable, falling back to the
 // project's own repositories otherwise.
 //

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- improve-java-tests-n8n: route Maven artifact resolution through an artifact mirror
+<!-- improve-java-tests-spring: route Maven artifact resolution through an artifact mirror
      (the host's Nexus group repo by default) so builds and PIT runs hit a warm cache
      instead of upstream repositories — faster and immune to rate limits.
 

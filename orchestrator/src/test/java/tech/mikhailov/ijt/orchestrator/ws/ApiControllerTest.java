@@ -31,12 +31,12 @@ class ApiControllerTest {
 
     @Test
     void healthAnswersTheShapeDeployScriptAndDashboardMatchOn() {
-        // deploy.sh gates the whole deploy on `curl -sf .../api/health`, and the dashboard reads
-        // `service`. The name is three backends out of date and stays anyway: it exists only to
-        // be matched, and renaming it breaks whatever was matching.
+        // deploy.sh gates the whole deploy on `curl -sf .../api/health` — it checks the status,
+        // not this body. The `service` field is read by the dashboard, which ships with the
+        // backend, which is why renaming it from "ijt-sidecar" was safe.
         Map<String, Object> h = api.health();
         assertEquals(Boolean.TRUE, h.get("ok"));
-        assertEquals("ijt-sidecar", h.get("service"));
+        assertEquals("improve-java-tests", h.get("service"));
         assertNotNull(h.get("stage"));
         assertInstanceOf(Long.class, h.get("ts"));
     }

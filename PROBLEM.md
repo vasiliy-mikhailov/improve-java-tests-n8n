@@ -98,7 +98,7 @@ See **SPEC.md** for how the implementation works, **RESEARCH.md** for the DoD ta
 
 ## Appendix: the brief, verbatim
 
-> The problem: We are building improve-java-tests-n8n n8n pipeline in docker for teams to
+> The problem: We are building improve-java-tests-spring n8n pipeline in docker for teams to
 > adapt on their repos. Team need to: specify java repo, run docker with n8n pipeline
 > against it and get improved tests for each file, meaning improved coverage, improved
 > mutation score (with PIT), improved MAC (coverage * mutation score) and to get pr's with
@@ -121,10 +121,10 @@ See **SPEC.md** for how the implementation works, **RESEARCH.md** for the DoD ta
 >
 > Development environment:
 >
-> * Use mikhailov.tech ssh and folder improve-java-tests-n8n on it
+> * Use mikhailov.tech ssh and folder improve-java-tests-spring on it
 > * Use qwen 3.6 27b fp8 endpoint from inference.mikhailov.tech
-> * Use improve-java-tests-n8n.mikhailov.tech as url for n8n and
->   improve-java-tests-n8n.mikhailov.tech/dashboard for dashboard
+> * Use improve-java-tests-spring.mikhailov.tech as url for n8n and
+>   improve-java-tests-spring.mikhailov.tech/dashboard for dashboard
 > * Login to n8n must be protected by caddy, no n8n login needed (make 10-years token and
 >   pass it with caddy)
 

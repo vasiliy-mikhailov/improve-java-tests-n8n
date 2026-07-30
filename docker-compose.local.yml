@@ -1,4 +1,4 @@
-# Run improve-java-tests-n8n anywhere: a laptop, a CI box, any host that is not the
+# Run improve-java-tests-spring anywhere: a laptop, a CI box, any host that is not the
 # deployment server.
 #
 # Why this is a SEPARATE file and not an override of docker-compose.yml: the deployed
@@ -13,13 +13,13 @@
 #   docker compose -f docker-compose.local.yml up -d --build
 #
 # Everything else — the volume name, the container name, the image tag — matches the
-# deployment, so `docker exec ijtn8n ...` in the README and eval docs works unchanged.
+# deployment, so `docker exec ijtspring ...` in the README and eval docs works unchanged.
 
 services:
-  improve-java-tests-n8n:
+  improve-java-tests-spring:
     build: .
-    image: improve-java-tests-n8n:latest
-    container_name: ijtn8n
+    image: improve-java-tests-spring:latest
+    container_name: ijtspring
     # A reaper. PIT and Surefire fork JVMs; Exec kills the whole process group, and the
     # dead children are then reparented to PID 1 — which reaps them only if it knows to.
     # Measured on the live box after 3 hours: 5 <defunct> java processes and climbing. They

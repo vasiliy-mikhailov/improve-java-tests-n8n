@@ -258,7 +258,7 @@ public final class Pit {
         String excludedLine = ex.isEmpty() ? ""
                 : "excludedMethods = [" + String.join(", ", ex.stream().map(m -> "'" + m + "'").toList()) + "]";
         return """
-                // injected by improve-java-tests-n8n — applies gradle-pitest-plugin without touching the repo
+                // injected by improve-java-tests-spring — applies gradle-pitest-plugin without touching the repo
                 initscript {
                   // allowInsecureProtocol: the on-host Nexus is plain http, and Gradle 7+ refuses
                   // http repositories without it — that rejection killed the Gradle PIT path.
