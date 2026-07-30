@@ -269,4 +269,23 @@ class RunLauncherTest {
     private static void assertNotEqualsParameters(JobParameters unwanted, JobParameters actual) {
         assertFalse(unwanted.equals(actual), "expected a NEW job instance, got the previous one's parameters");
     }
+
+    @Test
+    void force_starts_a_new_run_instead_of_resuming() {
+        // Spring Batch keys an instance by its parameters, so the same body restarts the same
+        // instance. Right after a crash, wrong when the caller said force: three attempts to
+        // begin a from-scratch run all came back `resumed: true`, with the previous run's units
+        // still there and a clearLedger that never applied because no new run had started.
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("force", true);
+        assertFalse(launcher.launch(body).resumed(), "force means start fresh, not continue");
+    }
+
+    @Test
+    void clearLedger_starts_a_new_run_instead_of_resuming() {
+        // asking to discard the history and then resuming onto it is self-contradictory
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("clearLedger", true);
+        assertFalse(launcher.launch(body).resumed());
+    }
 }

@@ -297,7 +297,24 @@ public class RunLauncher {
     /// SAME BODY. A trigger carrying different settings is a different request, and silently
     /// resuming an old instance would run it with the OLD configuration while the caller reads
     /// its own body back in the response. Different body, new instance.
+    /// Truthy the way the rest of the pipeline reads a flag off a JSON body: the webhook may
+    /// deliver a real boolean or the string "true", and only one of those is a Boolean.
+    private static boolean asksForAFreshStart(Object v) {
+        return Boolean.TRUE.equals(v) || "true".equalsIgnoreCase(String.valueOf(v));
+    }
+
     private JobParameters resumableParameters(Map<String, Object> body) {
+        // `force` and `clearLedger` both mean "do not continue what is there".
+        //
+        // Spring Batch keys a job INSTANCE by its parameters, so a second call with the same
+        // body restarts the same instance rather than creating a new one. That is the right
+        // default after a crash and exactly wrong here: a caller asking to start from scratch
+        // got `resumed: true`, the previous run's units back, and a clearLedger that never
+        // ran because no run had started to apply it to. Reproduced live — three attempts to
+        // begin a clean run all resumed the same instance with 262 ledger entries intact.
+        if (asksForAFreshStart(body.get("force")) || asksForAFreshStart(body.get("clearLedger"))) {
+            return null;
+        }
         List<JobInstance> instances = explorer.getJobInstances(improveJob.getName(), 0, 1);
         if (instances.isEmpty()) return null;
         JobExecution last = explorer.getJobExecutions(instances.get(0)).stream()
