@@ -142,6 +142,15 @@ public class H2StatePersistence implements StatePersistence {
             if (into.run != null && "running".equals(into.run.status)) {
                 into.stage = new State.Stage("interrupted", "orchestrator restarted", Util.nowSec(), null);
             }
+            // The store-level state that sits beside the run — see toRun. `runner` first,
+            // because without it the resumed run has no build and every unit it touches fails.
+            into.runner = run.getRunner();
+            if (run.getDecisions() != null) into.decisions = new LinkedHashMap<>(run.getDecisions());
+            into.mutatorStats = run.getMutatorStats();
+            into.pickFailures = run.getPickFailures();
+            if (run.getExtra() != null && run.getExtra().get("overheadLedger") instanceof Map<?, ?> o) {
+                into.overheadLedger = new LinkedHashMap<>(asMap(o));
+            }
             into.files = new LinkedHashMap<>(store.unitsAsMap(run.getId()));
             into.prs = new ArrayList<>(store.prsAsMaps(run.getId()));
             into.seq = store.lastSeq();
@@ -229,6 +238,27 @@ public class H2StatePersistence implements StatePersistence {
         r.setConfig(cfg);
         if (m.get("startedAt") instanceof Number n) r.setStartedAt(n.longValue());
         if (m.get("finishedAt") instanceof Number n) r.setFinishedAt(n.longValue());
+
+        // THE STORE-LEVEL STATE, which lives beside the run rather than inside it. These columns
+        // have existed since the migration landed, with getters and setters, and nothing ever
+        // wrote them.
+        //
+        // `runner` is the one that cost a run. It holds {tool, wrapper, jdk, testFramework} and
+        // both Pit and Coverage refuse to do anything without it — "build not detected — call
+        // /api/repo/prepare first". A resumed run skips setup, so losing it left the pipeline
+        // convinced it had no build: job execution 41 picked nine units, failed PIT on every one
+        // inside two seconds, marked them all `failed` — XML#parse among them — and declared
+        // itself done with 0 PRs and 70 candidates still on the list.
+        r.setRunner(s.runner);
+        r.setDecisions(s.decisions);
+        r.setMutatorStats(s.mutatorStats);
+        r.setPickFailures(s.pickFailures);
+        // No column of its own. It is per-repo like the other two ledgers, but unlike them it is
+        // one shallow map rather than a table's worth of rows, so it rides in extra_json instead
+        // of earning a schema change.
+        Map<String, Object> extra = r.getExtra() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(r.getExtra());
+        extra.put("overheadLedger", s.overheadLedger);
+        r.setExtra(extra);
         return r;
     }
 
