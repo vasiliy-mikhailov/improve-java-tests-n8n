@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import tech.mikhailov.ijt.State;
+import tech.mikhailov.ijt.Util;
 import tech.mikhailov.ijt.StatePersistence;
 
 import java.util.ArrayList;
@@ -122,6 +123,23 @@ public class H2StatePersistence implements StatePersistence {
                 into.events.add(new State.Event(r.getSeq(), r.getTs(), r.getStage(), r.getMsg()));
             }
             into.llmBudget = store.llmBudget();
+
+            // The ledgers, which are the whole reason persistence matters. They are keyed by
+            // repo SLUG and outlive the run: improvedLedger is what stops a restart
+            // re-improving files that already have open PRs, and measureLedger is what saves
+            // re-measuring every unit from zero. Restoring the run without them is worse than
+            // restoring nothing — the pipeline comes back believing it has never seen the repo.
+            String slug = Util.slugify(into.run.config == null ? "" : into.run.config.repoUrl());
+            if (slug != null && !slug.isEmpty()) {
+                Map<String, Map<String, Object>> improved = store.improvedLedger(slug);
+                if (improved != null && !improved.isEmpty()) {
+                    into.improvedLedger.put(slug, new LinkedHashMap<>(improved));
+                }
+                Map<String, Map<String, Object>> measured = store.measureLedger(slug);
+                if (measured != null && !measured.isEmpty()) {
+                    into.measureLedger.put(slug, new LinkedHashMap<>(measured));
+                }
+            }
             return true;
         } catch (Exception e) {
             // A failed restore must read as "nothing stored" so the caller falls back to the

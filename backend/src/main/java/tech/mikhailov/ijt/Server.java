@@ -829,11 +829,60 @@ public final class Server {
     }
 
     /// Would both phases skip for this unit — i.e. is there no work a round could do?
+
+    /// Every test source that could already carry a target's marker, for one unit.
+    ///
+    /// Rounds 1..rounds — the generated files that EXIST — plus the project's own test. Not
+    /// this round's paths: those are what the round is about to write, so reading them finds
+    /// nothing and the dedup silently becomes a no-op from round 2 onward.
+    static List<String> writtenTestSources(String file) {
+        Map<String, Object> f = fileRecord(file);
+        List<String> sources = new ArrayList<>();
+        String srcRel = str(f.get("path"));
+        String unitMethod = str(f.get("method"));
+        int roundsDone = (int) State.asLong(f.get("rounds"));
+        for (int past = 1; past <= roundsDone; past++) {
+            Repo.TestPathGuess g = Repo.guessTestPath(srcRel, past, unitMethod == null ? "" : unitMethod);
+            for (String rel : new String[]{g.mutPath(), g.covPath()}) {
+                if (rel == null || rel.isEmpty()) continue;
+                String c = Repo.readFileSafe(rel, 200000);
+                if (c != null && !c.isEmpty()) sources.add(c);
+            }
+        }
+        Repo.TestPathGuess own = Repo.guessTestPath(srcRel, 1, unitMethod == null ? "" : unitMethod);
+        if (own.exists()) {
+            String c = Repo.readFileSafe(own.path(), 200000);
+            if (c != null && !c.isEmpty()) sources.add(c);
+        }
+        return sources;
+    }
+
+    /// Surviving lines this unit has no test for yet — what a batch round would actually ask.
+    ///
+    /// ONE computation, used by both the route that builds the prompt and the settle test that
+    /// decides whether the unit is finished. They used to predict it separately and disagree:
+    /// the settle test asked the retired one-mutant prompt, which sees survivors and says
+    /// "work remains" exactly when every marker is already written and the batch prompt would
+    /// skip. The unit then produced no test, missed, and paid a full verify — a JaCoCo build
+    /// plus a PIT run — three times before stopping.
+    static List<Targets.Target> pendingTargetsFor(String file) {
+        Map<String, Object> f = fileRecord(file);
+        List<Map<String, Object>> survivors = mutantMaps(f.get("lastSurvived"));
+        return Targets.targetsFor(survivors.stream().map(Server::targetsMutant).toList(),
+                writtenTestSources(file)).pending();
+    }
+
     static boolean nothingToAsk(String file) {
         try {
             Prompts.Gaps gaps = gapsFor(file).prompts();
+            // mutationPrompt is the RETIRED one-mutant prompt; the mutation phase builds
+            // batchPrompt. They skip on different conditions and disagree in exactly the case
+            // that matters: when every surviving line already carries its marker, batchPrompt
+            // skips and writes nothing, while mutationPrompt sees survivors and does not — so
+            // the unit was judged "still has work", produced no test, missed, and paid a full
+            // verify (a JaCoCo build plus a PIT run) three times over before stopping.
             return Boolean.TRUE.equals(Prompts.coveragePrompt(gaps).skip())
-                    && Boolean.TRUE.equals(Prompts.mutationPrompt(gaps).skip());
+                    && pendingTargetsFor(file).isEmpty();
         } catch (RuntimeException e) {
             return false;
         }
@@ -1275,15 +1324,17 @@ public final class Server {
             String file = unitArg(body);
             UnitGaps gaps = gapsFor(file);
             Map<String, Object> f = fileRecord(file);
-            // the filter is only as good as the sources it reads: this unit's generated file AND
-            // the project's own test for the class, or we re-ask for lines already covered
-            List<String> sources = new ArrayList<>();
-            for (String rel : new String[]{str(gaps.wire().get("mutTestPath")), str(gaps.wire().get("covTestPath")),
-                    str(gaps.wire().get("projectTestPath"))}) {
-                if (rel == null || rel.isEmpty()) continue;
-                String c = Repo.readFileSafe(rel, 200000);
-                if (c != null && !c.isEmpty()) sources.add(c);
-            }
+            // The filter is only as good as the sources it reads, and it was reading the wrong
+            // ones. `mutTestPath`/`covTestPath` on the wire are THIS round's paths — the files
+            // the round is about to write — so they do not exist yet and contribute nothing.
+            // The generated tests that DO exist are rounds 1..rounds, and those were never
+            // read, so from round 2 onward the dedup was a no-op and every round re-asked the
+            // model for every surviving line the earlier rounds had already covered.
+            //
+            // That is the whole point of the marker design (Targets.targetMarker): a round is
+            // supposed to be self-limiting because the next one greps the file this one wrote
+            // and finds nothing left to ask for.
+            List<String> sources = writtenTestSources(file);
             List<Map<String, Object>> survivors = mutantMaps(f.get("lastSurvived"));
             Targets.Plan t = Targets.targetsFor(survivors.stream().map(Server::targetsMutant).toList(), sources);
             State.event("improving_mutation", unitLabel(file) + ": " + t.all().size() + " surviving line(s), "
