@@ -115,8 +115,24 @@ public final class ImproveTasklet implements Tasklet {
         while (true) {
             backend.coverageGaps(unit);
 
-            Phase.COVERAGE.run(backend, unit);
-            Phase.MUTATION.run(backend, unit);
+            boolean wroteCoverage = Phase.COVERAGE.run(backend, unit);
+            boolean wroteMutation = Phase.MUTATION.run(backend, unit);
+
+            // Nothing went into the tree, so there is nothing new to measure.
+            //
+            // `verify` is the most expensive call in the loop — a full JaCoCo build and a PIT
+            // run. Against an unchanged tree it re-measures the same numbers, reports no
+            // improvement, and the round is booked as a miss. Observed on the very first unit
+            // of a from-scratch run: round 2 of JSONArray#getNumber asked for 0 targets
+            // (every surviving line already had a named test) and still paid the verify.
+            //
+            // Breaking here rather than calling missRound is deliberate: no round happened.
+            // Booking a miss would count this against the unit's miss budget and inflate its
+            // spentSec with work it did not do. The code below the loop still runs, so the
+            // unit's accepted rounds are dropped-to-committed and its PR is prepared normally.
+            if (!wroteCoverage && !wroteMutation) {
+                break;
+            }
 
             Map<String, Object> verified = backend.verify(unit);
 

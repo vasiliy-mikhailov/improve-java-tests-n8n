@@ -87,6 +87,10 @@ class ImproveTaskletTest {
 
     @Test
     void a_kept_round_is_accepted_and_a_missed_round_is_binned() {
+        // A round only reaches verify if a phase put something in the tree. These are about the
+        // loop's MECHANICS — accept vs miss, where the loop returns to, what the continuation
+        // reads — so the round has to do work; the fake skips by default.
+        backend.phaseSkip = false;
         backend.queue.add("A.java::one");
         backend.keepRound = false;
 
@@ -96,6 +100,7 @@ class ImproveTaskletTest {
         assertFalse(backend.calls.contains("acceptRound(A.java::one)"));
 
         backend.reset();
+        backend.phaseSkip = false;   // reset() restores the skipping default
         backend.queue.add("A.java::one");
         backend.keepRound = true;
 
@@ -107,6 +112,10 @@ class ImproveTaskletTest {
 
     @Test
     void another_round_returns_to_coverage_gaps_and_not_to_the_pick() {
+        // A round only reaches verify if a phase put something in the tree. These are about the
+        // loop's MECHANICS — accept vs miss, where the loop returns to, what the continuation
+        // reads — so the round has to do work; the fake skips by default.
+        backend.phaseSkip = false;
         backend.queue.add("A.java::one");
         backend.roundsPerUnit = 3;
 
@@ -125,6 +134,10 @@ class ImproveTaskletTest {
 
     @Test
     void the_loop_condition_is_the_round_verdict_and_not_the_verification() {
+        // A round only reaches verify if a phase put something in the tree. These are about the
+        // loop's MECHANICS — accept vs miss, where the loop returns to, what the continuation
+        // reads — so the round has to do work; the fake skips by default.
+        backend.phaseSkip = false;
         backend.queue.add("A.java::one");
         backend.roundsPerUnit = 2;
         // verify answers `continueRounds` too, and the fake makes it the opposite of accept's
@@ -188,5 +201,25 @@ class ImproveTaskletTest {
 
         assertTrue(backend.createdPrs.isEmpty());
         assertEquals(1, backend.discardReasons.size());
+    }
+
+    @Test
+    void a_round_that_wrote_nothing_does_not_pay_for_a_verify() {
+        // verify is the most expensive call in the loop — a full JaCoCo build and a PIT run.
+        // Against an unchanged tree it re-measures the same numbers and books a miss. Seen on
+        // the first unit of a from-scratch run: round 2 of JSONArray#getNumber asked for 0
+        // targets, because every surviving line already had a named test, and still paid it.
+        //
+        // No round happened, so no miss is charged either — that would spend the unit's miss
+        // budget and inflate its spentSec with work it did not do.
+        backend.phaseSkip = true;
+        backend.queue.add("A.java::one");
+
+        runOnce();
+
+        assertFalse(backend.calls.stream().anyMatch(c -> c.startsWith("verify(")),
+                "nothing written, nothing new to measure: " + backend.calls);
+        assertFalse(backend.calls.stream().anyMatch(c -> c.startsWith("missRound(")),
+                "no round happened, so no miss should be charged");
     }
 }

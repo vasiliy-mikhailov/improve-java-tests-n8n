@@ -923,6 +923,31 @@ public final class Server {
             String file = str(f.get("path"));
             String method = State.jsTruthy(f.get("method")) ? str(f.get("method")) : null;
             String reach = reachOf(file, method);
+
+            // Can this unit yield a kill at all? Skip it here, before it becomes a candidate,
+            // or it costs a baseline coverage run, a PIT run, a model call and a verification
+            // to discover it never could.
+            //
+            // Observed on a from-scratch JSON-java run: Cookie#<init>, CookieList#<init>,
+            // Property#<init>, StringBuilderWriter#close and #flush are all empty bodies, so
+            // PIT emits nothing and reports "no tests to run" — and every one of them was
+            // picked, measured and written off in turn.
+            //
+            // The predicate existed and was tested before this call site did, which is the
+            // whole reason those units were still being picked: a filter nothing calls filters
+            // nothing. CandidateEligibilityTest asserts against THIS list, not the predicate.
+            Select.Unit candidate = new Select.Unit(key, method, num(f.get("mac")), num(f.get("coverage")), reach,
+                    intOrNull(f.get("executableLines")), intOrNull(f.get("lines")),
+                    (int) State.asLong(f.get("missesEver")), boolOrNull(f.get("everReached")));
+            int mutants = (int) State.asLong(f.get("totalMutants"));
+            boolean measured = f.get("totalMutants") != null;
+            // Only judge a unit PIT has actually measured. An unmeasured one has no mutant
+            // count yet, and reading that absence as "zero mutants" would drop every candidate
+            // before the first baseline ever ran.
+            if (measured && !Select.eligibleUnit(candidate, mutants, Select.exhausted(unitState(f)))) {
+                continue;
+            }
+
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("path", key);
             row.put("file", file);
@@ -940,9 +965,7 @@ public final class Server {
             row.put("everReached", f.get("everReached"));
             row.put("reach", reach);
             candidateWire.add(row);
-            ranked.add(new Select.Unit(key, method, num(f.get("mac")), num(f.get("coverage")), reach,
-                    intOrNull(f.get("executableLines")), intOrNull(f.get("lines")),
-                    (int) State.asLong(f.get("missesEver")), boolOrNull(f.get("everReached"))));
+            ranked.add(candidate);
         }
         // Weakest first, constructors last among equals (usually field assignment with nothing to
         // assert — they kept winning the pick on real repos), a directly callable method ahead of

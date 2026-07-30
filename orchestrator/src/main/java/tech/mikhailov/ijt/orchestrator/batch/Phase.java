@@ -61,7 +61,11 @@ public enum Phase {
     /// Run the phase for one unit. Returns when the phase's `Done` node would be reached; every
     /// exit is a `return`, and there are five of them, exactly as there are five edges into
     /// `Done`.
-    void run(Backend backend, String unit) {
+    ///
+    /// @return whether the phase PUT ANYTHING IN THE TREE. False means it skipped without
+    ///         asking, and a verify afterwards measures the same code again — a JaCoCo build
+    ///         and a PIT run that can only report a miss. The caller uses this to stop instead.
+    boolean run(Backend backend, String unit) {
         Map<String, Object> ask = backend.buildPrompt(this, unit);
 
         // Has Work? -- no. The prompt builders answer `skip` when there is nothing to ask for:
@@ -69,7 +73,7 @@ public enum Phase {
         // surviving line already has a test named for it. Asking anyway costs a model call and
         // produces a test for a mutant that is already dead.
         if (truthy(ask.get("skip"))) {
-            return;
+            return false;
         }
 
         Map<String, Object> answer = backend.chat(ask);
@@ -88,13 +92,13 @@ public enum Phase {
         // Green? -- yes. Done: the round's test compiles and the suite still passes, and whether
         // it killed anything is verification's question, not this phase's.
         if (truthy(ran.get("passed"))) {
-            return;
+            return true;
         }
 
         // Wrote Any? -- no. The suite is red and this phase wrote nothing, so it did not break
         // it. Repairing a file we did not write would hand the model somebody else's failure.
         if (!(count(parsed.get("count")) > 0)) {
-            return;
+            return true;
         }
 
         Map<String, Object> repairAsk = backend.buildRepair(unit, stage, ran.get("summary"), parsed.get("tests"));
@@ -110,7 +114,7 @@ public enum Phase {
 
         // Green After Repair? -- yes.
         if (truthy(reran.get("passed"))) {
-            return;
+            return true;
         }
 
         // Both lists, concatenated. The repair writes to the paths generation used AND may add
@@ -121,5 +125,9 @@ public enum Phase {
         List<String> paths = new ArrayList<>(strings(orEmpty(parsed).get("paths")));
         paths.addAll(strings(orEmpty(repaired).get("paths")));
         backend.deleteTests(paths);
+        // The tests were written and then deleted for breaking the suite. That still counts as
+        // having touched the tree — the deletion is itself a change the verify must measure, and
+        // the round has to be booked so the miss lands against this unit's budget.
+        return true;
     }
 }
