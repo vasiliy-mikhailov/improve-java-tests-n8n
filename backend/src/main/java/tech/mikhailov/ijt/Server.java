@@ -1799,6 +1799,9 @@ public final class Server {
         Set<String> failing = Salvage.failedTestNames(summary);
         List<String> deleted = new ArrayList<>();
         List<String> salvaged = new ArrayList<>();
+        // the paths themselves, not the human-readable "(kept N passing test(s))" strings — the
+        // red-suite guard below has to be able to delete them
+        List<String> salvagedPaths = new ArrayList<>();
         for (String p : new LinkedHashSet<>(strings(body.get("paths")))) {
             // the same decision Pit makes when PIT refuses a red suite — one function, or the two
             // callers drift and one undoes the other's salvage
@@ -1806,14 +1809,33 @@ public final class Server {
             if (kept != null && !kept.isEmpty()) {
                 Repo.writeTestFile(p, kept);
                 salvaged.add(p + " (kept " + countOf(kept, "@Test") + " passing test(s))");
+                salvagedPaths.add(p);
                 continue;
             }
             if (Repo.deleteTestFile(p)) deleted.add(p);
         }
         String stage = State.jsTruthy(body.get("stage")) ? str(body.get("stage")) : "improving_coverage";
         if (!salvaged.isEmpty()) {
-            State.event(stage, "kept the passing tests and cut only the failing ones: "
-                    + String.join(", ", salvaged));
+            // PROVE IT, then keep it. A salvage that leaves the suite red is worse than no
+            // salvage at all: `verify` returns early on a red suite — "full suite red", before
+            // the consecutiveMisses increment — so the round is never booked, the miss budget
+            // never advances, and the unit rounds for ever. That was harmless only while salvage
+            // could not fire; it fires now, so the guarantee has to be enforced rather than
+            // assumed. The names came from a runner that may not have listed every failure, and
+            // a file that also fails to compile has no names to give at all.
+            Tests.Result after = Tests.runTests(testsIo(), null);
+            if (after.passed()) {
+                State.event(stage, "kept the passing tests and cut only the failing ones: "
+                        + String.join(", ", salvaged));
+            } else {
+                for (String p : new ArrayList<>(salvagedPaths)) {
+                    if (Repo.deleteTestFile(p)) deleted.add(p);
+                }
+                salvaged.clear();
+                State.event(stage, "salvage left the suite red — deleted the file(s) outright: "
+                        + String.join(", ", salvagedPaths)
+                        + " — " + Salvage.whyItBroke(after.summary()));
+            }
         }
         if (!deleted.isEmpty()) {
             // WITH THE REASON. This event fired 814 times in run-1785444794893 — 58% of every

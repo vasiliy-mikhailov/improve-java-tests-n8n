@@ -25,16 +25,30 @@ public final class Salvage {
     //   Gradle:   `SomeTest > methodName() FAILED`
     private static final Pattern GRADLE_FAILED =
             Pattern.compile(">\\s*([A-Za-z_$][\\w$]*)\\s*\\([^)]*\\)\\s*FAILED");
-    //   Surefire: `methodName(pkg.SomeTest)  Time elapsed: 0.01 s  <<< FAILURE!`
+    //   Surefire 2.x: `methodName(pkg.SomeTest)  Time elapsed: 0.01 s  <<< FAILURE!`
     private static final Pattern SUREFIRE_FAILED = Pattern.compile(
             "^\\s*(?:\\[ERROR\\]\\s*)?([A-Za-z_$][\\w$]*)\\([\\w.$]+\\).*<<<\\s*(?:FAILURE|ERROR)!",
+            Pattern.MULTILINE);
+    //   Surefire 3.x: `pkg.SomeTest.methodName -- Time elapsed: 0.003 s <<< FAILURE!`
+    //
+    // Fully-qualified first, and no parentheses at all, so the 2.x pattern cannot match it. That
+    // is why partial salvage had never once run on a Maven repo: over the 64 suite-failure texts
+    // this pipeline stored, the two patterns above name a failing test in ZERO of them and this
+    // one names a test in 45 — the entire assertion-failure subset. 492 rounds deleted a whole
+    // generated file, median 4,954 bytes, usually for one wrong assertion.
+    //
+    // `--\s+Time elapsed` BEFORE the marker is what keeps the class summary out. Surefire prints
+    // `Tests run: 3, ... Time elapsed: 0.005 s <<< FAILURE! -- in org.json.SomeTest` with the
+    // dashes AFTER, and reading that as a method would cut whatever it happened to name.
+    private static final Pattern SUREFIRE3_FAILED = Pattern.compile(
+            "^\\s*(?:\\[ERROR\\]\\s*)?[\\w.$]*?\\.([A-Za-z_$][\\w$]*)\\s+--\\s+Time elapsed.*?<<<\\s*(?:FAILURE|ERROR)!",
             Pattern.MULTILINE);
 
     /// Test method names the runner reported as failing.
     public static Set<String> failedTestNames(String log) {
         Set<String> out = new LinkedHashSet<>();
         String s = log == null ? "" : log;
-        for (Pattern p : List.of(GRADLE_FAILED, SUREFIRE_FAILED)) {
+        for (Pattern p : List.of(GRADLE_FAILED, SUREFIRE_FAILED, SUREFIRE3_FAILED)) {
             Matcher m = p.matcher(s);
             while (m.find()) out.add(m.group(1));
         }
