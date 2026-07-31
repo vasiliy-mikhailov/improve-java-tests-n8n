@@ -873,14 +873,43 @@ public final class Repo {
     /// 12k characters of prompt to produce a 400-byte test for one method. Prompt size drives
     /// both latency and cost, and most of that class is irrelevant to the mutant at hand.
     public static MethodContext methodContext(String rel, String methodName, Integer methodLine) {
+        return methodContext(rel, methodName, methodLine, List.of());
+    }
+
+    /// @param alsoCovering surviving mutant lines that must be visible — see
+    ///                     {@link #methodContextOf(String, String, Integer, List)}
+    public static MethodContext methodContext(String rel, String methodName, Integer methodLine,
+                                              List<Integer> alsoCovering) {
         String src = readFileSafe(rel, 500_000);
         if (src == null || src.isEmpty()) return null;
-        return methodContextOf(src, methodName, methodLine);
+        return methodContextOf(src, methodName, methodLine, alsoCovering);
     }
 
     /// The pure half of {@link #methodContext}: that one needs a repository, this one needs a
     /// string.
     public static MethodContext methodContextOf(String src, String methodName, Integer methodLine) {
+        return methodContextOf(src, methodName, methodLine, List.of());
+    }
+
+    /// The same, plus the overloads that own the surviving mutants.
+    ///
+    /// A unit is `path::name`, and both the expansion and `Pit.scopeToMethod` match on the NAME —
+    /// so one unit spans every overload and PIT reports survivors across all of them. Showing the
+    /// model only the block that owns `methodLine` makes the other targets unwritable by
+    /// construction: it is asked to kill a mutant on code it cannot see.
+    ///
+    /// That is where the heaviest zero-conversion units in the log sit. StringBuilderWriter#write
+    /// spent 21 rounds and killed nothing, with 14 mutants spread over four overloads while the
+    /// record carried methodLine 36. JSONObject#toString 21 rounds, JSONTokener#next 23,
+    /// JSONArray#addAll 29 — all zero.
+    ///
+    /// Bounded by the survivors, so only overloads with something live in them are added; an
+    /// overload with nothing to kill is not worth the prompt budget. Splitting the unit by
+    /// descriptor instead would change what the ledgers key on, and is deliberately not done.
+    ///
+    /// @param alsoCovering 1-based source lines that must be visible — the surviving mutants
+    public static MethodContext methodContextOf(String src, String methodName, Integer methodLine,
+                                                List<Integer> alsoCovering) {
         String[] lines = src.split("\n", -1);
         List<String> header = new ArrayList<>();
         for (String l : lines) {
@@ -895,32 +924,55 @@ public final class Repo {
                 .filter(l -> SIGNATURE_LINE.matcher(l).find())
                 .map(l -> TRAILING_BRACE.matcher(l).replaceFirst(";").trim())
                 .limit(60).toList();
-        // the target method: from its declaration to the matching closing brace
-        int startAt = Math.max(0, (methodLine == null ? 1 : methodLine) - 1);
-        int start = startAt;
         // The method name goes into a regex, so it is quoted. The JS strips everything but word
         // characters first, which leaves nothing a regex could read as syntax — quoting keeps
         // that true even if the strip is ever loosened.
         String clean = (methodName == null ? "" : methodName).replaceAll("[^\\w]", "");
         Pattern call = Pattern.compile("\\b" + Pattern.quote(clean) + "\\s*\\(");
-        // the JaCoCo line points at the first executable line, so walk back to the signature
+
+        int[] target = blockAround(lines, call, methodLine == null ? 1 : methodLine);
+        List<int[]> blocks = new ArrayList<>();
+        blocks.add(target);
+        // The overloads that own the surviving mutants, in the order PIT reported them. The
+        // target's own block leads: it is the one the unit is named for.
+        for (Integer line : alsoCovering == null ? List.<Integer>of() : alsoCovering) {
+            if (line == null || line < 1) continue;
+            int at = line - 1;
+            // already visible — the common case, one overload with its survivors inside it
+            if (blocks.stream().anyMatch(b -> at >= b[0] && at < b[1])) continue;
+            blocks.add(blockAround(lines, call, line));
+        }
+        StringBuilder body = new StringBuilder(joinLines(lines, target[0], target[1]));
+        for (int i = 1; i < blocks.size(); i++) {
+            body.append("\n\n  // … other members omitted …\n\n")
+                    .append(joinLines(lines, blocks.get(i)[0], blocks.get(i)[1]));
+        }
+        return new MethodContext(String.join("\n", header), signatures, body.toString(), target[0] + 1);
+    }
+
+    /// The declaration block containing a 1-based source line, as `{start, endExclusive}`.
+    ///
+    /// Walks back from the line to its signature — JaCoCo points at the first EXECUTABLE line,
+    /// not the declaration — then forward to the matching closing brace.
+    ///
+    /// Braces are counted in the text as it stands, strings and comments included: the same
+    /// approximation the JS makes. It costs a method whose body holds an unbalanced brace inside
+    /// a string literal, and buys not having a Java parser here.
+    private static int[] blockAround(String[] lines, Pattern call, int oneBasedLine) {
+        int startAt = Math.max(0, oneBasedLine - 1);
+        int start = startAt;
         for (int i = Math.min(startAt, lines.length - 1); i >= Math.max(0, startAt - 12); i--) {
             if (call.matcher(lines[i]).find()) { start = i; break; }
         }
-        String body = null;
         int depth = 0;
         boolean opened = false;
-        // Braces are counted in the text as it stands, strings and comments included — the same
-        // approximation the JS makes. It costs a method whose body contains an unbalanced brace
-        // inside a string literal, and buys not having a Java parser here.
         for (int i = start; i < Math.min(lines.length, start + 600); i++) {
             for (char ch : lines[i].toCharArray()) {
                 if (ch == '{') { depth += 1; opened = true; } else if (ch == '}') depth -= 1;
             }
-            if (opened && depth <= 0) { body = joinLines(lines, start, i + 1); break; }
+            if (opened && depth <= 0) return new int[] {start, i + 1};
         }
-        if (body == null) body = joinLines(lines, start, Math.min(lines.length, start + 120));
-        return new MethodContext(String.join("\n", header), signatures, body, start + 1);
+        return new int[] {start, Math.min(lines.length, start + 120)};
     }
 
     // ── the state, and the children ────────────────────────────────────────────

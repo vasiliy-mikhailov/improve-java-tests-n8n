@@ -699,9 +699,17 @@ public final class Server {
                     + ref.content();
         }
         String fqcn = State.jsTruthy(f.get("fqcn")) ? str(f.get("fqcn")) : Repo.fqcnOf(srcPath);
-        // only the part of the class the model needs for THIS method
+        // only the part of the class the model needs for THIS method — plus, when the survivors
+        // sit in OTHER overloads of the same name, those too. A unit is `path::name` and PIT
+        // scores every overload under it, so a prompt built from `methodLine` alone asks the
+        // model to kill mutants on code it cannot see. See Repo.methodContextOf.
+        List<Integer> survivorLines = mutantMaps(f.get("lastSurvived")).stream()
+                .map(m -> intOrNull(m.get("line")))
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
         Repo.MethodContext mctx = (method != null && !method.isEmpty())
-                ? Repo.methodContext(srcPath, method, intOrNull(f.get("methodLine"))) : null;
+                ? Repo.methodContext(srcPath, method, intOrNull(f.get("methodLine")), survivorLines) : null;
 
         String visibility = (method != null && !method.isEmpty()) ? JavaSrc.methodVisibility(whole, method) : null;
         List<List<JavaSrc.MethodRef>> routes = (method != null && !method.isEmpty())
