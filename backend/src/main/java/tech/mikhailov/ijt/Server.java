@@ -1852,6 +1852,9 @@ public final class Server {
             out.put("file", Feedback.fileIn(repo).toString());
             out.put("guidance", Feedback.guidance(repo));
             out.put("records", Feedback.join(repo));
+            // per-unit tallies for the dashboard's 💬 badge, so the table does not have to read
+            // and join the whole file itself on every two-second poll
+            out.put("counts", feedbackCounts());
         } catch (RuntimeException e) {
             // no run configured yet: an empty answer, not a 500. The dashboard asks on load,
             // before anyone has started anything.
@@ -1872,9 +1875,14 @@ public final class Server {
         if (text == null || text.isBlank()) throw new IllegalArgumentException("text required");
         Path repo = Repo.repoDir();
         String repoUrl = state().run == null ? "" : state().run.config.repoUrl();
+        // `file` is what the dashboard sends — the unit whose row was clicked — and is the same
+        // thing as `target`. Both spellings are accepted so the dashboard code is the same shape
+        // as the JavaScript pipeline's, which is where this interaction was designed.
+        String target = State.jsTruthy(body.get("target")) ? str(body.get("target")) : str(body.get("file"));
         Map<String, Object> item = Feedback.feedback(repo, repoUrl,
-                str(body.get("target")), text,
+                target, text,
                 State.jsTruthy(body.get("apply")), intOrNull(body.get("rating")));
+        if (State.jsTruthy(body.get("author"))) item.put("author", str(body.get("author")));
         // NO State.event HERE, and this is not a style preference — it killed a run.
         //
         // This method runs on a WEB thread while the batch thread is writing events of its own.
@@ -1896,6 +1904,32 @@ public final class Server {
         out.put("feedback", item);
         // echoed, so a caller sees at once whether it will reach the next prompt
         out.put("guidance", Feedback.guidance(repo));
+        // How many generated tests this judgement actually hangs on. ZERO IS A REAL ANSWER, not
+        // a failure: nothing has been generated for that unit yet, so there is no record to
+        // attach it to — and the dashboard says so rather than reporting a save that reached
+        // nothing. Repo-scoped feedback attaches to no record by design; it is guidance.
+        long attached = target == null || target.isEmpty() ? 0
+                : Feedback.join(repo).stream()
+                        .filter(a -> target.equals(a.get("id")) || target.equals(a.get("unit")))
+                        .count();
+        out.put("attached", attached);
+        out.put("path", Feedback.fileIn(repo).toString());
+        return out;
+    }
+
+    /// How many feedback items name each unit — what the dashboard's 💬 badge counts.
+    public static Map<String, Long> feedbackCounts() {
+        Map<String, Long> out = new LinkedHashMap<>();
+        try {
+            for (Map<String, Object> row : Feedback.lines(Repo.repoDir())) {
+                if (!"feedback".equals(row.get("kind"))) continue;
+                Object t = row.get("target");
+                if (t == null) continue;   // repo-scoped: guidance, not a comment on a row
+                out.merge(String.valueOf(t), 1L, Long::sum);
+            }
+        } catch (RuntimeException ignored) {
+            // no run configured: no counts, and no reason to fail the page
+        }
         return out;
     }
 

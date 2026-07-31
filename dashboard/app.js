@@ -379,6 +379,7 @@ function render(m) {
     <td class="num" title="${f.llmCalls || 0} LLM call(s)">${(f.tokensIn || f.tokensOut) ? fmtTok(f.tokensIn) + ' / ' + fmtTok(f.tokensOut) : '–'}</td>
     <td><span class="badge b-${esc(f.status)}">${esc(f.status)}</span></td>
     <td>${f.prUrl ? `<a href="${esc(f.prUrl)}" target="_blank">PR ↗</a>` : (f.prPatch ? 'patch' : '')}</td>
+    <td>${f.status === 'candidate' ? '' : `<button class="say" data-file="${esc(f.path)}" title="tell the pipeline what you think of these tests">💬${FB_COUNTS[f.path] ? ` ${FB_COUNTS[f.path]}` : ''}</button>`}</td>
   </tr>`;
   }).join('');
 
@@ -431,3 +432,64 @@ function renderFeed() {
 // stream. connect() reads the snapshot itself, after its SUBSCRIBE frames are on the wire.
 refresh();
 connect();
+
+
+// ── leaving a comment on the tests written for a unit ─────────────────────────
+//
+// The corpus is only worth having if a judgement can be given from the place a person is
+// already looking. Everything else about a record — the prompt rule, the source, the tests,
+// the score — is captured automatically; this is the one part that needs a human.
+//
+// Ported from the JavaScript pipeline's dashboard, deliberately the same interaction: a 💬 per
+// row, a dialog, one POST. The only addition is `apply`, which decides whether the sentence
+// also goes into the next round's prompt or is only kept for the optimiser to reflect on.
+
+let FB_COUNTS = {};
+
+async function pollFeedbackCounts() {
+  try {
+    const r = await fetch('api/feedback', { cache: 'no-store' });
+    if (!r.ok) return;
+    const d = await r.json();
+    FB_COUNTS = d.counts || {};
+  } catch (err) { /* the badge is not worth an error banner */ }
+}
+pollFeedbackCounts();
+setInterval(pollFeedbackCounts, 30000);
+
+let fbFile = null;
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('button.say');
+  if (!b) return;
+  fbFile = b.dataset.file;
+  document.getElementById('fb-title').textContent = 'Feedback on tests for ' + fbFile;
+  document.getElementById('fb-text').value = '';
+  document.getElementById('fb-status').textContent = '';
+  document.getElementById('fb-apply').checked = false;
+  document.getElementById('fb').showModal();
+  document.getElementById('fb-text').focus();
+});
+
+document.getElementById('fb-form').addEventListener('submit', async (e) => {
+  const save = e.submitter && e.submitter.value === 'save';
+  if (!save || !fbFile) return;
+  const text = document.getElementById('fb-text').value.trim();
+  const author = document.getElementById('fb-author').value.trim() || null;
+  const apply = document.getElementById('fb-apply').checked;
+  if (!text) return;
+  const status = document.getElementById('fb-status');
+  try {
+    const r = await fetch('api/feedback', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ file: fbFile, text, author, apply }),
+    });
+    const d = await r.json();
+    if (!d.ok) { status.textContent = d.error || 'could not save'; return; }
+    // "attached: 0" is a real answer, not a failure: nothing has been generated for that unit
+    // yet, so there is no record for the judgement to hang on.
+    status.textContent = d.attached
+      ? `saved (${d.attached} record${d.attached > 1 ? 's' : ''})`
+      : 'saved — nothing generated for it yet to attach to';
+    pollFeedbackCounts();
+  } catch (err) { status.textContent = 'could not save: ' + err.message; }
+});

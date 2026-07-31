@@ -80,3 +80,24 @@ details summary { cursor: pointer; padding: 4px 0; }
 .llmlog h4 { margin: 10px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #7d8590; }
 .llmlog pre { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 10px;
   max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+
+/* ── feedback: the 💬 per row, and the dialog it opens ──────────────────────
+   Ported from the JavaScript pipeline's dashboard, where this interaction was designed.
+   Same shape on purpose: a judgement has to be givable from the place a person is
+   already looking, or it does not get given. */
+button.say { background:none; border:0; cursor:pointer; font-size:15px; opacity:.55; padding:2px 6px; color:inherit; }
+button.say:hover { opacity:1; }
+dialog#fb { border:1px solid #2b3648; border-radius:10px; background:#131a26; color:#dbe4f0;
+  width:min(560px,92vw); padding:20px; }
+dialog#fb::backdrop { background:rgba(0,0,0,.55); }
+dialog#fb h3 { margin:0 0 6px; font-size:15px; }
+.fb-hint { margin:0 0 12px; font-size:12px; line-height:1.5; opacity:.6; }
+dialog#fb textarea, dialog#fb input { width:100%; box-sizing:border-box; background:#0d1420;
+  border:1px solid #2b3648; border-radius:6px; color:inherit; padding:8px; font:inherit; margin-bottom:8px; }
+dialog#fb menu { display:flex; gap:8px; justify-content:flex-end; margin:8px 0 0; padding:0; }
+dialog#fb button { background:#1c2636; border:1px solid #2b3648; color:inherit; border-radius:6px;
+  padding:6px 14px; cursor:pointer; font:inherit; }
+dialog#fb button.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
+.fb-status { margin:10px 0 0; font-size:12px; min-height:1em; opacity:.75; }
+.fb-apply { display:block; margin:8px 0 0; font-size:12px; opacity:.75; }
+.fb-apply input { width:auto; margin-right:6px; }

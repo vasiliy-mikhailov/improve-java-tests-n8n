@@ -42,7 +42,7 @@
   <section>
     <h2>Files <span class="muted" id="files-count"></span></h2>
     <div class="tablewrap"><table id="files">
-      <thead><tr><th>file</th><th>cov before</th><th>mut before</th><th>MAC before</th><th>cov after</th><th>mut after</th><th>MAC after</th><th>human-eq</th><th>tokens in/out</th><th>status</th><th>PR</th></tr></thead>
+      <thead><tr><th>file</th><th>cov before</th><th>mut before</th><th>MAC before</th><th>cov after</th><th>mut after</th><th>MAC after</th><th>human-eq</th><th>tokens in/out</th><th>status</th><th>PR</th><th>say</th></tr></thead>
       <tbody></tbody>
     </table></div>
   </section>
@@ -61,6 +61,24 @@
     <h2>Activity <span class="muted" id="llm-count"></span></h2>
     <div id="events" class="events"></div>
   </section>
+
+<dialog id="fb">
+  <form method="dialog" id="fb-form">
+    <h3 id="fb-title">Feedback</h3>
+    <p class="fb-hint">Stored in the repo's <code>ijt-feedback.jsonl</code> next to the prompt that
+      wrote these tests, the tests themselves and how they scored — that whole record is what a
+      prompt optimiser reflects on. Tick <em>apply</em> and it also goes into the next round's
+      prompt straight away.</p>
+    <textarea id="fb-text" rows="4" placeholder="e.g. i don't like too many mocks in these tests"></textarea>
+    <input id="fb-author" placeholder="your name (optional)">
+    <label class="fb-apply"><input type="checkbox" id="fb-apply"> apply to the next round's prompt</label>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button id="fb-save" value="save" class="primary">Save</button>
+    </menu>
+    <p id="fb-status" class="fb-status"></p>
+  </form>
+</dialog>
 
   <script src="app.js"></script>
 </body>
