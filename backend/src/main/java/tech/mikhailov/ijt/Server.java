@@ -888,6 +888,30 @@ public final class Server {
         }
     }
 
+    /// How a unit PIT could not measure is settled.
+    ///
+    /// NOT `failed`, which is what this used to write. `candidates()` carries a circuit breaker
+    /// that ends the run at ten failures, and its own message says what it is for — "the repo or
+    /// its toolchain is the problem, not the units". An empty constructor at 100% line coverage
+    /// that PIT emits no mutants for is not evidence about the toolchain, and on
+    /// run-1785455296408 ten of them ended the run with 34 improvable units still on the list,
+    /// under the word "done".
+    ///
+    /// The status is the verdict's own label, so the two cannot drift. `attempts` is still pinned
+    /// to the cap: settling it is right — Property#<init> spent three attempts relearning the
+    /// same thing — and only calling it a failure was wrong.
+    ///
+    /// Extracted so this is testable at all. Reaching the branch it came from needs a real PIT
+    /// run, which is exactly how the old behaviour survived: the consumer was easy to test with a
+    /// status the producer never wrote, and the producer was not tested.
+    static Map<String, Object> unmeasuredPatch(String reason, int maxAttempts) {
+        Map<String, Object> patch = new LinkedHashMap<>();
+        patch.put("status", Rounds.Kind.UNMEASURED.label());
+        patch.put("failure", reason);
+        patch.put("attempts", maxAttempts);
+        return patch;
+    }
+
     /// The candidate queue and whether the batch is finished — the body of
     /// `GET /api/files/candidates`.
     static Map<String, Object> candidates() {
@@ -1665,11 +1689,8 @@ public final class Server {
             // Do not retry it. A unit whose measurement is broken — PIT finding no tests for a
             // class JaCoCo says is covered — fails the same way every time, and each attempt costs
             // a coverage run, a PIT run and a model call. Property#<init> spent three.
-            Map<String, Object> p2 = new LinkedHashMap<>();
-            p2.put("status", "failed");
-            p2.put("failure", verdict.reason());
-            p2.put("attempts", orDefault(state().run.config.maxAttemptsPerFile(), 3));
-            State.upsertFile(file, p2);
+            State.upsertFile(file, unmeasuredPatch(verdict.reason(),
+                    orDefault(state().run.config.maxAttemptsPerFile(), 3)));
             State.event("improving_mutation", unitLabel(file) + ": " + verdict.reason()
                     + " — leaving its numbers unset");
             State.save();
