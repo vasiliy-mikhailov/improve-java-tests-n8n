@@ -1171,7 +1171,12 @@ public final class Server {
                 // client already holds, so they would never be delivered.
                 state().events.clear();
                 if (State.jsTruthy(body.get("clearLedger"))) {
-                    state().improvedLedger.remove(Util.slugify(state().run.config.repoUrl()));
+                    String slug = Util.slugify(state().run.config.repoUrl());
+                    state().improvedLedger.remove(slug);
+                    // AND in the store. Removing it from memory alone left the rows in H2, where
+                    // nothing ever deletes them, so the next restart restored every cleared entry
+                    // and the run went quietly back to skipping units it had been told to redo.
+                    State.persistence().clearImprovedLedger(slug);
                 }
             }
             if (takeover != null) State.event("starting", takeover);

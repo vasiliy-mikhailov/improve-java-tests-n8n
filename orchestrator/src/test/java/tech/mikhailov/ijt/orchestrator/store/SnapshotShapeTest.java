@@ -159,7 +159,9 @@ class SnapshotShapeTest extends StoreTestSupport {
         assertAll(
                 () -> assertEquals(3, store.units(s.run.id).size(), "the good units still land"),
                 () -> assertEquals(1, store.prs(s.run.id).size(), "the PR is downstream of the bad unit"),
-                () -> assertEquals(1, store.improvedLedger("r").size(), "so is the ledger"));
+                () -> assertEquals(1,
+                        store.improvedLedger(tech.mikhailov.ijt.Util.slugify(s.run.config.repoUrl())).size(),
+                        "so is the ledger"));
     }
 
     // ── a snapshot is a statement of fact, not an append ──────────────────
@@ -216,6 +218,68 @@ class SnapshotShapeTest extends StoreTestSupport {
         reload();
 
         assertEquals(2, store.prs(s.run.id).size());
+    }
+
+    // ── clearLedger has to reach the store ────────────────────────────────
+
+    @Test
+    void clearingTheImprovedLedgerRemovesTheROWSToo() {
+        // `clearLedger:true` was `state().improvedLedger.remove(slug)` and nothing else. The run
+        // that asked for it did start clean — and the rows stayed in H2, where putImproved
+        // upserts and nothing ever deleted. So the next restart restored every cleared entry.
+        //
+        // Measured on a from-scratch run: 320 entries cleared, 23 units converted, restarted for
+        // an unrelated deploy, and back came 320 entries with 108 improved — the old ledger with
+        // the new run's work merged into it, and not a word logged.
+        //
+        // StateRepository.clearImproved existed the whole time, correct and called by nothing.
+        // Eighth instance of this codebase's signature defect.
+        H2StatePersistence h2 = new H2StatePersistence(store);
+        State.Store s = storeWith(1);
+        String slug = tech.mikhailov.ijt.Util.slugify(s.run.config.repoUrl());
+        h2.writeSnapshot(s);
+        reload();
+        assertEquals(1, store.improvedLedger(slug).size(), "precondition: the ledger has an entry");
+
+        h2.clearImprovedLedger(slug);
+        reload();
+
+        assertTrue(store.improvedLedger(slug).isEmpty(),
+                "the rows survived the clear, so the next restart resurrects them");
+    }
+
+    @Test
+    void clearingOneRepoLeavesAnotherRepoAlone() {
+        // the ledgers are per-repo and a clear is per-repo; taking the table would lose work on
+        // every other repo this deployment has ever improved
+        H2StatePersistence h2 = new H2StatePersistence(store);
+        store.putImproved("other-repo", "A.java::m", Map.of("state", "improved"));
+        State.Store s = storeWith(1);
+        String slug = tech.mikhailov.ijt.Util.slugify(s.run.config.repoUrl());
+        h2.writeSnapshot(s);
+        reload();
+
+        h2.clearImprovedLedger(slug);
+        reload();
+
+        assertEquals(1, store.improvedLedger("other-repo").size(), "another repo's ledger is not ours to clear");
+    }
+
+    @Test
+    void theMEASUREMENTSSurviveAClear() {
+        // clearLedger means "redo the work", not "forget what this repo measures". Losing the
+        // measureLedger costs ~40 minutes of re-measuring and buys nothing.
+        H2StatePersistence h2 = new H2StatePersistence(store);
+        State.Store s = storeWith(1);
+        String slug = tech.mikhailov.ijt.Util.slugify(s.run.config.repoUrl());
+        s.measureLedger.put(slug, new LinkedHashMap<>(Map.of("A.java::m", Map.of("macBefore", 10))));
+        h2.writeSnapshot(s);
+        reload();
+
+        h2.clearImprovedLedger(slug);
+        reload();
+
+        assertEquals(1, store.measureLedger(slug).size(), "the measurements are not the dispositions");
     }
 
     // ── a thinner store must not win a restore ────────────────────────────
@@ -335,7 +399,10 @@ class SnapshotShapeTest extends StoreTestSupport {
         pr.put("branch", "tests/improve-cdl");
         pr.put("title", "tests: CDL");
         s.prs.add(pr);
-        s.improvedLedger.put("r", new LinkedHashMap<>(Map.of(KEY, Map.of("state", "improved"))));
+        // keyed by the SLUG the store derives from repoUrl, not a literal — a fixture that
+        // invents its own key writes a ledger no lookup will ever ask for
+        s.improvedLedger.put(tech.mikhailov.ijt.Util.slugify(s.run.config.repoUrl()),
+                new LinkedHashMap<>(Map.of(KEY, Map.of("state", "improved"))));
         return s;
     }
 }

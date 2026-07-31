@@ -185,6 +185,20 @@ public class H2StatePersistence implements StatePersistence {
         }
     }
 
+    @Override
+    public void clearImprovedLedger(String repoSlug) {
+        file.clearImprovedLedger(repoSlug);
+        try {
+            long gone = store.clearImproved(repoSlug);
+            System.err.println("cleared " + gone + " improved-ledger row(s) for " + repoSlug);
+        } catch (Exception e) {
+            // Loud, unlike the other guards here. A clear that silently fails is worse than a
+            // lost row: the caller believes the repo will be redone from scratch, and the next
+            // restart quietly proves otherwise.
+            System.err.println("H2 improved-ledger clear FAILED for " + repoSlug + ": " + e);
+        }
+    }
+
     /// How many units the file on disk holds, or 0 if there is no readable file.
     ///
     /// Counted rather than trusted: the comparison above is only worth making against a number

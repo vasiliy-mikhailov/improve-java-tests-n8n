@@ -49,4 +49,22 @@ public interface StatePersistence {
     /// existing state.json ONCE. A deployment carries 319 units, 400 events and two ledger
     /// repos, and losing the improvedLedger re-improves files that already have open PRs.
     boolean load(State.Store into);
+
+    /// Forget one repo's improved-unit ledger, durably.
+    ///
+    /// `clearLedger:true` used to be `state().improvedLedger.remove(slug)` and nothing else — an
+    /// in-memory removal. The run that asked for it did start clean, and the rows stayed in the
+    /// store: `putImproved` upserts and nothing ever deleted. So the next restart restored every
+    /// cleared entry and the run silently went back to skipping units it had been told to redo.
+    ///
+    /// Measured: a from-scratch run cleared 320 entries, converted 23 units, was restarted for an
+    /// unrelated deploy, and came back with 320 entries and 108 improved — the old ledger, plus
+    /// the new run's work merged into it. Nothing reported anything.
+    ///
+    /// `StateRepository.clearImproved` had existed the whole time, correct and unreachable. This
+    /// is the seam that reaches it.
+    ///
+    /// Default is a no-op because the file implementation needs none: state.json is rewritten
+    /// whole from memory on the next flush, so an in-memory removal is already durable there.
+    default void clearImprovedLedger(String repoSlug) { }
 }
