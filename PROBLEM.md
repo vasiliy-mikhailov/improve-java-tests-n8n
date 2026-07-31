@@ -16,7 +16,7 @@ doing and **their own rules** applied at every stage.
 Concretely:
 
 1. **Specify a Java repo** (URL + branch) by configuration only — no code changes.
-2. **Run one Docker deliverable**: n8n orchestrator + execution sidecar + dashboard.
+2. **Run one Docker deliverable**: orchestrator + execution + dashboard in one container.
 3. **Get improved tests**, with improved coverage, improved PIT mutation score, and
    improved MAC — measured, not asserted.
 4. **Get a PR per improved file**, and none where nothing improved.
@@ -26,6 +26,31 @@ Concretely:
    `write_test`, `check_changes`, `make_pr`.
 7. **Adapt the workflow** in the n8n editor, so it uses **only native n8n blocks** — no
    shell, no Python. Everything touching the OS lives behind the sidecar's HTTP API.
+
+### Requirement 7 was superseded, deliberately
+
+Requirements 1–6 and 8+ are met as written. Requirement 7 is **not**, and this section is
+here so that is a recorded decision rather than a quiet omission.
+
+The brief above is quoted verbatim further down, and it asked for n8n. What shipped is a
+Spring Boot orchestrator: Spring Batch for the run loop, Spring WebSocket for the dashboard,
+H2 on disk for the store, and the backend as a Java library in the same JVM. n8n and Node are
+gone from the image entirely.
+
+The instruction to migrate came from the same people who wrote the brief, on the grounds that
+the deliverable had to look like an enterprise Java service rather than a workflow tool. The
+engineering case, from having run both:
+
+- **A string in a JSON file has no compiler and no test.** That was already the reason the
+  prompt and parsing logic had been pulled out of Code nodes into tested files. A deployed
+  prompt once spent days asking the model to choose a mutant after that decision had moved
+  into the pipeline, because an edit silently matched nothing.
+- The workflow had **zero Code nodes** by design, so "adapt it in the editor" had come to
+  mean re-wiring HTTP calls — which a typed `Phase` expresses better and a compiler checks.
+
+**What was genuinely lost**: a non-programmer can no longer re-arrange the pipeline in a
+visual editor. Adapting it now means editing Java and rebuilding. Teams that wanted point 7
+for that reason should weigh this before adopting.
 
 Additional requirements gathered while building:
 
@@ -38,17 +63,25 @@ Additional requirements gathered while building:
 
 ## The improvement loop (what the pipeline does)
 
-The unit of work is a **method**; the target within it is a **single mutant**.
+The unit of work is a **method**; the targets within it are its **surviving mutants**.
 
 ```
-pick the weakest method  →  PIT it  →  target the most killable surviving mutant
+pick the weakest method  →  PIT it  →  take every surviving line still un-attempted
       ↑                                            ↓
-      └──── repeat while it pays ←── re-measure ←── write ONE test for that mutant
+      └──── repeat while it pays ←── re-measure ←── one test per line, asked for together
 ```
 
-A mutant is never attacked twice. One kill often takes neighbours with it, which the
-re-measurement catches. A unit ends when a round kills nothing, when every survivor has
-been attempted, or when its time budget expires — then it gets a PR if it netted a gain.
+One round per method rather than one per mutant. The per-mutant loop paid two PIT runs for
+every mutant — 609 runs across 22 classes on JSON-java, 43 % of wall-clock — to kill them one
+at a time, when one kill routinely takes neighbours with it anyway. Each generated test
+carries a deterministic name derived from its target, so the next round greps the file, sees
+what is already written and asks only for the rest; that marker is what makes a unit stop on
+its own instead of re-requesting lines it has already covered.
+
+A mutant is never attacked twice. A unit ends when a round kills nothing, when every survivor
+has been attempted, or when its time budget expires — then it gets a PR if it netted a gain.
+A round whose test never reached the measurement is not counted against it: it broke the
+build and was deleted, which says nothing about whether the method can be improved.
 
 ## The ralph loop (how the pipeline gets better)
 

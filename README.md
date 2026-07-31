@@ -122,7 +122,7 @@ Full detail in [SPEC.md](SPEC.md).
   for every command — PIT's forked minion crashes under the wrong JDK.
 - **PIT wiring**: JUnit 5 needs `pitest-junit5-plugin` as a plugin *dependency* (a `-D` cannot
   add one), JUnit 6 additionally needs a matching `junit-platform-launcher`, TestNG needs
-  `pitest-testng-plugin`. The sidecar injects exactly what is missing, into the main `<build>`
+  `pitest-testng-plugin`. The pipeline injects exactly what is missing, into the main `<build>`
   (never a profile, where it would be silently ignored) — and never commits that change.
 - **Scoping**: PIT runs against one class at a time; multi-module repos run in the owning module.
 - **Artifacts**: Maven/Gradle resolve through the host's Nexus group repo when reachable.

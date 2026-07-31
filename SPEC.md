@@ -7,32 +7,44 @@ do (most were forced by a defect found while running).
 ## 1. Shape
 
 ```
-                     Caddy (basic auth, injects a 10-year n8n JWT)
-                                     │
-   ┌─────────────────────────────────┴──────────────────────────────────┐
-   │  one container (ijtspring)                                            │
+                       Caddy (basic auth)
+                                │
+   ┌────────────────────────────┴───────────────────────────────────────┐
+   │  one container (ijtspring) — one JVM, Java 25                      │
    │                                                                    │
-   │   n8n — 66 nodes, native only ──HTTP──▶ sidecar :3000 (zero-dep)   │
-   │     Trigger / HTTP Request / IF / NoOp            ├─ git, gh        │
-   │     zero Code nodes: no logic outside tested files├─ Maven | Gradle │
-   │                                                   ├─ JDK 8/11/17/21 │
-   │   dashboard /dashboard ◀── /api/metrics (2 s)     ├─ JaCoCo         │
-   │                        ◀── /api/llm/log  (5 s)    ├─ PIT            │
-   │                                                   └─ qwen 3.6 27b   │
+   │   orchestrator (Spring Boot :3000)                                 │
+   │     Spring Batch  improveJob: setup → improve* → finish            │
+   │     REST  /webhook/improve-run, /api/run/stop                      │
+   │     STOMP /ws  ──▶ dashboard /dashboard   (push, not polling)      │
+   │     H2     jdbc:h2:file:/data/ijt  +  /data/state.json             │
+   │                    │                                               │
+   │                    │ direct calls, no HTTP hop                     │
+   │                    ▼                                               │
+   │   backend (library)                        ├─ git, gh              │
+   │     Server / Pit / Coverage / Prompts      ├─ Maven | Gradle       │
+   │     Rounds / Select / Salvage / Targets    ├─ JDK 8/11/17/21       │
+   │     the same routes, callable in-process   ├─ JaCoCo               │
+   │                                            ├─ PIT                  │
+   │                                            └─ qwen 3.6 27b         │
    └────────────────────────────────────────────────────────────────────┘
 ```
 
-The workflow owns orchestration and rules; the sidecar owns everything that touches the OS.
-That split is what keeps the workflow editable in the n8n UI while the Java toolchain stays
-real. The generator (`n8n/generate-workflows.mjs`) refuses to emit a workflow containing a
-non-native node, or an HTTP node pointing at a route `sidecar/server.js` does not define —
-a path typo used to surface as a 404 an hour into a run.
+Two Maven modules in one reactor. **orchestrator** owns the run loop and everything Spring:
+`ImproveTasklet` returns `RepeatStatus.CONTINUABLE` and handles one unit per invocation, so
+the loop is Batch's rather than a `while` nobody can restart. **backend** owns everything
+that touches the OS — git, Maven, JaCoCo, PIT, the model — and is a plain library with no
+Spring on its classpath, which is what keeps its 970 tests fast and free of a context.
 
-Logic that once lived as JavaScript strings inside Code nodes (prompt building, answer
-parsing) now lives in `sidecar/prompts.js` and `sidecar/parse.js` behind unit tests. A
-string in a JSON file has no compiler and no test: one shipped an identifier that was never
-defined, and an edit that silently matched nothing left the deployed prompt asking the model
-to choose a mutant days after that decision had moved into the pipeline.
+`Phase` calls the backend through the `Backend` interface **in-process**. The route table in
+`Server` is still the contract and is still exercised over HTTP by its own tests, but a run
+does not make a network hop to itself.
+
+There is no n8n and no Node process. Orchestration was 66 native nodes calling a zero-dep
+Node sidecar over HTTP; both were replaced, and the reason was the same one that shaped the
+rest of this file: a string in a JSON file has no compiler and no test. Prompt building and
+answer parsing had already been pulled out into tested files before the port, after a
+deployed prompt spent days asking the model to choose a mutant when that decision had moved
+into the pipeline. Making the whole orchestration compile finished the job.
 
 ## 2. The unit of work
 
@@ -86,15 +98,23 @@ agents on one JVM abort it before a single test runs.
      `NO_COVERAGE`) and re-ranked by **this run's kill record** — a mutator kind attacked
      twice with no kill is demoted behind everything else;
    - mutants already attempted on this unit are never offered again;
-   - the model receives the target method (not the whole class), the class header, sibling
-     signatures, the mutator→assertion playbook, and **one** mutant; it returns one short
-     test, or an empty list to say the mutation changes nothing observable.
-6. **Green gate** — run the suite; on RED, one repair attempt; still RED, the generated
-   tests are deleted.
+   - the model receives the class header, sibling signatures, the mutator→assertion playbook,
+     and **every surviving line of the unit at once** (`batchPrompt`), each with the
+     deterministic test name `Targets` assigned it, so the next round can grep the file and
+     skip what is already written rather than re-asking;
+   - the source it is shown is the target method **plus any other overload that owns a
+     surviving mutant**. A unit is `path::name` and PIT scores every overload under that name,
+     so a prompt built from one declaration asks for tests against code the model cannot see;
+   - when the previous round failed, it is told which of the three ways it failed, with the
+     build's own error if the test did not compile.
+6. **Green gate** — run the suite; on RED, one repair attempt; still RED, `Salvage` cuts out
+   only the test methods the runner named as failing and keeps the rest, then re-runs to prove
+   the suite is green — a batch writes N tests into one file and one bad assertion should not
+   cost all N. A file that will not compile names no methods, so it goes whole.
 7. **Verify** — suite, JaCoCo, PIT on the method. Reports whether the *targeted* mutant died
    and how many others went with it. `MAC = method coverage × method mutation score`, both
    measured on the same method — no projection.
-8. **Round verdict** (`sidecar/rounds.js`) — keep the round iff ≥1 of coverage / mutation /
+8. **Round verdict** (`backend/.../Rounds.java`) — keep the round iff ≥1 of coverage / mutation /
    MAC improved and none degraded; continue iff it kept, mutants remain, the unit's time
    budget holds, and MAC < 100.
 9. **Finish** — drop uncommitted work, `check_changes` rules (mechanically: suite green
@@ -102,10 +122,17 @@ agents on one JVM abort it before a single test runs.
 
 ### Ending a run
 
-`scopeLimit` units settled, no candidates left, or `MAX_FAILURES` unmeasurable units — that
-last one ends the run saying the toolchain is at fault, not the units. Iterations are
-uncapped: skips and failures cost neither quota nor iteration, so a run cannot be ended by
-duds before reaching real work.
+`scopeLimit` units settled, no candidates left, or `MAX_FAILURES` units that **could not be
+measured at all** — that last one ends the run saying the toolchain is at fault, not the
+units. Iterations are uncapped: skips and failures cost neither quota nor iteration, so a run
+cannot be ended by duds before reaching real work.
+
+**A method PIT will not mutate is not a failure of the toolchain**, and the distinction is
+load-bearing. An empty constructor at 100 % line coverage makes PIT report "no tests to run",
+which is correctly read as UNMEASURED rather than as a mutation score of zero — and used to
+be filed as `failed`. Ten such constructors tripped the breaker on a run that still had 34
+improvable units listed, real mutants, MAC between 55 and 85, and it reported `done`. They
+settle as `unmeasured` now, which is a statement about the method and costs the run nothing.
 
 ## 4. Measurement rules
 
@@ -163,15 +190,19 @@ measured**. The guards that exist because of it:
 
 Two kinds of test, and they answer different questions:
 
-- **unit tests** (`sidecar/test/unit/`, `npm test` — 267 of them) cover the code the workflow's nodes call.
+- **unit tests** (`mvn test` — 1 127 of them, JUnit 5) cover the code the run loop calls.
   Every case is a defect that actually shipped; the table above is, row by row, an
   assertion in that suite.
 - **e2e** is a straight-through run against a real repo — hundreds of methods, real Maven,
   real PIT, real model. It is what *finds* the defects: observe the failure, root-cause it,
   write the unit test, watch it go red, fix it, watch it go green, run e2e again.
 
-The workflow itself holds **no logic to test**: it has zero Code nodes, and its 44 HTTP
-nodes are checked at build time against the routes `sidecar/server.js` actually defines.
+Neither kind can catch a component that is correct and connected to nothing, and that is this
+project's signature defect — six times: the H2 store, `eligibleUnit`, `Collaborators`, five
+fields of the restore, partial salvage, and the last-round feedback block. Each had passing
+tests and no caller. The habit that answers it is to assert on what the CALLER returns rather
+than on the helper, and to fetch a fixture's values from the producer instead of writing them
+out by hand — a test that spells the shape itself passes whatever the producer does.
 
 ## 5. Configuration
 
@@ -215,7 +246,7 @@ pass reverts itself if the mutation score drops.
 
 - **Stages**: cloning, building, measuring baseline, picking, improving coverage, improving
   mutation, improving MAC (verifying), preparing PR.
-- **Live status line** fed every 3 s — by `exec.js` for child processes and by `llm.js`
+- **Live status line** fed every 3 s — by `Exec` for child processes and by `Llm`
   while a completion is in flight, so it never goes blank during the phase the pipeline
   spends most of its time in.
 - **Activity stream** interleaves events with the **model exchanges** (system / prompt /
@@ -225,7 +256,22 @@ pass reverts itself if the mutation score drops.
 
 ## 8. Deployment
 
-`./deploy.sh` builds the image, recreates the container, waits for health, mints the
-10-year n8n JWT and rotates it into the Caddy block (preserving its basic-auth line).
-`--fresh` wipes the volume. The eval harness ships in the image and is refreshed into
-`/data/eval` on boot.
+`./deploy.sh` builds the image, recreates the container, waits for health, and updates the
+Caddy block. `--fresh` wipes the volume. The eval harness ships in the image and is refreshed
+into `/data/eval` on boot.
+
+There is no token to mint: Caddy used to inject a ten-year JWT on every non-`/dashboard`
+request because n8n owned those routes. The orchestrator serves them itself behind Caddy's
+`basic_auth`, so the JWT and the file it lived in are both gone.
+
+Two things the deploy learned the hard way, both now enforced rather than assumed:
+
+- **`caddy reload` is not trustworthy on its own.** It reads the file, logs "adapted config
+  to JSON", exits 0 — and can leave the old config running. Observed during the rename: the
+  live upstream stayed on the previous container name, every request 502'd, and the reload
+  reported success throughout. The reload is now VERIFIED against the running config through
+  the admin API, and only a genuine mismatch escalates to a restart.
+- **A smoke check must not start a run.** The last check used to POST `{"dryProbe":true}`,
+  on the belief that an obviously fake key made the call a no-op. There is no such key: the
+  body was a valid configuration and every deploy launched a real run against the real
+  repository. Unrecognised keys are now a 400, and the check treats 400 as the pass.
