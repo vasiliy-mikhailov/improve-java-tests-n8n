@@ -37,7 +37,11 @@ const body = {
   clearLedger: true, // evals are independent measurements
 };
 if (cfg.setupScript) body.setupScript = cfg.setupScript;
-if (cfg.maxMutantsPerFile) body.maxMutantsPerFile = cfg.maxMutantsPerFile;
+// `maxMutantsPerFile` used to be forwarded here. Nothing has ever read it — it is not a Config
+// component and appeared in exactly one place in the repo, this line. It was harmless while the
+// run body silently dropped unknown keys; now that an unrecognised key is a 400 (because
+// {"dryProbe":true} was silently accepted and started real runs), forwarding it would fail the
+// whole eval with an HTTP error for any repos.json entry that set it. Dead config, same class.
 // explicit rules; real-repo evals default to empty rules → mechanical behavior,
 // no env-default leakage (rule adherence is exercised by the synth repo)
 body.rules = cfg.rules || { post_clone: '', pre_pick: '', pick_file: '', write_test: '', check_changes: '', make_pr: '' };
