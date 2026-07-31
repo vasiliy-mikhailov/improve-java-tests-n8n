@@ -209,12 +209,28 @@ public final class State {
                 // exactly the string 'true'; anything else — including 'yes' and '1' — is off
                 "true".equals(envOr(env, "DRY_RUN", "false")),
                 new Rules(
-                        envOr(env, "RULES_POST_CLONE", ""),
-                        envOr(env, "RULES_PRE_PICK", ""),
-                        envOr(env, "RULES_PICK_FILE", ""),
-                        envOr(env, "RULES_WRITE_TEST", ""),
-                        envOr(env, "RULES_CHECK_CHANGES", ""),
-                        envOr(env, "RULES_MAKE_PR", "")));
+                        defaultRule(env, "POST_CLONE"),
+                        defaultRule(env, "PRE_PICK"),
+                        defaultRule(env, "PICK_FILE"),
+                        defaultRule(env, "WRITE_TEST"),
+                        defaultRule(env, "CHECK_CHANGES"),
+                        defaultRule(env, "MAKE_PR")));
+    }
+
+    /// A stage's rule text, from the environment, as a DEFAULT.
+    ///
+    /// `DEFAULT_RULES_WRITE_TEST` rather than `RULES_WRITE_TEST`, because the environment is no
+    /// longer where a repo's rules belong. They are prompts — "no mocks", "prefer real objects" —
+    /// and prompts are per-repo, edited by the team that owns the repo, and the thing a feedback
+    /// loop rewrites. A value baked into the deployment's .env can be none of those. It lives in
+    /// the repo now; this is only the seed used when the repo has said nothing.
+    ///
+    /// The old spelling is still read, second, and deliberately: these are set in a live
+    /// deployment's .env, and a rename that silently emptied every stage's rules would be a
+    /// change nobody could see until the pipeline had already stopped following them.
+    private static String defaultRule(java.util.function.UnaryOperator<String> env, String stage) {
+        String preferred = envOr(env, "DEFAULT_RULES_" + stage, "");
+        return preferred.isEmpty() ? envOr(env, "RULES_" + stage, "") : preferred;
     }
 
     /// The run-start body laid over the environment, and the coercions that follow it.
