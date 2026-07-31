@@ -1875,12 +1875,75 @@ public final class Server {
             Set<String> had = new LinkedHashSet<>(strings(fileRecord(state().currentUnit).get("roundTestPaths")));
             had.addAll(written);
             State.upsertFile(state().currentUnit, mapOf("roundTestPaths", new ArrayList<>(had)));
+            // and into the repo's own record: the code, the tests, and the rule that asked for
+            // them. Written here because this is the one place the generated content exists
+            // before it is measured, repaired or deleted.
+            captureAttempt(state().currentUnit, tests);
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
         out.put("written", written);
         out.put("errors", errors);
         return out;
+    }
+
+    /// What joins an attempt to the outcome that judges it.
+    ///
+    /// Attempt and round, not a counter: generation and repair are two writes inside one round
+    /// and must share it, and `rounds` deliberately does not increment on a miss — so two
+    /// consecutive missed rounds legitimately share an id, and the outcome closes whichever
+    /// attempts are still open. See Feedback.join.
+    static String roundIdFor(String unit) {
+        Map<String, Object> f = fileRecord(unit);
+        return (state().run == null ? "run" : state().run.id) + "|" + unit
+                + "|a" + State.asLong(f.get("attempts")) + "|r" + State.asLong(f.get("rounds"));
+    }
+
+    /// Record the code, the generated tests and the rule that produced them.
+    ///
+    /// Never throws. Capturing a training example is not worth failing a round for, and this runs
+    /// inside the write path of every round of every unit.
+    static void captureAttempt(String unit, List<Map<String, Object>> tests) {
+        try {
+            Map<String, Object> f = fileRecord(unit);
+            Map<String, Object> code = new LinkedHashMap<>();
+            code.put("path", f.get("path"));
+            code.put("method", f.get("method"));
+            code.put("fqcn", f.get("fqcn"));
+            code.put("methodLine", f.get("methodLine"));
+            // the source the model was actually shown, not the whole file
+            Repo.MethodContext ctx = str(f.get("method")) == null ? null
+                    : Repo.methodContext(str(f.get("path")), str(f.get("method")),
+                            intOrNull(f.get("methodLine")));
+            if (ctx != null) {
+                code.put("classHeader", ctx.header());
+                code.put("methodSource", ctx.body());
+            }
+            List<Map<String, Object>> written = new ArrayList<>();
+            for (Map<String, Object> t : tests) {
+                Map<String, Object> one = new LinkedHashMap<>();
+                one.put("path", t.get("path"));
+                one.put("content", t.get("content"));
+                written.add(one);
+            }
+            Feedback.attempt(Repo.repoDir(), state().run == null ? "" : state().run.config.repoUrl(),
+                    roundIdFor(unit), unit, code, written,
+                    // THE candidate GEPA rewrites: the live write_test rule, guidance included
+                    List.of(Rules.forServer().io().rule("write_test")));
+        } catch (RuntimeException e) {
+            System.err.println("feedback attempt not captured: " + e);
+        }
+    }
+
+    /// Record what the round scored, closing the attempts that share its id.
+    static void captureOutcome(String unit, String verdict, Map<String, Object> before,
+                               Map<String, Object> after, Boolean broken) {
+        try {
+            Feedback.outcome(Repo.repoDir(), state().run == null ? "" : state().run.config.repoUrl(),
+                    roundIdFor(unit), unit, verdict, before, after, broken);
+        } catch (RuntimeException e) {
+            System.err.println("feedback outcome not captured: " + e);
+        }
     }
 
     static Object deleteMany(Map<String, Object> body) {
@@ -2283,6 +2346,14 @@ public final class Server {
             State.upsertFile(file, mapOf(
                     "consecutiveMisses", budget.consecutiveMisses(),
                     "brokenRounds", budget.brokenRounds()));
+            // Here, and not after /api/round/accept: `rounds` increments there, so an outcome
+            // written later would carry the NEXT round's id and close no attempt at all. At this
+            // point roundIdFor still spells exactly what the attempts were written under.
+            captureOutcome(file,
+                    d.keepRound() ? "kept" : RoundOutcome.broken(ev) ? "broken" : "missed",
+                    mapOf("coverage", rbCov, "mutation", rbMut, "mac", rbMac),
+                    mapOf("coverage", coverageAfter, "mutation", st.score(), "mac", macAfter),
+                    RoundOutcome.broken(ev));
             // showMetric, not raw interpolation: this line read "cov undefined→0, mut undefined→0,
             // mac null→0" for a unit whose every stored field was correctly null. The ledger
             // invented nothing; the sentence a human reads to judge the run did.
