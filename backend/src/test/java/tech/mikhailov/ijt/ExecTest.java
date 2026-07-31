@@ -322,6 +322,52 @@ class ExecTest {
                 "pid " + grandchild + " survived the kill — this is the orphaned Surefire/PIT minion");
     }
 
+    /// A KNOWN GAP, pinned so it is visible rather than discovered during an incident.
+    ///
+    /// `killTree` says in its own comment that `descendants()` "walks parent links at the moment
+    /// it is called, so a grandchild whose parent has already exited has been re-parented and is
+    /// no longer reachable from us". This asserts that this is in fact what happens. It documents
+    /// current behaviour; it does NOT endorse it.
+    ///
+    /// Measured directly: fork a grandchild, let its parent exit, kill the outer process — the
+    /// grandchild is not among the outer's children and survives. In production that is a PIT
+    /// minion whose Maven parent finished, still holding every core it had, under the next unit's
+    /// measurement.
+    ///
+    /// It has never fired: no run has timed out, so this path has only ever executed in tests.
+    /// That is luck, not a design, because PIT runs have a one-hour ceiling and hit it eventually.
+    ///
+    /// THE FIX, when someone takes it: give the child its own process group and signal the group,
+    /// which is exactly what the JS got free from `detached: true` plus `kill(-pid)`. On Linux
+    /// that is `setsid --wait` in front of the argv and `kill -9 -<pid>` on timeout. The trap to
+    /// avoid: plain `setsid` without `--wait` returns as soon as it has forked, which would break
+    /// exit-code capture and output streaming for every child this module runs — Maven, PIT, git.
+    /// So it needs `--wait`, a probe for whether the flag exists, and a fallback to today's
+    /// behaviour where it does not (macOS has no setsid at all).
+    ///
+    /// When it is fixed, this test flips to asserting the orphan dies.
+    @Test
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void anOrphanedGrandchildOutlivesTheKill_knownGap(@TempDir Path tmp) throws Exception {
+        Path pidFile = tmp.resolve("orphan.pid");
+        // the inner shell forks a sleeper and EXITS, so the sleeper is re-parented away from us
+        Exec.Result r = Exec.run(
+                List.of("/bin/sh", "-c",
+                        "/bin/sh -c 'sleep 45 & echo $! > \"" + pidFile + "\"' ; sleep 45"),
+                Exec.Options.of().withTimeoutMs(1_500L).withLabel("pit"));
+
+        assertTrue(r.timedOut());
+        long orphan = Long.parseLong(Files.readString(pidFile).strip());
+        try {
+            assertTrue(aliveWithin(orphan, 1_500L),
+                    "the orphan died — descendants() reached it after all, and this gap is closed:"
+                            + " flip this assertion and delete the note above");
+        } finally {
+            // never leave a 45-second sleeper behind for the next test to trip over
+            ProcessHandle.of(orphan).ifPresent(ProcessHandle::destroyForcibly);
+        }
+    }
+
     @Test
     @EnabledOnOs({OS.LINUX, OS.MAC})
     void theDashboardIsToldHowTheRunEnded() {
