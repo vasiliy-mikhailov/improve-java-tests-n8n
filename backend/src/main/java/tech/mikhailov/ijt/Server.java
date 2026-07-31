@@ -1106,59 +1106,6 @@ public final class Server {
             return out;
         });
 
-        // ── the repo's own feedback file ──────────────────────────────────────
-        //
-        // A route rather than a key on the run body, and deliberately: the run body now REJECTS
-        // unrecognised keys with a 400, and feedback arrives minutes or days after the run that
-        // produced the test — long after any body was posted.
-
-        /// Everything the repo has recorded, joined: each attempt with its outcome and any
-        /// feedback aimed at it, plus the standing guidance. This is the GEPA input.
-        r.put("GET /api/feedback", (q, body) -> {
-            Map<String, Object> out = new LinkedHashMap<>();
-            try {
-                Path repo = Repo.repoDir();
-                out.put("ok", true);
-                out.put("file", Feedback.fileIn(repo).toString());
-                out.put("guidance", Feedback.guidance(repo));
-                out.put("records", Feedback.join(repo));
-            } catch (RuntimeException e) {
-                // no run configured yet: an empty answer, not a 500 — the dashboard asks for this
-                // on load, before anyone has started anything
-                out.put("ok", true);
-                out.put("guidance", List.of());
-                out.put("records", List.of());
-            }
-            return out;
-        });
-
-        /// Say something about the tests.
-        ///
-        /// `target` decides the scope by its shape: absent means the repo as a whole ("i don't
-        /// like too many mocks in these tests"), a `path::method` means one unit, an attempt id
-        /// means one generated test. `apply: true` additionally feeds it to the next round's
-        /// write_test rule — honoured only for repo-scoped feedback, because a critique of one
-        /// test is not a policy.
-        r.put("POST /api/feedback", (q, body) -> {
-            String text = str(body.get("text"));
-            if (text == null || text.isBlank()) {
-                throw new IllegalArgumentException("text required");
-            }
-            Path repo = Repo.repoDir();
-            String repoUrl = state().run == null ? "" : state().run.config.repoUrl();
-            Map<String, Object> item = Feedback.feedback(repo, repoUrl,
-                    str(body.get("target")), text,
-                    State.jsTruthy(body.get("apply")),
-                    intOrNull(body.get("rating")));
-            State.event("idle", "feedback recorded: " + State.clip(text, 160));
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("ok", true);
-            out.put("feedback", item);
-            // echoed so a caller can see at once whether it will reach the next prompt
-            out.put("guidance", Feedback.guidance(repo));
-            return out;
-        });
-
         r.put("GET /api/events", (q, body) -> {
             Integer afterParsed = State.jsParseInt(or(q.get("after"), "0"));
             long after = afterParsed == null ? 0 : afterParsed;
@@ -1884,6 +1831,56 @@ public final class Server {
         out.put("ok", true);
         out.put("written", written);
         out.put("errors", errors);
+        return out;
+    }
+
+    // ── the repo's feedback file, as the orchestrator's controller calls it ────
+    //
+    // Public methods rather than entries in `routes()`. That table is reached in-process by
+    // `Phase`; NOTHING serves it over HTTP, so a route added there answers 404 from outside the
+    // container while every unit test passes — the inventory test asserts the map holds the key,
+    // not that anyone serves it. Found by curling the deployed container, which is also how the
+    // four routes in ApiController were found.
+
+    /// Everything the repo has recorded, joined: each attempt with its outcome and any feedback
+    /// aimed at it, plus the standing guidance. The shape GEPA consumes.
+    public static Map<String, Object> feedbackRead() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        try {
+            Path repo = Repo.repoDir();
+            out.put("file", Feedback.fileIn(repo).toString());
+            out.put("guidance", Feedback.guidance(repo));
+            out.put("records", Feedback.join(repo));
+        } catch (RuntimeException e) {
+            // no run configured yet: an empty answer, not a 500. The dashboard asks on load,
+            // before anyone has started anything.
+            out.put("guidance", List.of());
+            out.put("records", List.of());
+        }
+        return out;
+    }
+
+    /// Say something about the tests.
+    ///
+    /// `target` decides the scope by its shape: absent means the repo as a whole ("i don't like
+    /// too many mocks in these tests"), a `path::method` means one unit, an attempt id means one
+    /// generated test. `apply` additionally feeds it to the next round's write_test rule, and is
+    /// honoured only for repo-scoped feedback — a critique of one test is not a policy.
+    public static Map<String, Object> feedbackWrite(Map<String, Object> body) {
+        String text = str(body.get("text"));
+        if (text == null || text.isBlank()) throw new IllegalArgumentException("text required");
+        Path repo = Repo.repoDir();
+        String repoUrl = state().run == null ? "" : state().run.config.repoUrl();
+        Map<String, Object> item = Feedback.feedback(repo, repoUrl,
+                str(body.get("target")), text,
+                State.jsTruthy(body.get("apply")), intOrNull(body.get("rating")));
+        State.event("idle", "feedback recorded: " + State.clip(text, 160));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("feedback", item);
+        // echoed, so a caller sees at once whether it will reach the next prompt
+        out.put("guidance", Feedback.guidance(repo));
         return out;
     }
 

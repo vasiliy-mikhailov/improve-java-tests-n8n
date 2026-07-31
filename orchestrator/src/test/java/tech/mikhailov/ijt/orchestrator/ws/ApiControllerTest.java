@@ -98,6 +98,39 @@ class ApiControllerTest {
                 api.metrics().getBody().keySet());
     }
 
+    // ── the feedback file, served from OUTSIDE the process ────────────────
+    //
+    // These two were first added to `Server.routes()`, which is where every other route in this
+    // pipeline lives. That table is reached in-process by Phase and nothing serves it over HTTP,
+    // so the deployed container answered 404 to both while the whole suite passed — the route
+    // inventory test asserts the map holds the key, not that anyone serves it. Found by curling
+    // the container after deploying, which is how the four routes above were found too.
+    //
+    // So these assert on the CONTROLLER, which is the thing Spring maps.
+
+    @Test
+    void theFeedbackFileIsReadableOverHttp() {
+        Map<String, Object> out = api.feedback();
+        assertEquals(Boolean.TRUE, out.get("ok"));
+        // no run configured in this test: an empty answer, not an exception. The dashboard asks
+        // on load, before anyone has started anything.
+        assertNotNull(out.get("guidance"));
+        assertNotNull(out.get("records"));
+    }
+
+    @Test
+    void feedbackWithNoTextIsRefusedAsFourHundred() {
+        // a 500 here would read as "the pipeline is broken" for what is a caller's mistake
+        var r = api.addFeedback(Map.of("apply", true));
+        assertEquals(400, r.getStatusCode().value());
+        assertEquals(false, r.getBody().get("ok"));
+    }
+
+    @Test
+    void anEmptyBodyIsAlsoFourHundredRatherThanACrash() {
+        assertEquals(400, api.addFeedback(null).getStatusCode().value());
+    }
+
     private static int events(Map<String, Object> body) {
         JsonNode n = MAPPER.valueToTree(body).get("events");
         return n == null ? -1 : n.size();

@@ -659,14 +659,10 @@ class ServerTest {
                 "POST /api/test/delete-many", "POST /api/test/run", "POST /api/test/cleanup",
                 "POST /api/llm/chat", "POST /api/verify", "POST /api/round/miss",
                 "POST /api/round/accept", "POST /api/round/drop", "POST /api/pr/create",
-                "POST /api/iteration/discard", "POST /api/admin/purge-repo", "POST /api/admin/reset",
-                // the repo's own feedback file: what it was asked, what it produced, and what a
-                // human thought of it. A route rather than a run-body key because feedback
-                // arrives long after the run that produced the test.
-                "GET /api/feedback", "POST /api/feedback")) {
+                "POST /api/iteration/discard", "POST /api/admin/purge-repo", "POST /api/admin/reset")) {
             assertTrue(routes.containsKey(key), "missing route: " + key);
         }
-        assertEquals(40, routes.size(), "a route was added or removed without updating the workflow");
+        assertEquals(38, routes.size(), "a route was added or removed without updating the workflow");
     }
 
     // ── the composition root ──────────────────────────────────────────────────
