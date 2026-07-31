@@ -78,6 +78,12 @@ public final class Rules implements Server.RulesEngine {
 
     public Rules(Io io) { this.io = io; }
 
+    /// The seam this engine reads through. Package-private, and here so a test can assert on what
+    /// `forServer()` actually resolves a stage's rule to — asserting on the helper instead would
+    /// pass with the rule wired to nothing, which is how eight components in this codebase came
+    /// to be correct and unreachable.
+    Io io() { return io; }
+
     // ── the repo's own words ───────────────────────────────────────────────────────────────
 
     /// The head of whatever conventions the repo documents, for the stages that ask the model
@@ -476,13 +482,45 @@ public final class Rules implements Server.RulesEngine {
 
     // ── the seam, wired to this backend ────────────────────────────────────────────────────
 
+    /// The repo's own standing guidance, appended to the deployment's write_test rule.
+    ///
+    /// THE SHORT LOOP. Someone types "i don't like too many mocks in these tests" and the NEXT
+    /// round's prompt carries it — no GEPA run, no redeploy, no waiting for a corpus to be big
+    /// enough to optimise over. GEPA is the long loop over the same sentences; this is what makes
+    /// them worth writing down before that exists.
+    ///
+    /// Appended rather than replacing, because the deployment's rule and the repo's guidance are
+    /// different claims: the first is policy for every repo this instance improves, the second is
+    /// what one team has learned about theirs. Guidance goes last so it wins a contradiction.
+    ///
+    /// Only `write_test` gets this. The other five stages decide WHICH file, WHETHER to open a
+    /// PR and HOW to word it; "no mocks" is not an answer to any of them, and injecting it there
+    /// would be noise in prompts that already fail for their own reasons.
+    static String withRepoGuidance(String base) {
+        List<String> guidance;
+        try {
+            // repoDir() throws when no run is configured — a prompt built outside a run is a
+            // test's, and has no repo to read guidance from
+            guidance = Feedback.guidance(Repo.repoDir());
+        } catch (RuntimeException e) {
+            return base;
+        }
+        if (guidance.isEmpty()) return base;
+        StringBuilder sb = new StringBuilder(base == null ? "" : base);
+        if (!sb.isEmpty()) sb.append("\n");
+        sb.append("The team reviewing these tests has said:");
+        for (String g : guidance) sb.append("\n- ").append(g);
+        return sb.toString();
+    }
+
     /// The real engine: the run's rules, the live store, the real repository and model.
     public static Rules forServer() {
         return new Rules(new Io() {
             public String rule(String stage) {
                 State.Run run = State.STATE.run;
                 State.Rules r = run == null ? null : run.config.rules();
-                return r == null ? "" : nullToEmpty(r.get(stage));
+                String base = r == null ? "" : nullToEmpty(r.get(stage));
+                return "write_test".equals(stage) ? withRepoGuidance(base) : base;
             }
 
             public String readFileSafe(String rel, int maxLen) { return Repo.readFileSafe(rel, maxLen); }
