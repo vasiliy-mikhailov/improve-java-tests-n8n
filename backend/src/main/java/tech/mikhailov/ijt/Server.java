@@ -2212,8 +2212,19 @@ public final class Server {
                     .withSurvivorsLeft(Select.eligible(
                             st.survived() == null ? List.of() : st.survived().stream().map(Server::selectMutant).toList(),
                             attempted).size()));
-            State.upsertFile(file, mapOf("consecutiveMisses",
-                    d.keepRound() ? 0L : State.asLong(f.get("consecutiveMisses")) + 1));
+            // A ROUND WHOSE TEST NEVER RAN IS NOT EVIDENCE ABOUT THE UNIT. It was written, it
+            // broke the suite, it was deleted before the measurement, and the score was then
+            // re-measured against an unchanged tree — which is why such rounds report coverage
+            // bit-identical to the round before. Charging that against the three-miss budget is
+            // how four JSONObject units were written off `no_improvement` in one evening without
+            // a single generated test ever executing. See Rounds.afterRound for why the free
+            // retries are bounded rather than unlimited.
+            Rounds.MissBudget budget = Rounds.afterRound(d.keepRound(), RoundOutcome.broken(ev),
+                    State.asLong(f.get("consecutiveMisses")), State.asLong(f.get("brokenRounds")),
+                    Rounds.DEFAULT_MAX_BROKEN_ROUNDS);
+            State.upsertFile(file, mapOf(
+                    "consecutiveMisses", budget.consecutiveMisses(),
+                    "brokenRounds", budget.brokenRounds()));
             // showMetric, not raw interpolation: this line read "cov undefined→0, mut undefined→0,
             // mac null→0" for a unit whose every stored field was correctly null. The ledger
             // invented nothing; the sentence a human reads to judge the run did.

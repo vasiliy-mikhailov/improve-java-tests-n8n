@@ -286,6 +286,40 @@ public final class Rounds {
 
     /// What a baseline says about a unit. The `label` is the spelling the JS used and the
     /// workflow's JSON still carries.
+    /// What a round costs the unit's budgets. See {@link #afterRound}.
+    public record MissBudget(long consecutiveMisses, long brokenRounds) {}
+
+    /// Consecutive broken rounds a unit gets for free before they start costing misses.
+    ///
+    /// Not unlimited, and not zero. A round whose test never compiled says nothing about whether
+    /// the unit can be improved, so charging it against the three-miss budget writes units off
+    /// for a failure of generation — that is how JSONObject#getNumber, #similar,
+    /// #wrongValueFormatException and #getAnnotation each burned a full attempt in one evening
+    /// with their coverage never moving, and were then recorded `no_improvement`, a verdict that
+    /// goes into the ledger and stops them being offered again.
+    ///
+    /// But free retries are only worth having if the retry differs, and until the last-round
+    /// feedback reached the live prompts it could not: at temperature 0.2 the same prompt returns
+    /// the same uncompilable test. The model is now told "the test DID NOT COMPILE" with the
+    /// build's own words, so a retry is genuinely a different question — three of them, then the
+    /// ordinary budget resumes and the unit still terminates.
+    public static final int DEFAULT_MAX_BROKEN_ROUNDS = 3;
+
+    /// The two counters after a round, given what the round actually did.
+    ///
+    /// `brokenRounds` counts CONSECUTIVE broken rounds and resets the moment a test reaches the
+    /// measurement, whatever it then scores — a unit that got a test to run and simply killed
+    /// nothing is in the ordinary miss regime, not this one.
+    public static MissBudget afterRound(boolean keepRound, boolean brokenRound,
+                                        long consecutiveMisses, long brokenRounds, int maxBroken) {
+        if (keepRound) return new MissBudget(0, 0);
+        if (!brokenRound) return new MissBudget(consecutiveMisses + 1, 0);
+        long broken = brokenRounds + 1;
+        // past its own budget, a broken round costs a miss like any other — or a unit whose every
+        // round fails to compile would round until its hour-long time budget expired
+        return new MissBudget(broken > maxBroken ? consecutiveMisses + 1 : consecutiveMisses, broken);
+    }
+
     public enum Kind {
         UNTESTED("untested"),
         UNMEASURED("unmeasured"),
