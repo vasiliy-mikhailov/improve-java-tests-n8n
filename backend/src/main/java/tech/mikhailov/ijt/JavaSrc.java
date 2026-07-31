@@ -143,7 +143,25 @@ public final class JavaSrc {
         List<MethodRef> out = new ArrayList<>();
         MethodRef current = null;
         int depth = 0;
-        for (String line : stripNonCode(source).split("\n", -1)) {
+        // Two views of the same line, and they are not interchangeable.
+        //
+        // The STRUCTURE — where a declaration starts, where a body ends, whether a call is real —
+        // must be read off the stripped text, or a brace inside a string literal closes a method
+        // early and a call inside a comment counts as a route.
+        //
+        // The SIGNATURE must not be. It is handed to the model as the thing to call, and the
+        // stripped line has every string literal replaced by spaces:
+        //
+        //     Object nextEntity(@SuppressWarnings(          ) char ampersand) throws JSONException
+        //
+        // which is not Java and cannot be written. Four private XMLTokener methods described
+        // their only entry point that way. stripNonCode preserves offsets and line count exactly
+        // so the original can be read alongside it.
+        String[] code = stripNonCode(source).split("\n", -1);
+        String[] original = source.split("\n", -1);
+        for (int i = 0; i < code.length; i++) {
+            String line = code[i];
+            String raw = i < original.length ? original[i] : line;
             String name = nameIn(line);
             boolean isDecl = depth <= 1 && name != null && declares(line, name);
             if (isDecl) {
@@ -152,7 +170,7 @@ public final class JavaSrc {
                         : new MethodRef(
                                 name,
                                 visibilityOf(line.substring(0, line.indexOf(name))),
-                                line.trim().replaceAll("\\s*\\{\\s*$", "")
+                                raw.trim().replaceAll("\\s*\\{\\s*$", "")
                                         .replaceAll("^(public|private|protected)\\s+", ""));
             }
             // a one-line method declares and calls on the same line, so check both, not either
