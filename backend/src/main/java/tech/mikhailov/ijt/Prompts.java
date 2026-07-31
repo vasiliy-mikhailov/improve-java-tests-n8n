@@ -397,7 +397,7 @@ public final class Prompts {
                         : "TARGET METHOD: " + gaps.method() + "()"
                                 + (truthy(gaps.methodLine()) ? " (around line " + gaps.methodLine() + ")" : "")
                                 + " — the tests must exercise THIS method; coverage and mutation score are measured on it alone.\n")
-                + sourceBlock(gaps, 14000) + signatureBlock(gaps) + reachBlock(gaps)
+                + sourceBlock(gaps, 14000) + signatureBlock(gaps) + reachBlock(gaps) + lastRoundBlock(gaps)
                 + "\n\nUNCOVERED: " + (fullyUncovered
                         ? "THE ENTIRE METHOD (no test executes it at all)"
                         : "source lines " + jsonNumbers(uLines.subList(0, Math.min(140, uLines.size()))))
@@ -596,7 +596,7 @@ public final class Prompts {
 
         String prompt = "CLASS UNDER TEST: " + s(gaps.fqcn()) + "  (file " + s(gaps.path())
                 + ", module " + s(gaps.module()) + ")\n"
-                + sourceBlock(gaps, 14000) + signatureBlock(gaps) + reachBlock(gaps)
+                + sourceBlock(gaps, 14000) + signatureBlock(gaps) + reachBlock(gaps) + lastRoundBlock(gaps)
                 + "\n\nTARGETS — one test method each, named in the project's style,"
                 + " each beginning with its marker comment:\n" + block
                 + "\n\nEXISTING TEST (style reference — do NOT rewrite it):\n"

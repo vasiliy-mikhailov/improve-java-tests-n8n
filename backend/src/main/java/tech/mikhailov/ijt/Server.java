@@ -1540,6 +1540,13 @@ public final class Server {
             Map<String, Object> patch = new LinkedHashMap<>();
             patch.put("consecutiveMisses", outcome.consecutiveMisses());
             patch.put("continueRounds", outcome.continueRounds());
+            // THE ROUND IS OVER, so its file list ends with it. The only reset used to sit in the
+            // `targetMutant != null` branch of writeTests, and a batch round never carries a
+            // target — so the list accumulated across an attempt and `testsPresent` was answering
+            // about a mixture of this round's files and earlier ones. That is the fact the next
+            // prompt's "it did not compile" depends on. Reset at the BOUNDARY, not per write:
+            // generation and repair are two writes inside one round and must still accumulate.
+            patch.put("roundTestPaths", List.of());
             State.upsertFile(file, patch);
             // and do not spend further attempts on it
             if (outcome.settle()) {
@@ -1576,6 +1583,9 @@ public final class Server {
             Map<String, Object> patch = new LinkedHashMap<>();
             patch.put("rounds", rounds);
             patch.put("roundBase", roundBase);
+            // the round ended, and it ended well — its file list ends with it either way, so the
+            // next round's `testsPresent` is about the next round's files. See /api/round/miss.
+            patch.put("roundTestPaths", List.of());
             State.upsertFile(file, patch);
             // showMetric for the reason the round-verdict line below gives: macAfter is a boxed
             // Double, so plain concatenation prints "mac now 100.0" where the JS template
@@ -2056,6 +2066,12 @@ public final class Server {
                     Repo::testFileExists,
                     st.survived() == null ? List.of() : st.survived().stream().map(Server::selectMutant).toList(),
                     attempted, brokenKey, state().run.config.mutantChoices());
+            // OUTSIDE the outcome block below, because that block does not run in batch mode:
+            // RoundOutcome.of answers null when there is no single target mutant, which is every
+            // batch round, and batch is what the pipeline runs. Written from the evidence, which
+            // needs no target, so the next round is told "it did not compile" instead of being
+            // advised about an assertion in a file that never ran.
+            State.upsertFile(file, mapOf("lastRoundBroken", RoundOutcome.broken(ev)));
             Map<String, Object> brokenMutants = asMap(f.get("brokenMutants"));
             RoundOutcome.Outcome outcome = RoundOutcome.of(
                     tm == null ? null : new RoundOutcome.Mutant(tm.mutator(), tm.line()),

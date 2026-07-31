@@ -94,6 +94,19 @@ public final class RoundOutcome {
     /// The facts {@link #of} runs on, gathered rather than assumed.
     public record Evidence(boolean wroteAny, boolean testsPresent, int otherEligible) {}
 
+    /// Did this round's test fail to reach the measurement at all?
+    ///
+    /// Read off the EVIDENCE rather than off an Outcome, because {@link #of} answers null
+    /// whenever there is no single target mutant — which is every batch round, and batch is what
+    /// the live pipeline runs. `lastRoundBroken` was written only inside `if (outcome != null)`,
+    /// so in batch mode it was never set, and the next round's prompt fell through to "the path
+    /// is right; the assertion is not" — advice about an assertion in a file that never compiled.
+    ///
+    /// A round that wrote nothing is not broken; it simply had nothing to say.
+    public static boolean broken(Evidence ev) {
+        return ev != null && ev.wroteAny() && !ev.testsPresent();
+    }
+
     /// How many survivors the next round will actually be offered, when the caller states no
     /// cap — the same number `lastSurvived` is capped at.
     public static final int DEFAULT_CAP = 20;
