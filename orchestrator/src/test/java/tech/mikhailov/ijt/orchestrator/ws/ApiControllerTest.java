@@ -131,6 +131,37 @@ class ApiControllerTest {
         assertEquals(400, api.addFeedback(null).getStatusCode().value());
     }
 
+    /// Posting feedback must not append to the run's event log.
+    ///
+    /// It did, and it killed a run. This method runs on a WEB thread while the batch thread is
+    /// writing events of its own; `State.event` takes a seq from the in-memory counter and the
+    /// store takes one from IJT_STORE.last_seq, and under concurrency they disagreed:
+    ///
+    ///   Unique index or primary key violation: PRIMARY KEY ON IJT_EVENT(SEQ) (48448, …)
+    ///
+    /// The persistence layer catches that — and catching a JPA constraint violation does not
+    /// un-poison the transaction it occurred in. It surfaced at commit inside improveStep and
+    /// failed the job: "status: [FAILED] in 12s939ms". The run then sat dead for two hours with
+    /// its status still reading `running`, because nothing marks a run failed when its job dies.
+    ///
+    /// A human typing a sentence must never be able to end a six-hour run.
+    @Test
+    void postingFeedbackDoesNotTouchTheRunsEventLog() {
+        long before = State.STATE.seq;
+        int events = State.STATE.events.size();
+
+        // no run configured here, so the write itself will fail on repoDir() — the assertion is
+        // about what it did to the event log on the way, which is nothing either way
+        try {
+            api.addFeedback(Map.of("text", "i do not like too many mocks in these tests", "apply", true));
+        } catch (RuntimeException expected) {
+            // no repo to write to in this test; irrelevant to the claim
+        }
+
+        assertEquals(before, State.STATE.seq, "feedback must not consume an event seq");
+        assertEquals(events, State.STATE.events.size(), "feedback is not a run event");
+    }
+
     private static int events(Map<String, Object> body) {
         JsonNode n = MAPPER.valueToTree(body).get("events");
         return n == null ? -1 : n.size();

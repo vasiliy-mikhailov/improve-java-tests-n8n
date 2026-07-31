@@ -1875,7 +1875,22 @@ public final class Server {
         Map<String, Object> item = Feedback.feedback(repo, repoUrl,
                 str(body.get("target")), text,
                 State.jsTruthy(body.get("apply")), intOrNull(body.get("rating")));
-        State.event("idle", "feedback recorded: " + State.clip(text, 160));
+        // NO State.event HERE, and this is not a style preference — it killed a run.
+        //
+        // This method runs on a WEB thread while the batch thread is writing events of its own.
+        // `State.event` assigns a seq from the in-memory counter and the store assigns one from
+        // IJT_STORE.last_seq; under concurrency those two disagree, and the insert failed:
+        //
+        //   Unique index or primary key violation: PRIMARY KEY ON IJT_EVENT(SEQ)
+        //     (48448, 'feedback recorded: i do not like too many mocks in these tests', …)
+        //
+        // H2StatePersistence.appendEvent catches that — and catching a JPA constraint violation
+        // does not un-poison the transaction it happened in. It surfaced at commit, inside the
+        // batch step, and failed improveJob outright: "status: [FAILED] in 12s939ms". The run sat
+        // dead for two hours with its status still reading `running`.
+        //
+        // Feedback is not a run event. It belongs to the repo's file, which is where it now goes
+        // and nowhere else; the caller gets the confirmation in this response.
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
         out.put("feedback", item);
