@@ -931,6 +931,10 @@ public final class Repo {
         Pattern call = Pattern.compile("\\b" + Pattern.quote(clean) + "\\s*\\(");
 
         int[] target = blockAround(lines, call, methodLine == null ? 1 : methodLine);
+        // Nothing that contains the target line: fall back to the plain window rather than emit
+        // a fragment of some other method. An honest 120 lines from here beats a confident lie.
+        if (target == null) target = new int[] {Math.max(0, (methodLine == null ? 1 : methodLine) - 1),
+                Math.min(lines.length, (methodLine == null ? 1 : methodLine) - 1 + 120)};
         List<int[]> blocks = new ArrayList<>();
         blocks.add(target);
         // The overloads that own the surviving mutants, in the order PIT reported them. The
@@ -940,7 +944,10 @@ public final class Repo {
             int at = line - 1;
             // already visible — the common case, one overload with its survivors inside it
             if (blocks.stream().anyMatch(b -> at >= b[0] && at < b[1])) continue;
-            blocks.add(blockAround(lines, call, line));
+            int[] block = blockAround(lines, call, line);
+            // A survivor whose declaration could not be located is SKIPPED, not guessed at. It
+            // costs one un-writable target; guessing costs a prompt full of dangling fragments.
+            if (block != null) blocks.add(block);
         }
         StringBuilder body = new StringBuilder(joinLines(lines, target[0], target[1]));
         for (int i = 1; i < blocks.size(); i++) {
@@ -960,9 +967,25 @@ public final class Repo {
     /// a string literal, and buys not having a Java parser here.
     private static int[] blockAround(String[] lines, Pattern call, int oneBasedLine) {
         int startAt = Math.max(0, oneBasedLine - 1);
-        int start = startAt;
-        for (int i = Math.min(startAt, lines.length - 1); i >= Math.max(0, startAt - 12); i--) {
-            if (call.matcher(lines[i]).find()) { start = i; break; }
+        // A DECLARATION, not merely a line mentioning the name. The walk-back used the same
+        // pattern that DETECTS a call, and overloads delegate — `return this.put(value);` — so it
+        // stopped on the survivor's own body line. With no `{` yet seen, the forward scan then
+        // ran straight past the method's closing brace and ended on the NEXT overload's
+        // signature. Measured on the real org/json/JSONArray.java: of 17 `put` overloads only 2
+        // blocks began on a declaration; the model was shown 9 054 characters of bare `return`
+        // statements followed by dangling signatures, and asked to write tests against them.
+        int start = -1;
+        for (int i = Math.min(startAt, lines.length - 1); i >= Math.max(0, startAt - 400); i--) {
+            if (!call.matcher(lines[i]).find()) continue;
+            if (SIGNATURE_LINE.matcher(lines[i]).find()) { start = i; break; }
+        }
+        if (start < 0) {
+            // No declaration matched: the original 12-line walk, which is what `<init>` needs —
+            // a constructor's declaration carries the CLASS name, so `\binit\(` never matches it.
+            start = startAt;
+            for (int i = Math.min(startAt, lines.length - 1); i >= Math.max(0, startAt - 12); i--) {
+                if (call.matcher(lines[i]).find()) { start = i; break; }
+            }
         }
         int depth = 0;
         boolean opened = false;
@@ -970,7 +993,13 @@ public final class Repo {
             for (char ch : lines[i].toCharArray()) {
                 if (ch == '{') { depth += 1; opened = true; } else if (ch == '}') depth -= 1;
             }
-            if (opened && depth <= 0) return new int[] {start, i + 1};
+            // and the block must actually CONTAIN the line it was asked about. A declaration
+            // wrapped over several lines is missed by SIGNATURE_LINE, and the walk would then
+            // anchor on an earlier overload and return a block the survivor is not in — a
+            // plausible-looking fragment, which is worse than nothing.
+            if (opened && depth <= 0) {
+                return (startAt >= start && startAt <= i) ? new int[] {start, i + 1} : null;
+            }
         }
         return new int[] {start, Math.min(lines.length, start + 120)};
     }

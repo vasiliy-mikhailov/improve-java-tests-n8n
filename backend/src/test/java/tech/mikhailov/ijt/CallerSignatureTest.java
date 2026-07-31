@@ -73,6 +73,44 @@ class CallerSignatureTest {
         assertFalse(ref.signature().startsWith("public "), "the modifier is stripped, as before");
     }
 
+    /// THROUGH THE LIVE PATH, which the tests above do not touch.
+    ///
+    /// `gapsFor` reaches this via `JavaSrc.routesTo`, and routesTo opened with
+    /// `String code = stripNonCode(source)` before handing it to `callersOf` — so `callersOf`
+    /// received text whose literals were ALREADY blanked, its `original` was that same blanked
+    /// text, and the fix above did nothing whatsoever in production. Probed against the same
+    /// fixture:
+    ///
+    ///     callersOf : Object nextEntity(@SuppressWarnings("unused") char ampersand) …
+    ///     routesTo  : Object nextEntity(@SuppressWarnings(        ) char ampersand) …
+    ///
+    /// The second is what `Prompts.reachBlock` rendered to the model under "call this".
+    ///
+    /// Seventh instance of this project's signature defect, inside the commit that fixed the
+    /// sixth, written by someone who had just recorded a memory about it. Testing the helper is
+    /// not testing the path.
+    @Test
+    void theSignatureSurvivesTheRouteTheProductionCodeTakes() {
+        String privateTarget = """
+            public class XMLTokener {
+
+                public Object nextEntity(@SuppressWarnings("unused") char ampersand) throws JSONException {
+                    return parseHexEntity("0x1F");
+                }
+
+                private Object parseHexEntity(String s) {
+                    return null;
+                }
+            }
+            """;
+        List<List<JavaSrc.MethodRef>> routes = JavaSrc.routesTo(privateTarget, "parseHexEntity");
+        assertFalse(routes.isEmpty(), "a private method reached from a public one has a route");
+
+        String hop = routes.get(0).get(0).signature();
+        assertTrue(hop != null && hop.contains("\"unused\""),
+                "the model is told to call this — it must be something it can write. got: " + hop);
+    }
+
     @Test
     void aBraceInsideAStringStillDoesNotEndTheBody() {
         // WHY stripNonCode is there, and what must not regress. If the structural pass started

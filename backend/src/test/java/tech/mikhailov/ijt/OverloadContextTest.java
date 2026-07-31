@@ -159,6 +159,75 @@ class OverloadContextTest {
         }
     }
 
+    /// Overloads that DELEGATE — the shape every fixture above lacks, and the reason this bug
+    /// shipped.
+    ///
+    /// `SRC` uses `builder.append(...)` bodies, which never contain the token `write(`, so the
+    /// walk-back always reached a declaration and every assertion passed. Real overloads forward
+    /// to each other: `return this.put(value);`. The walk-back used the same pattern that DETECTS
+    /// a call, so it stopped on that body line, and with no `{` seen yet the forward scan ran
+    /// past the method's closing brace and ended on the NEXT overload's signature.
+    ///
+    /// Measured on the real org/json/JSONArray.java: of 17 `put` overloads, **2** blocks began on
+    /// a declaration. The model was handed 9 054 characters of bare `return` statements followed
+    /// by dangling signatures and asked to write tests against them. After the fix: 17 of 17,
+    /// and 3 457 characters.
+    private static final String DELEGATING = """
+            package org.json;
+
+            public class JSONArray {
+
+                public JSONArray put(boolean value) {
+                    return this.put(value ? Boolean.TRUE : Boolean.FALSE);
+                }
+
+                public JSONArray put(double value) throws JSONException {
+                    return this.put(Double.valueOf(value));
+                }
+
+                public JSONArray put(Object value) {
+                    this.myArrayList.add(value);
+                    return this;
+                }
+            }
+            """;
+
+    private static int lineIn(String src, String needle) {
+        String[] lines = src.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) if (lines[i].contains(needle)) return i + 1;
+        throw new AssertionError("no such line: " + needle);
+    }
+
+    @Test
+    void everyBlockOfADelegatingOverloadStartsOnItsDeclaration() {
+        int target = lineIn(DELEGATING, "return this.put(value ? Boolean.TRUE");
+        List<Integer> survivors = List.of(
+                lineIn(DELEGATING, "return this.put(Double.valueOf(value))"),
+                lineIn(DELEGATING, "this.myArrayList.add(value)"));
+
+        String body = Repo.methodContextOf(DELEGATING, "put", target, survivors).body();
+        for (String block : body.split("// … other members omitted …")) {
+            String first = block.strip().split("\n")[0].strip();
+            assertTrue(first.matches(".*\\b(public|private|protected|static)\\b.*\\(.*"),
+                    "a block began mid-body — the model cannot write a test against a fragment: ["
+                            + first + "]\nfull body:\n" + body);
+        }
+    }
+
+    @Test
+    void aDelegatingOverloadIsNotRunTogetherWithTheNextOne() {
+        // the compounding half: without a `{` seen, the forward scan swallowed the rest of the
+        // method AND the following declaration, so one block held two signatures
+        int target = lineIn(DELEGATING, "return this.put(value ? Boolean.TRUE");
+        String body = Repo.methodContextOf(DELEGATING, "put", target,
+                List.of(lineIn(DELEGATING, "return this.put(Double.valueOf(value))"))).body();
+
+        for (String block : body.split("// … other members omitted …")) {
+            assertTrue(countOf(block, "public JSONArray put(") <= 1,
+                    "one block carried two declarations:\n" + block);
+        }
+    }
+
     private static int countOf(String haystack, String needle) {
         int n = 0;
         for (int i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + 1)) n++;

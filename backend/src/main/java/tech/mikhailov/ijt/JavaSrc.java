@@ -200,7 +200,13 @@ public final class JavaSrc {
     }
 
     public static List<List<MethodRef>> routesTo(String source, String method, int maxHops) {
-        String code = stripNonCode(source);
+        // NOT stripped here. `callersOf` and `methodVisibility` each strip internally for their
+        // structural decisions, so this pass was redundant — and worse, it destroyed the one
+        // thing `callersOf` needs the original for: the SIGNATURE it hands the model as the route
+        // into a private method. Pre-stripping meant `callersOf` saw blanked text as its
+        // "original" and rendered `@SuppressWarnings(        )` under "call this", which is not
+        // Java, on the only path production takes.
+        String code = source;
         if (method == null || method.isEmpty() || "public".equals(methodVisibility(code, method))) return List.of();
         List<List<MethodRef>> routes = new ArrayList<>();
         Set<String> seen = new HashSet<>();
