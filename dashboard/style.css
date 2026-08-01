@@ -99,8 +99,11 @@ dialog#fb button { background:#1c2636; border:1px solid #2b3648; color:inherit; 
   padding:6px 14px; cursor:pointer; font:inherit; }
 dialog#fb button.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
 .fb-status { margin:10px 0 0; font-size:12px; min-height:1em; opacity:.75; }
-.fb-apply { display:block; margin:8px 0 0; font-size:12px; opacity:.75; }
-.fb-apply input { width:auto; margin-right:6px; }
+/* dialog#fb input is an ID selector and beats a bare class, so the checkbox kept
+   width:100% and rendered centred on its own line above the label. */
+dialog#fb .fb-apply { display:flex; align-items:center; gap:8px; margin:4px 0 0;
+  font-size:12px; opacity:.75; cursor:pointer; }
+dialog#fb .fb-apply input[type="checkbox"] { width:auto; margin:0; flex:0 0 auto; }
 
 /* ── the read path: what has already been said ─────────────────────────────
    Writing feedback and never seeing it again is a write-only feature. The
