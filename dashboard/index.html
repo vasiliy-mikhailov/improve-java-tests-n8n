@@ -39,6 +39,14 @@
     <div class="card"><div class="k">LLM tokens</div><div class="v" id="c-tokens">–</div><div class="d" id="c-tokens-d">in / out</div></div>
   </section>
 
+  <section id="guidance-section" hidden>
+    <h2>Team guidance <span class="muted" id="guidance-count"></span></h2>
+    <p class="muted guidance-hint">What this repo has told the pipeline. Every one of these is in
+      the prompt for the next test it writes — stored in <code>ijt-feedback.jsonl</code> at the
+      repo root, alongside the tests it produced and how they scored.</p>
+    <ul id="guidance" class="guidance"></ul>
+  </section>
+
   <section>
     <h2>Files <span class="muted" id="files-count"></span></h2>
     <div class="tablewrap"><table id="files">
@@ -69,6 +77,7 @@
       wrote these tests, the tests themselves and how they scored — that whole record is what a
       prompt optimiser reflects on. Tick <em>apply</em> and it also goes into the next round's
       prompt straight away.</p>
+    <div id="fb-existing" class="fb-existing" hidden></div>
     <textarea id="fb-text" rows="4" placeholder="e.g. i don't like too many mocks in these tests"></textarea>
     <input id="fb-author" placeholder="your name (optional)">
     <label class="fb-apply"><input type="checkbox" id="fb-apply"> apply to the next round's prompt</label>

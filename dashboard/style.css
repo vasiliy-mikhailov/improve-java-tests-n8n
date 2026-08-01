@@ -101,3 +101,18 @@ dialog#fb button.primary { background:#2563eb; border-color:#2563eb; color:#fff;
 .fb-status { margin:10px 0 0; font-size:12px; min-height:1em; opacity:.75; }
 .fb-apply { display:block; margin:8px 0 0; font-size:12px; opacity:.75; }
 .fb-apply input { width:auto; margin-right:6px; }
+
+/* ── the read path: what has already been said ─────────────────────────────
+   Writing feedback and never seeing it again is a write-only feature. The
+   guidance list is what is shaping the next prompt; the dialog history is what
+   this unit has already been told. */
+.guidance { list-style:none; margin:0; padding:0; }
+.guidance li { border-left:2px solid #2563eb; padding:6px 0 6px 10px; margin:0 0 8px;
+  font-size:13px; line-height:1.5; }
+.guidance li .who { opacity:.55; font-size:11px; display:block; margin-top:3px; }
+.guidance-hint { margin:0 0 12px; font-size:12px; line-height:1.5; }
+.fb-existing { max-height:150px; overflow-y:auto; margin:0 0 10px; padding:8px 10px;
+  background:#0d1420; border:1px solid #2b3648; border-radius:6px; font-size:12px; }
+.fb-existing div { padding:4px 0; border-bottom:1px solid #1c2636; }
+.fb-existing div:last-child { border-bottom:0; }
+.fb-existing .who { opacity:.55; }

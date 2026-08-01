@@ -446,13 +446,41 @@ connect();
 
 let FB_COUNTS = {};
 
+// Everything a person has said about this repo, and what it is doing to the prompts.
+// Kept in one poll because the three consumers — the badge, the guidance list and the
+// dialog's history — all read the same document.
+let FB_BY_TARGET = {};
+
 async function pollFeedbackCounts() {
   try {
     const r = await fetch('api/feedback', { cache: 'no-store' });
     if (!r.ok) return;
     const d = await r.json();
     FB_COUNTS = d.counts || {};
+    renderGuidance(d.guidance || []);
+    // per-unit comments, so the dialog can show what has already been said rather than
+    // asking someone to repeat themselves
+    FB_BY_TARGET = {};
+    for (const rec of (d.records || [])) {
+      for (const fb of (rec.feedback || [])) {
+        const k = fb.target || rec.unit;
+        (FB_BY_TARGET[k] = FB_BY_TARGET[k] || []).push(fb);
+      }
+    }
   } catch (err) { /* the badge is not worth an error banner */ }
+}
+
+// THE READ PATH. Guidance that nothing displays is a write-only feature: these four sentences
+// are in the prompt for the next test the pipeline writes, and until now the only way to see
+// them was to curl the API.
+function renderGuidance(items) {
+  const sec = document.getElementById('guidance-section');
+  const list = document.getElementById('guidance');
+  if (!sec || !list) return;
+  sec.hidden = items.length === 0;
+  document.getElementById('guidance-count').textContent =
+    items.length ? `${items.length} in every prompt` : '';
+  list.innerHTML = items.map((g) => `<li>${esc(g)}</li>`).join('');
 }
 pollFeedbackCounts();
 setInterval(pollFeedbackCounts, 30000);
@@ -466,6 +494,15 @@ document.addEventListener('click', (e) => {
   document.getElementById('fb-text').value = '';
   document.getElementById('fb-status').textContent = '';
   document.getElementById('fb-apply').checked = false;
+  // what has already been said about this unit
+  const box = document.getElementById('fb-existing');
+  const said = FB_BY_TARGET[fbFile] || [];
+  box.hidden = said.length === 0;
+  box.innerHTML = said.map((f) => {
+    const who = f.author ? esc(f.author) : 'someone';
+    const when = f.ts ? new Date(f.ts * 1000).toISOString().slice(0, 10) : '';
+    return `<div>${esc(f.text)}<span class="who"> — ${who} ${when}</span></div>`;
+  }).join('');
   document.getElementById('fb').showModal();
   document.getElementById('fb-text').focus();
 });
