@@ -7,7 +7,9 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -70,6 +72,31 @@ public class DashboardConfig implements WebMvcConfigurer {
                 .contentType(MediaType.TEXT_HTML)
                 .cacheControl(CacheControl.noStore())
                 .body(index);
+    }
+
+    /// `/dashboard/api/**` is the same API as `/api/**`.
+    ///
+    /// WITHOUT THIS THE DASHBOARD ONLY WORKS BEHIND CADDY. app.js fetches relative paths —
+    /// `fetch('api/state')` — which the browser resolves against `/dashboard/`, so every request
+    /// it makes goes to `/dashboard/api/…`. In the deployment Caddy strips the prefix before
+    /// proxying, and nothing noticed that the application itself answers 404 to those paths.
+    ///
+    /// Point a browser at the container directly — `docker run -p 3000:3000`, which is exactly
+    /// what "clone this and run it against your repo" means — and the page loads, renders an
+    /// empty shell, and fetches nothing. It looks like a pipeline that has not started rather
+    /// than a dashboard that cannot see.
+    ///
+    /// Found by the Playwright suite on its first run, which drives the page with no reverse
+    /// proxy in front of it and therefore hit immediately what no amount of curling through
+    /// Caddy could show.
+    ///
+    /// A forward rather than a redirect: a redirect would work but costs a round trip on every
+    /// poll, and the two spellings should be the same resource rather than one pointing at the
+    /// other.
+    @RequestMapping("/dashboard/api/**")
+    public String forwardApi(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return "forward:" + path.substring("/dashboard".length());
     }
 
     /// Exposed for the test, which asserts against the same value the handler was built from

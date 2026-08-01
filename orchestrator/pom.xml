@@ -117,6 +117,18 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Drives the dashboard in a real browser.
+         playwright-JAVA, not the Node package, deliberately: this repo has no npm and no Node
+         runtime, and adding one back for tests would undo that. This runs inside `mvn test`.
+         Every dashboard defect found so far was invisible to the other 1182 tests — routes that
+         answered 404 from outside the process, a record pane nothing rendered, a checkbox that
+         floated above its label — because nothing drove the page. -->
+    <dependency>
+      <groupId>com.microsoft.playwright</groupId>
+      <artifactId>playwright</artifactId>
+      <version>1.49.0</version>
+      <scope>test</scope>
+    </dependency>
     <!-- JobLauncherTestUtils / JobRepositoryTestUtils. The step boundaries are where restart
          correctness lives, and asserting on them needs the step-scope test fixtures. -->
     <dependency>
