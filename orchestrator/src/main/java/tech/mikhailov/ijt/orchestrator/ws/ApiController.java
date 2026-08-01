@@ -2,6 +2,8 @@ package tech.mikhailov.ijt.orchestrator.ws;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+import tech.mikhailov.ijt.Feedback;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -51,6 +53,32 @@ public class ApiController {
     @GetMapping(path = "/api/feedback", produces = MediaType.APPLICATION_JSON_VALUE)
     public Map<String, Object> feedback() {
         return Server.feedbackRead();
+    }
+
+    /// The corpus as training data: one JSON object per line.
+    ///
+    /// JSONL and not a JSON array, deliberately. This grows to a megabyte per few hundred rounds
+    /// — the live file is already 3.6 MB — and every tool that consumes examples reads a line at
+    /// a time. An array forces the whole corpus into memory to read the first row of it.
+    ///
+    /// Each line is source / prompts / output / outcome / feedback for ONE attempt: what the
+    /// model saw, what it was told, what it wrote, what that scored, and what a person said
+    /// about it. That is the tuple a prompt optimiser needs and it is the shape asked for.
+    @GetMapping(path = "/api/feedback/export", produces = "application/x-ndjson")
+    public ResponseEntity<StreamingResponseBody> export() {
+        List<Map<String, Object>> rows = Server.trainingRows();
+        StreamingResponseBody body = out -> {
+            for (Map<String, Object> row : rows) {
+                out.write(Feedback.toJsonLine(row).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.write('\n');
+                // Flushed per row rather than at the end: a client that starts reading gets rows
+                // while the rest is still being written, which is the only reason to stream.
+                out.flush();
+            }
+        };
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"ijt-training.jsonl\"")
+                .body(body);
     }
 
     /// The repo's feedback file — write.

@@ -119,6 +119,16 @@ dialog#fb .fb-apply input[type="checkbox"] { width:auto; margin:0; flex:0 0 auto
 .fb-existing div { padding:4px 0; border-bottom:1px solid #1c2636; }
 .fb-existing div:last-child { border-bottom:0; }
 .fb-existing .who { opacity:.55; }
+/* WHICH TEST THE COMMENT WAS ABOUT. The record pane above shows the latest attempt; a comment
+   from an earlier round was written about a test that has since been rewritten. Muted when it
+   matches what is on screen, and openable when it does not — the old test is the only thing
+   that makes the old sentence readable. */
+.fb-existing .about { font-size:11px; opacity:.6; margin-top:3px; }
+.fb-existing .about.same { font-style:italic; }
+.fb-existing details.about summary { cursor:pointer; color:#79c0ff; opacity:.85; }
+.fb-existing details.about pre { margin:6px 0 0; padding:6px 8px; background:#0d1117;
+  border:1px solid #1c2636; border-radius:4px; max-height:160px; overflow:auto;
+  font-size:11px; white-space:pre-wrap; }
 
 /* the thing being judged, shown next to the box you judge it in */
 .fb-record { max-height:280px; overflow:auto; margin:0 0 10px; border:1px solid #2b3648;

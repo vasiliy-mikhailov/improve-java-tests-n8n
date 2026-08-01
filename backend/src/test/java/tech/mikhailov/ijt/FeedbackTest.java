@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -21,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// has generation and repair in flight against one file, and read-modify-write loses records
 /// under exactly that.
 class FeedbackTest {
+
+    private static String str(Object o) { return o == null ? null : String.valueOf(o); }
 
     private static final String REPO_URL = "https://github.com/stleary/JSON-java";
     private static final String UNIT = "src/main/java/org/json/XML.java::escape";
@@ -137,18 +140,76 @@ class FeedbackTest {
         assertEquals("asserts nothing useful", on.get(0).get("text"));
     }
 
+    // ── a comment is about the test that existed when it was written ──────
+
+    /// A critique does not follow the unit into the next rewrite.
+    ///
+    /// THE MODELLING ERROR. A unit-targeted comment used to attach to every attempt for that
+    /// unit, including ones written LATER. "this test asserts nothing" was made about round 3's
+    /// output; round 4 rewrites the test completely and inherits the critique. Two things break:
+    /// GEPA is handed a sentence describing output the attempt never produced, which is training
+    /// signal pointing at the wrong artefact; and the dashboard shows the newest code and test
+    /// above a comment that was about neither.
     @Test
-    void feedbackAimedAtAUNITReachesEveryAttemptOnIt(@TempDir Path tmp) throws Exception {
-        // "the tests for XML::escape keep missing the default branch" is about the unit, not about
-        // one generated file
+    void aCritiqueDoesNotFollowTheUnitIntoTheNextRewrite(@TempDir Path tmp) throws Exception {
         Path repo = gitRepo(tmp);
-        Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
-        Feedback.attempt(repo, REPO_URL, ROUND + "b", UNIT, Map.of(), tests(), List.of());
+        String first = Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
+        Feedback.feedback(repo, REPO_URL, UNIT, "this one asserts nothing useful", false, -1);
+        String rewritten = Feedback.attempt(repo, REPO_URL, ROUND + "b", UNIT, Map.of(), tests(), List.of());
+
+        Map<String, List<?>> byId = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> a : Feedback.join(repo)) byId.put(str(a.get("id")), (List<?>) a.get("feedback"));
+
+        assertEquals(1, byId.get(first).size(), "the attempt it was written about keeps it");
+        assertEquals(0, byId.get(rewritten).size(),
+                "a test written AFTER the comment inherited a critique of the one it replaced");
+    }
+
+    @Test
+    void aCommentRecordsWhichAttemptItWasAbout(@TempDir Path tmp) throws Exception {
+        // stored on the line, so the pairing survives being read by anything that is not join()
+        Path repo = gitRepo(tmp);
+        String id = Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
+        Map<String, Object> fb = Feedback.feedback(repo, REPO_URL, UNIT, "asserts nothing", false, -1);
+        assertEquals(id, fb.get("about"));
+    }
+
+    @Test
+    void aCommentMadeBeforeAnythingExistedIsAboutWhatComesNext(@TempDir Path tmp) throws Exception {
+        // "when you write this one, do not mock the parser" — said about a unit with no
+        // generated test yet. Anchoring it to nothing would make it vanish; it belongs to the
+        // next attempt, which is the output it was in force for.
+        Path repo = gitRepo(tmp);
+        Map<String, Object> fb = Feedback.feedback(repo, REPO_URL, UNIT, "do not mock the parser", false, -1);
+        assertNull(fb.get("about"), "there was nothing to be about");
+        String next = Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
+
+        List<Map<String, Object>> joined = Feedback.join(repo);
+        assertEquals(1, joined.size());
+        assertEquals(next, joined.get(0).get("id"));
+        assertEquals(1, ((List<?>) joined.get(0).get("feedback")).size(),
+                "a forward-looking comment never reached the test it was written for");
+    }
+
+    /// Aiming at a UNIT is how you comment without knowing an attempt id — not a claim that the
+    /// sentence is true of every test ever written for it.
+    ///
+    /// This test used to assert the opposite, that the comment reached every attempt. It was
+    /// wrong in a way that only shows up once the unit is rewritten: the critique describes the
+    /// output that existed when it was typed, and round 4 replaces that output entirely.
+    @Test
+    void feedbackAimedAtAUnitLandsOnTheAttemptThatExistedWhenItWasWritten(@TempDir Path tmp) throws Exception {
+        Path repo = gitRepo(tmp);
+        String first = Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
+        String latest = Feedback.attempt(repo, REPO_URL, ROUND + "b", UNIT, Map.of(), tests(), List.of());
         Feedback.feedback(repo, REPO_URL, UNIT, "keeps missing the default branch", false, -1);
 
         for (Map<String, Object> a : Feedback.join(repo)) {
-            assertEquals(1, ((List<?>) a.get("feedback")).size());
+            int on = ((List<?>) a.get("feedback")).size();
+            assertEquals(latest.equals(a.get("id")) ? 1 : 0, on,
+                    "attempt " + a.get("id") + " carries " + on + "; only " + latest + " should");
         }
+        assertNotEquals(first, latest);
     }
 
     /// The author is written WITH the line, not attached to the response afterwards.
@@ -179,53 +240,75 @@ class FeedbackTest {
     }
 
     @Test
-    void oneCommentOnAUnitIsOneCommentHoweverManyAttemptsItHas(@TempDir Path tmp) throws Exception {
-        // The join attaches a unit-targeted comment to EVERY attempt for that unit. With two
-        // attempts the dashboard showed the same sentence twice, which reads as two people
-        // saying it. The dedup is in app.js; this pins the shape the join returns so the two
-        // cannot drift apart.
+    void oneCommentIsAttachedExactlyOnceAcrossTheWholeCorpus(@TempDir Path tmp) throws Exception {
+        // Written when a unit-targeted comment fanned out to every attempt and the dashboard
+        // rendered it once per attempt — one sentence reading as a chorus. Anchoring removed the
+        // fan-out at the source, so the claim is now the stronger one: across every record in
+        // the file, the comment appears once. A reader needs no deduplication to be correct.
         Path repo = gitRepo(tmp);
         Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
         Feedback.attempt(repo, REPO_URL, ROUND + "b", UNIT, Map.of(), tests(), List.of());
         Feedback.feedback(repo, REPO_URL, UNIT, "asserts on the message rather than the type", false, -1, "Claude");
 
-        List<Map<String, Object>> joined = Feedback.join(repo);
-        assertEquals(2, joined.size(), "two attempts");
-        // every attempt carries it — that is the join's contract
-        for (Map<String, Object> a : joined) assertEquals(1, ((List<?>) a.get("feedback")).size());
-        // and it is ONE comment, distinguishable by id, so a reader can collapse it
-        java.util.Set<Object> ids = new java.util.HashSet<>();
-        for (Map<String, Object> a : joined) {
+        List<Object> ids = new ArrayList<>();
+        for (Map<String, Object> a : Feedback.join(repo)) {
             for (Object fb : (List<?>) a.get("feedback")) ids.add(((Map<?, ?>) fb).get("id"));
         }
-        assertEquals(1, ids.size(), "the same comment must carry the same id on every record");
+        assertEquals(1, ids.size(), "attached " + ids.size() + " times: " + ids);
     }
 
-    /// Two comments in the same second are two comments.
-    ///
-    /// The id was `"fb-" + epochSECONDS`, so anything said about the same unit inside one second
-    /// carried the SAME id. Nothing noticed while ids were only decorative; the moment the
-    /// dashboard deduplicated by id — which it must, because the join hands it one comment once
-    /// per attempt — the second comment silently disappeared from the page while sitting in the
-    /// file. Two people reviewing a unit together is exactly when that happens.
-    @Test
-    void twoCommentsInTheSameSecondAreTwoComments(@TempDir Path tmp) throws Exception {
-        Path repo = gitRepo(tmp);
-        Map<String, Object> first = Feedback.feedback(repo, REPO_URL, UNIT, "asserts nothing", false, -1, "a");
-        Map<String, Object> second = Feedback.feedback(repo, REPO_URL, UNIT, "and it mocks the world", false, -1, "b");
+    // ── the corpus, as training data ──────────────────────────────────────
 
-        assertNotEquals(first.get("id"), second.get("id"),
-                "same id, so a reader that collapses duplicates loses one: " + first.get("id"));
+    @Test
+    void aTrainingRowIsSourcePromptsOutputOutcomeAndWhatAPersonSaid(@TempDir Path tmp) throws Exception {
+        Path repo = gitRepo(tmp);
+        Feedback.attempt(repo, REPO_URL, ROUND, UNIT,
+                Map.of("path", "src/main/java/org/json/XML.java", "fqcn", "org.json.XML",
+                        "methodSource", "static String escape(String s) { … }"),
+                tests(),
+                List.of("no mocks"),
+                Map.of("write_test", "no mocks", "pick_file", "prefer small methods"));
+        Feedback.outcome(repo, REPO_URL, ROUND, UNIT, "kept",
+                Map.of("mac", 4.94), Map.of("mac", 30.0), false);
+        Feedback.feedback(repo, REPO_URL, UNIT, "asserts one branch of eight", false, -1, "Claude");
+
+        Map<String, Object> row = Feedback.training(repo).get(0);
+        assertEquals(UNIT, row.get("unit"));
+        assertEquals("org.json.XML", ((Map<?, ?>) row.get("source")).get("fqcn"));
+        // EVERY stage, not just the one that writes the test
+        assertEquals("prefer small methods", ((Map<?, ?>) row.get("prompts")).get("pick_file"));
+        assertEquals(1, ((List<?>) ((Map<?, ?>) row.get("output")).get("tests")).size());
+
+        Map<?, ?> outcome = (Map<?, ?>) row.get("outcome");
+        assertEquals("kept", outcome.get("verdict"));
+        // derived, so no consumer has to know before/after are the ROUND's rather than lifetime
+        assertEquals(25.06, (Double) outcome.get("macGain"), 0.001);
+
+        List<?> said = (List<?>) row.get("feedback");
+        assertEquals(1, said.size());
+        assertEquals("Claude", ((Map<?, ?>) said.get(0)).get("author"));
+        assertEquals("asserts one branch of eight", ((Map<?, ?>) said.get(0)).get("text"));
     }
 
     @Test
-    void twoAttemptsInOneRoundAndOneSecondAreTellableApart(@TempDir Path tmp) throws Exception {
-        // generation then repair, inside one round — a per-TEST critique targets an attempt id,
-        // and two attempts sharing one would attach the critique to the wrong test as well
+    void aRoundThatBrokeIsStillARow(@TempDir Path tmp) throws Exception {
+        // a third of rounds never reach measurement; dropping them would teach an optimiser that
+        // everything it writes gets measured
         Path repo = gitRepo(tmp);
-        String a = Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
-        String b = Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
-        assertNotEquals(a, b, a);
+        Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of("no mocks"), Map.of());
+        List<Map<String, Object>> rows = Feedback.training(repo);
+        assertEquals(1, rows.size());
+        assertNull(rows.get(0).get("outcome"), "an unmeasured attempt is a row about a broken round");
+    }
+
+    @Test
+    void anOlderRecordStillReportsThePromptItDidStore(@TempDir Path tmp) throws Exception {
+        // 1546 lines were written before `prompts` existed. An empty map would read as "no rules
+        // were in force", which is a different and false claim.
+        Path repo = gitRepo(tmp);
+        Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of("don\u0027t use reflection"));
+        assertEquals("don\u0027t use reflection",
+                ((Map<?, ?>) Feedback.training(repo).get(0).get("prompts")).get("write_test"));
     }
 
     @Test

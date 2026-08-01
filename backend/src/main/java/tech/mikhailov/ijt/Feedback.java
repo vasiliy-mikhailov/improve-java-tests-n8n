@@ -85,6 +85,18 @@ public final class Feedback {
     public static String attempt(Path repoRoot, String repoUrl, String roundId, String unit,
                                  Map<String, Object> code, List<Map<String, Object>> tests,
                                  List<String> writeTestRule) {
+        return attempt(repoRoot, repoUrl, roundId, unit, code, tests, writeTestRule, null);
+    }
+
+    /// @param prompts every stage's rule text as it stood for this round, keyed by stage
+    ///                (`post_clone`, `pre_pick`, `pick_file`, `write_test`, `check_changes`,
+    ///                `make_pr`). Storing only `write_test` was a bet that it is the only stage
+    ///                worth evolving — but `pick_file` chooses WHICH unit is attempted at all and
+    ///                `check_changes` decides whether a test survives, and a record that cannot
+    ///                attribute an outcome to those cannot be used to improve them.
+    public static String attempt(Path repoRoot, String repoUrl, String roundId, String unit,
+                                 Map<String, Object> code, List<Map<String, Object>> tests,
+                                 List<String> writeTestRule, Map<String, Object> prompts) {
         Map<String, Object> row = new LinkedHashMap<>();
         String id = roundId + "#" + Util.nowSec() + "-" + SEQ.incrementAndGet();
         row.put("v", 1);
@@ -97,6 +109,10 @@ public final class Feedback {
         row.put("tests", tests == null ? List.of() : tests);
         // THE GEPA CANDIDATE: the one thing that varies between records and can be rewritten.
         row.put("writeTestRule", writeTestRule == null ? List.of() : writeTestRule);
+        // Kept BESIDE writeTestRule rather than replacing it: 1546 records already written carry
+        // the old field, and a reader that has to know which vintage it is holding is a reader
+        // that will get it wrong.
+        row.put("prompts", prompts == null ? Map.of() : prompts);
         append(repoRoot, repoUrl, row);
         return id;
     }
@@ -150,13 +166,36 @@ public final class Feedback {
         row.put("kind", "feedback");
         row.put("id", "fb-" + Util.nowSec() + "-" + SEQ.incrementAndGet());
         row.put("ts", Util.nowSec());
-        row.put("target", target == null || target.isEmpty() ? null : target);
+        String scoped = target == null || target.isEmpty() ? null : target;
+        row.put("target", scoped);
+        // WHICH TEST THIS IS ABOUT. A unit is rewritten every round, so "this asserts nothing"
+        // is true of the output that existed when it was typed and says nothing about the one
+        // that replaces it. Resolving the attempt HERE, at write time, is what stops the
+        // critique following the unit forwards — see the attachment rule in join().
+        // Null when nothing had been generated yet: that comment is about whatever comes next.
+        row.put("about", scoped == null ? null : anchorFor(repoRoot, scoped));
         row.put("apply", apply && (target == null || target.isEmpty()));
         row.put("rating", rating);
         if (author != null && !author.isBlank()) row.put("author", author);
         row.put("text", text == null ? "" : text);
         append(repoRoot, repoUrl, row);
         return row;
+    }
+
+    /// The attempt a comment on `target` is about: the last one written for it, or null.
+    ///
+    /// File order, not timestamps. Records are appended within the same second routinely —
+    /// generation and repair are milliseconds apart — and `ts` has one-second resolution, so
+    /// ordering by it cannot tell an attempt written before a comment from one written after.
+    /// The append order is exact and is already the order {@link #lines} returns.
+    static String anchorFor(Path repoRoot, String target) {
+        String last = null;
+        for (Map<String, Object> row : lines(repoRoot)) {
+            if (!"attempt".equals(row.get("kind"))) continue;
+            if (target.equals(row.get("id"))) return target;   // already names one attempt
+            if (target.equals(row.get("unit"))) last = String.valueOf(row.get("id"));
+        }
+        return last;
     }
 
     /// One line, appended, never rewritten. Never throws: losing a record is not worth a run.
@@ -243,17 +282,149 @@ public final class Feedback {
             }
         }
         for (Map<String, Object> fb : feedback) {
-            Object target = fb.get("target");
-            if (target == null) continue;                     // guidance, not per-record
-            for (Map<String, Object> a : attempts) {
-                if (target.equals(a.get("id")) || target.equals(a.get("unit"))) {
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> into = (List<Map<String, Object>>) a.get("feedback");
-                    into.add(fb);
-                }
-            }
+            Map<String, Object> onto = attemptFor(fb, attempts);
+            if (onto == null) continue;
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> into = (List<Map<String, Object>>) onto.get("feedback");
+            into.add(fb);
         }
         return attempts;
+    }
+
+    /// The ONE attempt a comment belongs to, or null.
+    ///
+    /// Exactly one, and this is the whole point. A unit-targeted comment used to be attached to
+    /// every attempt for that unit — so a critique of round 3's test was served alongside round
+    /// 4's rewrite as though it described it. For GEPA that is a label on the wrong artefact;
+    /// for a reader it is a comment sitting under code it was never about.
+    ///
+    /// Three cases, in order:
+    ///
+    ///  - `about` set — written since the anchor existed. Exact.
+    ///  - target names an attempt directly. Exact.
+    ///  - a unit-targeted line written BEFORE `about` existed. Reconstructed from append order:
+    ///    the last attempt for that unit preceding the comment, or, when the comment came first,
+    ///    the next one after it — a comment made before anything was generated is an instruction
+    ///    for what gets written next, and the alternative is that it belongs to nothing and is
+    ///    never seen again.
+    static Map<String, Object> attemptFor(Map<String, Object> fb, List<Map<String, Object>> attempts) {
+        Object target = fb.get("target");
+        if (target == null) return null;                       // guidance, not per-record
+        Object about = fb.get("about");
+        if (about != null) {
+            for (Map<String, Object> a : attempts) if (about.equals(a.get("id"))) return a;
+            return null;                                       // its attempt is gone
+        }
+        Map<String, Object> before = null, after = null;
+        boolean past = false;
+        for (Map<String, Object> a : attempts) {
+            if (target.equals(a.get("id"))) return a;
+            if (a == fb) continue;
+            if (target.equals(a.get("unit"))) {
+                if (!past) before = a;
+                else if (after == null) after = a;
+            }
+            if (Long.compare(asTs(a), asTs(fb)) > 0) past = true;
+        }
+        return before != null ? before : after;
+    }
+
+    private static long asTs(Map<String, Object> row) {
+        Object t = row.get("ts");
+        return t instanceof Number n ? n.longValue() : 0L;
+    }
+
+    /// The corpus, flat: one row per attempt, in the shape a prompt optimiser consumes.
+    ///
+    /// `join()` returns the stored records — three kinds of line stitched together, carrying
+    /// bookkeeping (`roundId`, `kind`, `v`) that matters to this file and to nothing downstream.
+    /// This is the same data as the training example it is: what the model was SHOWN (source),
+    /// what it was TOLD (prompts, every stage), what it PRODUCED (tests), what that SCORED
+    /// (outcome), and what a human said about it (feedback).
+    ///
+    /// `macGain` is computed rather than stored, because the objective is the reader's to choose
+    /// — absolute MAC, gain, kills per token — and freezing one into the file produces a corpus
+    /// that has to be rewritten the first time the objective moves. It is derived here because
+    /// every consumer wants it and none should have to know that `before`/`after` are the
+    /// ROUND's, not the unit's lifetime.
+    ///
+    /// Rows with no outcome are INCLUDED, with `outcome: null`. An attempt whose measurement
+    /// never happened is not a missing row; it is a row about a round that broke, which is a
+    /// third of them, and dropping those would teach an optimiser that everything it writes gets
+    /// measured.
+    public static List<Map<String, Object>> training(Path repoRoot) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> a : join(repoRoot)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("unit", a.get("unit"));
+            row.put("ts", a.get("ts"));
+            row.put("source", a.get("code"));
+            // `prompts` when the record has it; older records carry only the write_test list,
+            // and saying so explicitly beats an empty map that reads as "no rules were in force"
+            Object prompts = a.get("prompts");
+            row.put("prompts", prompts instanceof Map<?, ?> m && !m.isEmpty() ? prompts
+                    : Map.of("write_test", firstOf(a.get("writeTestRule"))));
+            row.put("output", Map.of("tests", a.get("tests") == null ? List.of() : a.get("tests")));
+            row.put("outcome", outcomeRow(a.get("outcome")));
+            row.put("feedback", humanRows(a.get("feedback")));
+            out.add(row);
+        }
+        return out;
+    }
+
+    /// One row, as the line it is written as.
+    ///
+    /// Here rather than at the caller because this class owns the mapper that wrote every other
+    /// line in the file; a second mapper configured differently is how an exported corpus ends
+    /// up spelled differently from the stored one.
+    public static String toJsonLine(Object row) {
+        try {
+            return MAPPER.writeValueAsString(row);
+        } catch (Exception e) {
+            throw new IllegalStateException("training row could not be serialised: " + e, e);
+        }
+    }
+
+    private static String firstOf(Object list) {
+        return list instanceof List<?> l && !l.isEmpty() ? String.valueOf(l.get(0)) : "";
+    }
+
+    private static Map<String, Object> outcomeRow(Object outcome) {
+        if (!(outcome instanceof Map<?, ?> o)) return null;
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("verdict", o.get("verdict"));
+        row.put("broken", o.get("broken"));
+        row.put("before", o.get("before"));
+        row.put("after", o.get("after"));
+        row.put("macGain", gain(o.get("before"), o.get("after")));
+        return row;
+    }
+
+    private static Double gain(Object before, Object after) {
+        Double b = mac(before), a = mac(after);
+        return b == null || a == null ? null : Math.round((a - b) * 100.0) / 100.0;
+    }
+
+    private static Double mac(Object side) {
+        if (!(side instanceof Map<?, ?> m)) return null;
+        return m.get("mac") instanceof Number n ? n.doubleValue() : null;
+    }
+
+    /// Only what a person said, not the routing that got it here: `target`/`about` name records
+    /// this row already IS.
+    private static List<Map<String, Object>> humanRows(Object feedback) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (!(feedback instanceof List<?> l)) return out;
+        for (Object o : l) {
+            if (!(o instanceof Map<?, ?> fb)) continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("text", fb.get("text"));
+            row.put("author", fb.get("author"));
+            row.put("rating", fb.get("rating"));
+            row.put("ts", fb.get("ts"));
+            out.add(row);
+        }
+        return out;
     }
 
     // ── surviving the working copy ────────────────────────────────────────────

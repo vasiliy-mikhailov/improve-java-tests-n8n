@@ -1864,6 +1864,16 @@ public final class Server {
         return out;
     }
 
+    /// The corpus as flat training rows. See {@link Feedback#training}.
+    public static List<Map<String, Object>> trainingRows() {
+        try {
+            return Feedback.training(Repo.repoDir());
+        } catch (RuntimeException e) {
+            // no run configured yet: an empty corpus, not a 500
+            return List.of();
+        }
+    }
+
     /// Say something about the tests.
     ///
     /// `target` decides the scope by its shape: absent means the repo as a whole ("i don't like
@@ -1972,10 +1982,16 @@ public final class Server {
                 one.put("content", t.get("content"));
                 written.add(one);
             }
+            Rules.Io live = Rules.forServer().io();
+            // EVERY stage, not just the one that writes the test. write_test is the obvious
+            // candidate and the others are not decorative: pick_file decides which unit is
+            // attempted, check_changes decides whether the test survives to be measured.
+            Map<String, Object> prompts = new LinkedHashMap<>();
+            for (String stage : Rules.STAGES) prompts.put(stage, live.rule(stage));
             Feedback.attempt(Repo.repoDir(), state().run == null ? "" : state().run.config.repoUrl(),
                     roundIdFor(unit), unit, code, written,
                     // THE candidate GEPA rewrites: the live write_test rule, guidance included
-                    List.of(Rules.forServer().io().rule("write_test")));
+                    List.of(live.rule("write_test")), prompts);
         } catch (RuntimeException e) {
             System.err.println("feedback attempt not captured: " + e);
         }

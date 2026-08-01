@@ -8,7 +8,11 @@ import org.springframework.http.ResponseEntity;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
+
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /// `/dashboard` and `/dashboard/` must serve index.html.
 ///
@@ -22,6 +26,33 @@ import static org.junit.jupiter.api.Assertions.*;
 /// Caddy reverse-proxies /dashboard to this port and deploy.sh smoke checks it, so the 404 does
 /// not present as a missing page — it presents as a failed deploy.
 class DashboardConfigTest {
+
+    /// The DEFAULT, resolved the way the container resolves it.
+    ///
+    /// Every other test here hands the constructor a path, so the placeholder chain
+    /// `${ijt.dashboard-dir:${DASHBOARD_DIR:/app/dashboard}}` is exercised by none of them —
+    /// the one expression that decides where a real deployment looks for its own dashboard, and
+    /// the one whose wrong answer presents as a 404 on the whole page rather than as a test
+    /// failure. Nothing sets DASHBOARD_DIR: not the Dockerfile, not compose, not the entrypoint.
+    /// The literal at the end of that chain IS the production configuration.
+    ///
+    /// Resolved through a real context rather than by reading the annotation's text, so a change
+    /// that keeps the string and breaks the resolution is still caught.
+    @Test
+    void theDefaultDashboardDirIsTheOneTheImageShipsTheFilesTo() {
+        // A machine that HAS the variable set would legitimately resolve to something else;
+        // that is the chain working, not failing.
+        assumeTrue(System.getenv("DASHBOARD_DIR") == null,
+                "DASHBOARD_DIR is set in this environment, so the default is not what applies");
+
+        try (AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext()) {
+            ctx.register(PropertySourcesPlaceholderConfigurer.class, DashboardConfig.class);
+            ctx.refresh();
+            assertEquals(Path.of("/app/dashboard"), ctx.getBean(DashboardConfig.class).dashboardRoot(),
+                    "the Dockerfile COPYs dashboard/ to /app/dashboard — if this default moves, "
+                            + "every deployment that does not set DASHBOARD_DIR serves 404");
+        }
+    }
 
     @Test
     void bothSpellingsServeIndexHtml(@TempDir Path dir) throws Exception {

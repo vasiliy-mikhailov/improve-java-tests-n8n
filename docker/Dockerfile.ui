@@ -1,0 +1,64 @@
+# The UI suite, run where the application actually runs.
+#
+# ON TOP OF the runtime image rather than inside it. Chromium and its system libraries are
+# ~400 MB, and the deployed image is already large because it carries five JDKs to build other
+# people's projects. A browser that only ever runs in a test has no business on the volume that
+# serves production traffic, so it lives in a separate tag that the deploy never pulls.
+#
+# WHY THE CONTAINER AT ALL. On a laptop the suite has to tell the application where its own
+# dashboard is:
+#
+#     ijt.dashboard-dir=${user.dir}/../dashboard    DASHBOARD_DIR defaults to /app/dashboard,
+#                                                   which exists only in the image
+#
+# That override is the test bending the application to fit the machine, and it is exactly the
+# setting whose default was serving 404s to the whole page. Here DASHBOARD_DIR is real and the
+# suite resolves it the way production does — the test now says
+# `${DASHBOARD_DIR:${user.dir}/../dashboard}`, so the container path wins when there is one.
+#
+# The DATABASE deliberately stays in memory even here. These tests are about the page, and
+# pointing them at the file-backed H2 under /data would have a test run writing into the state
+# a real run owns the moment anyone mounts that volume.
+#
+# Build and run through scripts/ui-tests.sh, which tags this and mounts nothing.
+ARG BASE=improve-java-tests-spring:latest
+FROM ${BASE}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+
+# The browser is baked in rather than downloaded on first use. Playwright fetches ~150 MB from
+# a CDN the first time a test calls Playwright.create(), which turns "run the suite" into a
+# network dependency and a 30-second surprise inside the first @BeforeAll — and fails outright
+# on a host with no egress. `--with-deps` also pulls the shared libraries Chromium needs on
+# bookworm-slim, which a bare apt list gets wrong every time the base image moves.
+#
+# Run from /app/orchestrator so the module's own Playwright dependency supplies the CLI; the
+# version is whatever the pom says, so the browser can never drift from the client that drives
+# it. Maven and ~/.m2 are already in the base image because it builds the backend there.
+# The `install` first is not redundant with the base image's build. That one runs `mvn package`,
+# which leaves ijt-backend in backend/target and NOT in ~/.m2 — and the base image then deletes
+# both target directories. So the orchestrator module on its own cannot resolve its own sibling,
+# and every command here that names `-pl orchestrator` fails in dependency resolution before it
+# compiles a line. Installing the reactor once fixes it for the CLI below and for every later
+# `./scripts/ui-tests.sh` run in the same image.
+#
+# Not -q: a failure inside this layer is a failure of the image build, and the one thing worse
+# than a broken build is a broken build that printed nothing about why.
+RUN cd /app \
+ && JAVA_HOME=$BACKEND_JAVA_HOME mvn -B -ntp -DskipTests install \
+ && cd /app/orchestrator \
+ && JAVA_HOME=$BACKEND_JAVA_HOME mvn -B -ntp \
+      exec:java -Dexec.mainClass=com.microsoft.playwright.CLI \
+                -Dexec.classpathScope=test \
+                -Dexec.args="install --with-deps chromium"
+
+# --no-sandbox is not laziness. Chromium's sandbox needs user namespaces, which are unavailable
+# in an unprivileged container; the alternative is running the container with --cap-add SYS_ADMIN
+# or seccomp=unconfined, which is a far larger hole than dropping the sandbox for a browser that
+# only ever loads localhost.
+ENV IJT_UI_CHROMIUM_ARGS=--no-sandbox
+
+WORKDIR /app
+ENTRYPOINT ["/bin/bash", "-lc"]
+CMD ["JAVA_HOME=$BACKEND_JAVA_HOME mvn -B -ntp -pl orchestrator -Dui.tests=true -Dtest=DashboardUiTest -Dsurefire.failIfNoSpecifiedTests=false test"]

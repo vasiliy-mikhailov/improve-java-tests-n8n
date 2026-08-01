@@ -466,14 +466,16 @@ async function pollFeedbackCounts() {
     const seenFb = new Set();
     for (const rec of (d.records || [])) {
       for (const fb of (rec.feedback || [])) {
-        // ONE comment is one comment. The join attaches a unit-targeted comment to EVERY record
-        // for that unit, so a unit with two attempts showed the same sentence twice — which
-        // reads as two people saying it, and makes a single complaint look like a chorus.
+        // The comment is carried WITH the attempt it was about. A unit is rewritten every round,
+        // so "this asserts nothing" describes the test that existed when it was typed and not
+        // the one on screen now; keeping the pair together is what lets the dialog say which.
+        // The dedup is a guard: the API anchors each comment to exactly one attempt, and a
+        // reader that quietly showed one sentence twice is what made that worth checking.
         const k = fb.target || rec.unit;
         const id = (fb.id || fb.ts) + '|' + k;
         if (seenFb.has(id)) continue;
         seenFb.add(id);
-        (FB_BY_TARGET[k] = FB_BY_TARGET[k] || []).push(fb);
+        (FB_BY_TARGET[k] = FB_BY_TARGET[k] || []).push({ fb, rec });
       }
       // newest wins: a unit is retried, and the last thing written for it is the one in the PR
       const prev = FB_RECORD[rec.unit];
@@ -530,10 +532,23 @@ document.addEventListener('click', (e) => {
   const box = document.getElementById('fb-existing');
   const said = FB_BY_TARGET[fbFile] || [];
   box.hidden = said.length === 0;
-  box.innerHTML = said.map((f) => {
+  box.innerHTML = said.map(({ fb: f, rec: about }) => {
     const who = f.author ? esc(f.author) : 'someone';
     const when = f.ts ? new Date(f.ts * 1000).toISOString().slice(0, 10) : '';
-    return `<div>${esc(f.text)}<span class="who"> — ${who} ${when}</span></div>`;
+    // WHICH TEST IT WAS ABOUT. The pane above shows the LATEST attempt for this unit; a comment
+    // from three rounds ago was written about a test that has since been rewritten line for
+    // line. Showing the two together with nothing between them invites reading the comment as a
+    // judgement on the code on screen, which is the one thing it is not.
+    // no record on screen at all counts as stale: there is nothing for 'above' to mean
+    const stale = about && (!rec || about.id !== rec.id);
+    const t = (about && (about.tests || [])[0]) || null;
+    const name = t ? esc((t.path || '').split('/').pop()) : 'a test no longer on file';
+    const provenance = !about ? ''
+      : stale
+        ? `<details class="about"><summary>about ${name}, since rewritten — not the test above</summary>`
+          + `<pre>${esc(t ? t.content || '' : '')}</pre></details>`
+        : `<div class="about same">about the test shown above</div>`;
+    return `<div>${esc(f.text)}<span class="who"> — ${who} ${when}</span>${provenance}</div>`;
   }).join('');
   document.getElementById('fb').showModal();
   document.getElementById('fb-text').focus();

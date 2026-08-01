@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// The dashboard, in a real browser.
@@ -70,11 +71,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
                 // developer machine has no writable /data. These tests are about the page, not
                 // about persistence surviving a restart, so memory is the honest choice.
                 "IJT_DB_URL=jdbc:h2:mem:uitest;DB_CLOSE_DELAY=-1",
-                // DASHBOARD_DIR defaults to /app/dashboard, which exists only inside the image.
-                // Without this the index handler 404s and the page never loads at all — which is
-                // itself worth knowing: the application cannot serve its own dashboard unless it
-                // is told where the files are.
-                "ijt.dashboard-dir=${user.dir}/../dashboard"
+                // DASHBOARD_DIR first, so that INSIDE THE CONTAINER this resolves exactly as
+                // production does — /app/dashboard, the setting whose default was serving 404s
+                // to the entire page. The working-directory fallback is for a laptop, where
+                // there is no /app; without either the index handler 404s and the page never
+                // loads at all, which is itself worth knowing.
+                "ijt.dashboard-dir=${DASHBOARD_DIR:${user.dir}/../dashboard}"
         })
 @EnabledIfSystemProperty(named = "ui.tests", matches = "true")
 class DashboardUiTest {
@@ -90,7 +92,14 @@ class DashboardUiTest {
     @BeforeAll
     static void launch() {
         playwright = Playwright.create();
-        browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+        BrowserType.LaunchOptions options = new BrowserType.LaunchOptions().setHeadless(true);
+        // Chromium's sandbox needs user namespaces, which an unprivileged container does not
+        // have, so in the image the run needs --no-sandbox. It is passed as an ENV rather than
+        // hardcoded because the alternative — dropping the sandbox everywhere — would also drop
+        // it on a laptop, where the browser is a real one and the protection is worth keeping.
+        String extra = System.getenv("IJT_UI_CHROMIUM_ARGS");
+        if (extra != null && !extra.isBlank()) options.setArgs(List.of(extra.trim().split("\\s+")));
+        browser = playwright.chromium().launch(options);
     }
 
     @AfterAll
@@ -239,13 +248,49 @@ class DashboardUiTest {
             // comment to be back from the API first, then reopen.
             page.waitForFunction(
                     "() => (FB_BY_TARGET['src/main/java/org/json/XML.java::escape'] || [])"
-                            + ".some(f => f.text.includes('exception message'))");
+                            // each entry is {fb, rec}: the comment WITH the attempt it was about
+                            + ".some(x => x.fb.text.includes('exception message'))");
             page.locator("button.say").first().click();
             page.waitForSelector("#fb[open]");
 
             String history = page.locator("#fb-existing").innerText();
             assertTrue(history.contains("Claude"), "not attributed: " + history);
             assertTrue(history.contains("exception message"), history);
+        }
+    }
+
+    /// A comment is shown with the test it was about, not the one on screen.
+    ///
+    /// The record pane shows the LATEST attempt for the unit. A comment from an earlier round was
+    /// written about a test that has since been rewritten line for line, and the two rendered
+    /// together with nothing between them read as a judgement on the code above — the one thing
+    /// the comment is not. Raised by the user: "your ui shows comments without code/unit, but
+    /// current code/unit could change and have nothing to do with comment".
+    @Test
+    void aCommentAboutAnEarlierTestSaysSoAndShowsThatTest() throws Exception {
+        Path repo = Repo.repoDir();
+        // the seeded comment in @BeforeEach is anchored to the seeded attempt; this rewrite
+        // arrives afterwards and becomes what the record pane displays
+        Feedback.attempt(repo, REPO_URL, "run-1|u|a1|r9", "src/main/java/org/json/XML.java::escape",
+                Map.of("methodSource", "public static String escape(String s) { return s; }"),
+                List.of(Map.of("path", "src/test/java/org/json/XMLEscapeMacMutTest.java",
+                        "content", "class XMLEscapeMacMutTest { @Test void rewritten() { } }")),
+                List.of("no mocks"));
+
+        try (Page page = open()) {
+            page.locator("button.say").first().click();
+            page.waitForSelector("#fb[open]");
+
+            String history = page.locator("#fb-existing").innerText();
+            assertTrue(history.contains("since rewritten"),
+                    "the comment is presented as though it were about the test on screen: " + history);
+
+            // and the test it WAS about is reachable, because the old sentence is unreadable
+            // without the old test
+            page.locator("#fb-existing details.about summary").first().click();
+            String shown = page.locator("#fb-existing details.about pre").first().innerText();
+            assertTrue(shown.contains("escapesAmp"), "expected the ORIGINAL test body, got: " + shown);
+            assertFalse(shown.contains("rewritten"), "that is the new test, not the one commented on");
         }
     }
 
