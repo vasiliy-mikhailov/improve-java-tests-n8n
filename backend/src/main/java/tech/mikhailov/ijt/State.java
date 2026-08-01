@@ -541,6 +541,12 @@ public final class State {
             if (STATE.run != null && "running".equals(STATE.run.status)) {
                 // process restarted mid-run
                 STATE.stage = new Stage("interrupted", "sidecar restarted", Util.nowSec(), null);
+                // AND THE STATUS. A restore is the statement "the process that owned this run is
+                // gone"; leaving `running` behind makes that statement to the stage alone, which
+                // every consumer that reads the status — the page header, the API, a watching
+                // script — never sees. The stage was believed to be the durable second signal
+                // and is not: it is derived here, in memory, from this very field.
+                STATE.run.status = "interrupted";
             }
         }
     }

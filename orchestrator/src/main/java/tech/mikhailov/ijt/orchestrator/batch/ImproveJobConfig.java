@@ -105,11 +105,20 @@ public class ImproveJobConfig {
     }
 
     @Bean
-    public Job improveJob(JobRepository jobRepository, Step setupStep, Step improveStep, Step finishStep) {
+    public RunOutcomeListener runOutcomeListener(Backend backend) {
+        return new RunOutcomeListener(backend);
+    }
+
+    @Bean
+    public Job improveJob(JobRepository jobRepository, Step setupStep, Step improveStep, Step finishStep,
+                          RunOutcomeListener runOutcomeListener) {
         return new JobBuilder("improveJob", jobRepository)
                 .start(setupStep)
                 .next(improveStep)
                 .next(finishStep)
+                // Registered on the JOB and not on a step: a step that never starts because an
+                // earlier one failed has no listener to fire, and the run still needs marking.
+                .listener(runOutcomeListener)
                 .build();
     }
 }

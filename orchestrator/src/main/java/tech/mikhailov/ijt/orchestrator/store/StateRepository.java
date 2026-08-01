@@ -165,37 +165,21 @@ public class StateRepository {
         });
     }
 
-    /// Boot recovery: a run left `running` by a process that died mid-run.
-    ///
-    /// The STAGE moves to `interrupted`; the STATUS is deliberately left alone. `POST
-    /// /api/run/start` reads the stage to decide whether a run is genuinely active and refuses a
-    /// takeover otherwise — marking the status finished here would make a hung run look
-    /// completed and lose the only route that ever recovered one. This is the behaviour that
-    /// made a hung run recoverable at all, and it only ever worked because state.json survived
-    /// the container restart; the H2 file is what survives it now.
-    ///
-    /// @return the run it marked, if there was one
-    public Optional<Run> markInterruptedIfRunning() {
-        return currentRun().map(run -> {
-            if (!"running".equals(run.getStatus())) return run;
-            run.setStageName("interrupted");
-            run.setStageDetail("orchestrator restarted");
-            run.setStageSince(Util.nowSec());
-            return runs.save(run);
-        });
-    }
-
-    /// Move a run's stage. `since` is stamped here: `run/start` measures staleness from it, and a
-    /// caller passing its own clock is how two components disagree about how long a run has been
-    /// stuck.
-    public Optional<Run> setStage(String runId, String name, String detail) {
-        return runs.findById(runId).map(run -> {
-            run.setStageName(name);
-            run.setStageDetail(detail == null ? "" : Util.redact(detail));
-            run.setStageSince(Util.nowSec());
-            return runs.save(run);
-        });
-    }
+    // markInterruptedIfRunning() and setStage() STOOD HERE, and neither was ever called.
+    //
+    // They wrote IJT_RUN.STAGE_NAME/STAGE_DETAIL/STAGE_SINCE, and their comments described boot
+    // recovery moving a dead run's stage to `interrupted` so that POST /api/run/start could tell
+    // a corpse from a live run. Every word of that was true of the design and false of the
+    // build: StateRepository is injected into exactly one class (H2StatePersistence), which
+    // calls twenty-one methods and none of these — so the three columns were NULL on every row
+    // this deployment ever wrote, and the `interrupted` stage a running instance reports is
+    // synthesised in memory by H2StatePersistence.load() out of `status == "running"` alone.
+    //
+    // The cost was not the wasted code. It was that the stage LOOKED like a second, independent
+    // liveness signal, so `run.status` was left saying `running` on purpose — and a deploy that
+    // restarted the container mid-run left the deployment reporting a live run, with a growing
+    // clock and an ETA, over 21 units and no process. The status is the record now; see
+    // H2StatePersistence.load and RunOutcomeListener.
 
     /// Accumulate LLM usage on the run and on the unit being improved — `State.addTokens`.
     ///

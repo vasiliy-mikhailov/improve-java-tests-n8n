@@ -22,7 +22,7 @@ const STAGE_LABELS = {
   branching: 'Creating branch', improving_coverage: 'Improving coverage',
   improving_mutation: 'Improving mutation score', improving_mac: 'Improving MAC (verifying)',
   preparing_pr: 'Preparing PR', iteration_done: 'Iteration done', done: 'Done',
-  failed: 'Failed', interrupted: 'Interrupted', error: 'Error',
+  failed: 'Failed', interrupted: 'Interrupted', stopped: 'Stopped', error: 'Error',
 };
 const ACTIVE = ['starting', 'cloning', 'applying_rules', 'installing', 'measuring_baseline',
   'picking_file', 'branching', 'improving_coverage', 'improving_mutation', 'improving_mac', 'preparing_pr'];
@@ -290,11 +290,21 @@ function stopFallbackPoll() {
 
 // ── rendering ──────────────────────────────────────────────────────────────
 
-function setBanner(stage) {
+function setBanner(stage, work) {
   const el = $('stage-banner');
-  el.className = 'stage ' + (ACTIVE.includes(stage.name) ? 'active' : stage.name === 'failed' ? 'failed' : stage.name === 'done' ? 'done' : 'idle');
+  // `interrupted` and `stopped` used to fall through to `idle` — so a run that died mid-flight
+  // was styled exactly like a repo that has never been run, in a grey box with no CSS rule of
+  // its own. They are not the same thing: one needs a person to restart it.
+  const kind = ACTIVE.includes(stage.name) ? 'active'
+    : stage.name === 'failed' ? 'failed'
+      : stage.name === 'done' ? 'done'
+        : (stage.name === 'interrupted' || stage.name === 'stopped') ? stage.name : 'idle';
+  el.className = 'stage ' + kind;
   $('stage-name').textContent = STAGE_LABELS[stage.name] || stage.name;
-  $('stage-detail').textContent = stage.detail || '';
+  // HOW LONG IT HAS BEEN STILL. Without this the page is identical at ten seconds and ten
+  // hours, and a stalled pipeline reads as a slow one.
+  const idle = work && work.idleSec > 60 ? ` · idle ${fmtDur(work.idleSec)}` : '';
+  $('stage-detail').textContent = (stage.detail || '') + idle;
   const p = stage.progress;
   $('stage-progress').textContent = p && (Date.now() / 1000 - p.ts) < 60
     ? `${p.line}  ·  ${p.elapsed}s` : '';
@@ -313,7 +323,7 @@ function unitCell(f) {
 }
 
 function render(m) {
-  setBanner(m.stage || { name: 'idle' });
+  setBanner(m.stage || { name: 'idle' }, m.work);
   const cfg = m.run?.config;
   $('repo').textContent = cfg ? `${cfg.repoUrl} @ ${cfg.repoBranch} · PR mode: ${cfg.prMode} · run ${m.run.status}` : 'no run yet';
 
@@ -345,7 +355,10 @@ function render(m) {
       : 'measuring…';
   }
   $('c-eta').textContent = w.etaSec != null ? fmtDur(w.etaSec) : '–';
-  $('c-eta-d').textContent = w.etaSec != null ? `at current pace, ${w.remaining} file(s) left` : 'measuring pace…';
+  // "at current pace" is a claim about a pace being kept. When the run is not going the honest
+  // answer is that it is not going — the server already suppresses etaSec for that case.
+  $('c-eta-d').textContent = w.etaSec != null ? `at current pace, ${w.remaining} file(s) left`
+    : (m.run && m.run.status && m.run.status !== 'running') ? 'run not progressing' : 'measuring pace…';
   const tin = w.tokensIn || 0, tout = w.tokensOut || 0;
   $('c-tokens').textContent = (tin || tout) ? `${fmtTok(tin)} / ${fmtTok(tout)}` : '–';
   $('c-tokens-d').textContent = (tin || tout)

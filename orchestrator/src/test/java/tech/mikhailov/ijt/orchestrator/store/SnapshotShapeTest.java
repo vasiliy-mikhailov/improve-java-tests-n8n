@@ -365,12 +365,20 @@ class SnapshotShapeTest extends StoreTestSupport {
         assertTrue(h2.load(restored));
         assertEquals("interrupted", restored.stage.name(),
                 "the run's process is gone, so it cannot be a real concurrency conflict");
+        // AND THE STATUS — the field every consumer actually reads. Without this assertion,
+        // `into.run.status = "MUTANT"` at H2StatePersistence:143 leaves the whole reactor green,
+        // which is how a deployment came to report status "running" with nothing executing and
+        // 21 units frozen mid-flight. The stage above is derived from this field in the same
+        // `if`; asserting only the derived half is asserting the shadow.
+        assertEquals("interrupted", restored.run.status,
+                "no process is behind a restored run, and the status is what says so");
     }
 
     @Test
     void aRunThatFINISHEDIsLeftAlone() {
         // the negative half: relabelling a finished run would invent an interruption that never
-        // happened, and the dashboard renders this stage
+        // happened, and the dashboard renders this stage. Guards the status write above against
+        // being made unconditional.
         H2StatePersistence h2 = new H2StatePersistence(store);
         State.Store written = storeWith(2);
         written.run.status = "done";
@@ -380,6 +388,7 @@ class SnapshotShapeTest extends StoreTestSupport {
         State.Store restored = new State.Store();
         assertTrue(h2.load(restored));
         assertEquals("idle", restored.stage.name());
+        assertEquals("done", restored.run.status, "a finished run is not an interrupted one");
     }
 
     private static IllegalArgumentException assertThrowsIllegalArgument(Runnable r) {

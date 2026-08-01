@@ -580,6 +580,9 @@ class StateTest {
         State.load();
         assertEquals("interrupted", State.STATE.stage.name());
         assertEquals("sidecar restarted", State.STATE.stage.detail());
+        // and the STATUS, which is what the page header, the API and any watching script read.
+        // Relabelling only the stage told the truth in the one place nothing looks.
+        assertEquals("interrupted", State.STATE.run.status);
         assertEquals("run-1", State.STATE.run.id);
         assertEquals(3, State.STATE.seq);
     }

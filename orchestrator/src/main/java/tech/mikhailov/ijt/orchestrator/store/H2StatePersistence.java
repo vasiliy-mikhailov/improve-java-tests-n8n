@@ -141,6 +141,14 @@ public class H2StatePersistence implements StatePersistence {
             // staleness window expires.
             if (into.run != null && "running".equals(into.run.status)) {
                 into.stage = new State.Stage("interrupted", "orchestrator restarted", Util.nowSec(), null);
+                // AND THE STATUS, which is the field every consumer actually reads. This line is
+                // where the observed lie came from: the stage above is SYNTHESISED here, in
+                // memory, out of `status == "running"` — it is not loaded from the row and never
+                // was. `IJT_RUN.STAGE_NAME` is NULL on every row this deployment has written,
+                // because the four StateRepository methods that would have written it have no
+                // production caller. So the stage was never a second, independent signal; it was
+                // this field wearing a different name, while this field went on saying `running`.
+                into.run.status = "interrupted";
             }
             // The store-level state that sits beside the run — see toRun. `runner` first,
             // because without it the resumed run has no build and every unit it touches fails.

@@ -16,6 +16,12 @@ h2 { font-size: 15px; margin: 26px 0 10px; color: #c9d1d9; }
 .stage.active #stage-name::after { content: ' ●'; color: #58a6ff; animation: blink 1.2s infinite; }
 .stage.done #stage-name { color: #3fb950; }
 .stage.failed #stage-name { color: #f85149; }
+/* Amber, and neither blue-active nor red-failed nor the default grey: a run that stopped
+   part-way is not a repo that has never run, and it is not a failure either — it is work that
+   needs someone to pick it up. Both states used to fall through to `idle`, which has no rule of
+   its own, so a dead run and an untouched repo rendered identically. */
+.stage.interrupted, .stage.stopped { border-color: #d29922; box-shadow: 0 0 0 1px #d2992233; }
+.stage.interrupted #stage-name, .stage.stopped #stage-name { color: #d29922; }
 .progress { font-family: ui-monospace, monospace; font-size: 12px; color: #7ee787; margin-top: 6px; min-height: 16px; }
 @keyframes blink { 50% { opacity: 0.2; } }
 

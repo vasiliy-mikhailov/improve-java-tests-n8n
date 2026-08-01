@@ -26,6 +26,8 @@ import javax.sql.DataSource;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// The job's shape, and the one property it exists for.
@@ -145,6 +147,42 @@ class ImproveJobTest {
         // bookmark: a kill between units cannot lose one that is already settled.
         assertTrue(improve.getCommitCount() >= 3,
                 "expected at least one commit per unit, got " + improve.getCommitCount());
+    }
+
+    /// A job that ends FAILED says so on the RUN, not only in the batch tables.
+    ///
+    /// Spring Batch always knew — the execution row recorded FAILED — while `run.status` went on
+    /// saying `running`, because the only writer of a terminal status fired solely when a POST
+    /// route threw. The unit failure below kills the job through a rethrow inside a GET, which
+    /// reached nothing at all. Observed on the deployment: 21 units improved, nothing executing,
+    /// status `running`, and a monitoring loop whose exit condition was `status=done|failed`
+    /// that could therefore never terminate.
+    @Test
+    void a_job_that_fails_marks_the_run_as_failed() throws Exception {
+        backend.queue.addAll(List.of("A.java::one", "B.java::two"));
+        backend.failOnUnit = "B.java::two";
+
+        JobExecution killed = jobs.launchJob(parameters("marks-failed"));
+
+        assertEquals(BatchStatus.FAILED, killed.getStatus());
+        assertTrue(backend.calls.contains("abortRun(failed)"),
+                "the job ended FAILED and the run was never told: " + backend.calls);
+        assertFalse(backend.calls.contains("finishRun"), "a failed job did not finish");
+        assertNotNull(backend.aborted, "the reason went nowhere");
+    }
+
+    @Test
+    void a_completed_job_does_not_abort_the_run() throws Exception {
+        // the negative half: finishStep already stamps a considered verdict, PR count and all,
+        // and a listener that fired on COMPLETED too would overwrite it with a generic one
+        backend.queue.addAll(List.of("A.java::one"));
+
+        JobExecution done = jobs.launchJob(parameters("no-abort"));
+
+        assertEquals(BatchStatus.COMPLETED, done.getStatus());
+        assertEquals(1L, backend.callCount("finishRun"));
+        assertTrue(backend.calls.stream().noneMatch(c -> c.startsWith("abortRun(")),
+                "a job that worked reported itself aborted: " + backend.calls);
     }
 
     @Test

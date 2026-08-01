@@ -301,6 +301,42 @@ class ServerTest {
         assertEquals(600L, w.get("etaSec"));
     }
 
+    /// A run that is not going has no pace, no ETA and no growing clock.
+    ///
+    /// These three are what made a dead run look busy. `picked` with a live `attemptStartedAt`
+    /// is exactly what a crash leaves behind, so machineHours grew a second per second while
+    /// nothing executed, and the ETA card went on predicting a future for a run that needed
+    /// someone to restart it first. Observed on the deployment, 21 units in, nothing running.
+    @Test
+    void aRunThatIsNotRunningReportsNoPaceAndNoGrowingClock() {
+        startRun();
+        long start = Util.nowSec() - 100;
+        put("a.java::x", unit("status", "improved", "spentSec", 300L));
+        put("b.java::y", unit("status", "picked", "attemptStartedAt", start));
+        put("c.java::z", unit("status", "candidate"));
+
+        // while it is running, both are reported
+        Map<String, Object> running = work();
+        assertNotNull(running.get("etaSec"));
+        assertEquals(0.11, running.get("machineHours"));   // 300s settled + 100s live
+
+        State.STATE.run.status = "interrupted";
+        Map<String, Object> dead = work();
+        assertNull(dead.get("etaSec"), "an ETA for a run nobody is running");
+        assertEquals(0.08, dead.get("machineHours"), "the stopwatch kept ticking on a dead run");
+    }
+
+    @Test
+    void metricsReportsHowLongTheStageHasBeenStill() {
+        // Already computed for the run/start 409 message and never put on the wire, so the page
+        // could not tell a slow unit from a stopped pipeline.
+        startRun();
+        State.setStage("improving", "a.java::x");
+        State.STATE.stage = new State.Stage(State.STATE.stage.name(), State.STATE.stage.detail(),
+                Util.nowSec() - 240, null);
+        assertEquals(240L, State.asLong(work().get("idleSec")), 1.0);
+    }
+
     @Test
     void tokensPerImprovedIsNullUntilSomethingHasBeenImproved() {
         startRun();
@@ -651,6 +687,9 @@ class ServerTest {
                 "GET /api/health", "GET /api/state", "GET /api/metrics", "GET /api/llm/log",
                 "GET /api/rules", "GET /api/events", "GET /api/files/candidates", "GET /api/files/gaps",
                 "POST /api/stage", "POST /api/run/start", "POST /api/run/finish",
+                // resume, not start: reopening the run a crash left terminal, without clearing
+                // the files, decisions and events that `start` exists to clear
+                "POST /api/run/resume",
                 "POST /api/repo/clone", "POST /api/repo/prepare", "POST /api/coverage/run",
                 "POST /api/rules/apply", "POST /api/iteration/start", "POST /api/pit/run",
                 "POST /api/prompt/coverage", "POST /api/prompt/mutation", "POST /api/prompt/batch",
@@ -662,7 +701,7 @@ class ServerTest {
                 "POST /api/iteration/discard", "POST /api/admin/purge-repo", "POST /api/admin/reset")) {
             assertTrue(routes.containsKey(key), "missing route: " + key);
         }
-        assertEquals(38, routes.size(), "a route was added or removed without updating the workflow");
+        assertEquals(39, routes.size(), "a route was added or removed without updating the workflow");
     }
 
     // ── the composition root ──────────────────────────────────────────────────

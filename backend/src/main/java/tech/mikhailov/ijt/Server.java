@@ -349,9 +349,15 @@ public final class Server {
         double humanMin = files.stream().mapToDouble(f -> State.asLong(timesheetField(f, "totalMin"))).sum();
         double machineSec = files.stream().mapToDouble(f -> State.asLong(f.get("spentSec"))).sum();
         // only the file currently being worked on has a live stopwatch; a crashed attempt must
-        // not keep accruing time forever
+        // not keep accruing time forever.
+        //
+        // AND THE RUN ITSELF HAS TO BE ALIVE. `picked` with a live `attemptStartedAt` is exactly
+        // what a crash leaves behind, so this loop kept adding a second per second to a run
+        // nothing was executing — the one number on the page that MOVED while nothing happened,
+        // which reads as progress more convincingly than any static counter.
+        boolean live = state().run != null && "running".equals(state().run.status);
         for (Map<String, Object> f : files) {
-            if (State.jsTruthy(f.get("attemptStartedAt")) && "picked".equals(str(f.get("status")))) {
+            if (live && State.jsTruthy(f.get("attemptStartedAt")) && "picked".equals(str(f.get("status")))) {
                 machineSec += now - State.asLong(f.get("attemptStartedAt"));
             }
         }
@@ -394,7 +400,14 @@ public final class Server {
         work.put("fte", comparableMachineSec > 600
                 ? Util.round2((comparableHumanMin * 60) / comparableMachineSec) : null);
         work.put("fteBasis", comparable.size());
-        work.put("etaSec", avgSecPerFile != null ? Math.round(remaining * avgSecPerFile) : null);
+        // No ETA for a run that is not going. "at current pace, 303 file(s) left" is a
+        // prediction about a future that requires someone to restart it first; suppressed here
+        // rather than in the page so the contract is pinned by a test that needs no browser.
+        work.put("etaSec", live && avgSecPerFile != null ? Math.round(remaining * avgSecPerFile) : null);
+        // How long the stage has been still. Already computed in the run/start 409 message and
+        // never put on the wire, so the page had no way to distinguish a slow unit from a dead
+        // run — the dashboard reads this in setBanner.
+        work.put("idleSec", state().stage == null ? 0L : Math.max(0L, now - state().stage.since()));
         work.put("settled", settled.size());
         work.put("improved", improvedCount);
         work.put("totalFiles", files.size());
@@ -1192,12 +1205,49 @@ public final class Server {
             return out;
         });
 
+        // THE REOPEN. A terminal status is now written the moment nothing is executing the run
+        // (see RunOutcomeListener and the boot restore), which makes resuming it a state change
+        // rather than a no-op — and one that must happen BEFORE the first unit, because
+        // ServerBackend.failRun returns early unless the status is "running" and would otherwise
+        // silence every failure for the rest of the resumed run.
+        //
+        // Deliberately NOT `POST /api/run/start`: that clears state.files, the decisions and the
+        // event log, which would throw away the candidates and measurements the dead run left
+        // behind — exactly what resuming exists to keep.
+        r.put("POST /api/run/resume", (q, body) -> {
+            needRun();
+            state().run.status = "running";
+            state().run.finishedAt = null;
+            State.setStage("starting", "resuming run " + state().run.id + " at the next unit");
+            State.save();
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", true);
+            out.put("run", state().run);
+            return out;
+        });
+
         r.put("POST /api/run/finish", (q, body) -> {
             needRun();
+            // `ifRunning`: stamp only a run nobody has stamped yet. The job's terminal listener
+            // reports every non-COMPLETED ending, and for a POST route that threw, failRun has
+            // already written the ACTUAL exception — a generic "the job ended FAILED" landing on
+            // top of it would replace the one message that says what broke.
+            if (State.jsTruthy(body.get("ifRunning")) && !"running".equals(state().run.status)) {
+                Map<String, Object> skipped = new LinkedHashMap<>();
+                skipped.put("ok", true);
+                skipped.put("skipped", "already " + state().run.status);
+                return skipped;
+            }
             state().run.status = or(body.get("status"), "done");
             state().run.finishedAt = Util.nowSec();
-            State.setStage("done", "run finished: " + state().run.status + "; "
-                    + state().prs.size() + " PR(s)");
+            // The stage says what the status says. It used to be the literal "done" whatever the
+            // status was, so a run that FAILED got a green Done banner over it — and this route
+            // is the one thing that ends a run, so that was every failure the pipeline could
+            // report about itself.
+            String status = state().run.status;
+            State.setStage("done".equals(status) ? "done" : status,
+                    or(body.get("detail"), "run finished: " + status + "; "
+                            + state().prs.size() + " PR(s)"));
             try {
                 Repo.resetToBase();
             } catch (RuntimeException e) {

@@ -176,6 +176,12 @@ public final class ServerBackend implements Backend {
         return post("POST /api/run/finish", body());
     }
 
+    @Override
+    public Map<String, Object> abortRun(String status, String detail) {
+        return post("POST /api/run/finish", body("status", status, "detail", detail,
+                "ifRunning", true));
+    }
+
     // ── dispatch ──────────────────────────────────────────────────────────────
 
     private Map<String, Object> get(String key, Server.Query query) {

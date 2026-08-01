@@ -95,53 +95,8 @@ class RunStoreTest extends StoreTestSupport {
                 () -> assertTrue(run.getFinishedAt() != null && run.getFinishedAt() > 0));
     }
 
-    /// A hung run was recoverable ONLY because the state survived a container restart: the
-    /// backend read it back and marked it `interrupted` rather than pretending it was idle.
-    ///
-    /// The STAGE moves; the STATUS does not. `POST /api/run/start` reads the stage to decide
-    /// whether a live run may be taken over, and a status of `done` here would make a hung run
-    /// look finished and lose the only route that ever recovered one.
-    @Test
-    void aRunLeftRunningIsMarkedInterruptedOnBoot() {
-        store.startRun(newRun("run-1", REPO));
-        reload();
 
-        store.markInterruptedIfRunning();
-        reload();
 
-        Run run = store.currentRun().orElseThrow();
-        assertAll(
-                () -> assertEquals("interrupted", run.getStageName()),
-                () -> assertEquals("running", run.getStatus(), "the status must stay takeover-able"),
-                () -> assertTrue(run.getStageSince() > 0));
-    }
-
-    @Test
-    void aFinishedRunIsNotMarkedInterrupted() {
-        store.startRun(newRun("run-1", REPO));
-        store.finishRun("run-1", "done");
-        reload();
-
-        store.markInterruptedIfRunning();
-        reload();
-
-        assertEquals("done", store.currentRun().orElseThrow().getStatus());
-    }
-
-    /// The stage's `since` is the clock `run/start` measures staleness against, so the store
-    /// stamps it rather than trusting a caller's.
-    @Test
-    void settingAStageStampsItsOwnClock() {
-        store.startRun(newRun("run-1", REPO));
-        store.setStage("run-1", "improving_mutation", "XML#toJSONObject()");
-        reload();
-
-        Run run = store.currentRun().orElseThrow();
-        assertAll(
-                () -> assertEquals("improving_mutation", run.getStageName()),
-                () -> assertEquals("XML#toJSONObject()", run.getStageDetail()),
-                () -> assertTrue(run.getStageSince() > 0));
-    }
 
     /// Token usage lands on the run AND on the unit being improved. Every completion counts,
     /// including retries and repairs: the cost of a unit is everything spent getting there.

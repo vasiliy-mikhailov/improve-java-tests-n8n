@@ -351,6 +351,19 @@ final class FakeBackend implements Backend {
         return ok();
     }
 
+    /// The status is IN the recorded call, so a test can tell `failed` from `stopped` — the
+    /// difference between a run that broke and one a person ended, which the page renders
+    /// differently and a reader needs.
+    @Override
+    public Map<String, Object> abortRun(String status, String detail) {
+        calls.add("abortRun(" + status + ")");
+        aborted = detail;
+        return ok();
+    }
+
+    /// The detail of the last abort, for asserting that the reason survived the trip.
+    public String aborted;
+
     /// `{ok: true}`, as every route answers.
     private static Map<String, Object> ok() {
         Map<String, Object> out = new LinkedHashMap<>();

@@ -15,6 +15,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import tech.mikhailov.ijt.Feedback;
 import tech.mikhailov.ijt.Repo;
 import tech.mikhailov.ijt.State;
+import tech.mikhailov.ijt.Util;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -291,6 +292,35 @@ class DashboardUiTest {
             String shown = page.locator("#fb-existing details.about pre").first().innerText();
             assertTrue(shown.contains("escapesAmp"), "expected the ORIGINAL test body, got: " + shown);
             assertFalse(shown.contains("rewritten"), "that is the new test, not the one commented on");
+        }
+    }
+
+    /// An interrupted run does not look like a healthy one.
+    ///
+    /// This is the whole symptom, rendered. A deploy restarted the container mid-run and the
+    /// page showed: the same grey banner a never-run repo shows, a growing machine-time figure,
+    /// and "at current pace, 303 file(s) left" — a prediction about a run that needed someone to
+    /// restart it. Every counter was frozen-but-plausible and the one number that MOVED was the
+    /// clock on a unit nothing was working on.
+    @Test
+    void anInterruptedRunIsNotRenderedAsAHealthyOne() {
+        State.STATE.run.status = "interrupted";
+        State.STATE.stage = new State.Stage("interrupted", "orchestrator restarted",
+                Util.nowSec() - 240, null);
+        State.upsertFile("src/main/java/org/json/XML.java::pick", Map.of(
+                "status", "candidate", "path", "src/main/java/org/json/XML.java", "method", "pick"));
+
+        try (Page page = open()) {
+            page.waitForFunction("() => document.getElementById('stage-banner')"
+                    + ".className.includes('interrupted')");
+
+            String banner = page.locator("#stage-banner").getAttribute("class");
+            assertFalse(banner.contains("idle"), "styled as a repo that has never run: " + banner);
+            assertTrue(page.locator("#stage-name").innerText().contains("Interrupted"));
+            assertTrue(page.locator("#stage-detail").innerText().contains("idle"),
+                    "no sign of how long it has been still: " + page.locator("#stage-detail").innerText());
+            assertEquals("–", page.locator("#c-eta").innerText());
+            assertEquals("run not progressing", page.locator("#c-eta-d").innerText());
         }
     }
 

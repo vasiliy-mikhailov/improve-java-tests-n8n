@@ -53,8 +53,6 @@ abstract class StoreTestSupport {
         run.setRepoBranch("main");
         run.setStatus("running");
         run.setStartedAt(Util.nowSec());
-        run.setStageName("starting");
-        run.setStageSince(Util.nowSec());
         run.setConfig(new LinkedHashMap<>(Map.of("repoUrl", repoUrl, "maxAttemptsPerFile", 3)));
         return run;
     }

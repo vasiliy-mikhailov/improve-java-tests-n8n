@@ -71,6 +71,7 @@ public class RunLauncher {
 
     /// The route the workflow called before its first node, keyed as `Server.routes()` keys it.
     private static final String RUN_START = "POST /api/run/start";
+    private static final String RUN_RESUME = "POST /api/run/resume";
 
     private static final String CRASHED =
             "left running by a process that is no longer here — marked failed at boot so it can be restarted";
@@ -134,7 +135,13 @@ public class RunLauncher {
         // measurements the crashed run left behind, which is exactly what resuming is for. The
         // run object it created is still in the store, and `State.load()` has already re-labelled
         // it `interrupted`.
-        String runId = resume != null ? currentRunId() : startRun(body);
+        // resumeRun, not currentRunId. A crash now leaves a TERMINAL status behind — that is
+        // what the boot restore and the job's terminal listener write — so picking the run up
+        // again has to reopen it. Skipping that would leave the resumed run reporting
+        // `interrupted` while it worked, and worse: `ServerBackend.failRun` returns early unless
+        // the status is `running`, so every failure for the rest of the resumed run would be
+        // swallowed silently.
+        String runId = resume != null ? resumeRun() : startRun(body);
         try {
             JobExecution execution = launcher.run(improveJob, params);
             log.info("{} {} as job execution {} (instance {})", resume != null ? "resumed" : "started",
@@ -356,6 +363,25 @@ public class RunLauncher {
     }
 
     /// The id of the run in the store, for a resume — the response names a run either way.
+    /// Reopen the run this job instance belongs to, through the route that owns the state.
+    ///
+    /// NOT `POST /api/run/start`: that clears state.files, the decisions and the event log, which
+    /// is exactly the work a resume exists to keep — see the comment on the caller.
+    private String resumeRun() {
+        Server.Route resume = Server.routes().get(RUN_RESUME);
+        try {
+            Object answer = resume.handle(Server.Query.EMPTY, Map.of());
+            Object run = answer instanceof Map<?, ?> m ? m.get("run") : null;
+            return run instanceof State.Run r ? r.id : currentRunId();
+        } catch (IOException | RuntimeException e) {
+            // A resume that cannot reopen the run is still a resume worth attempting: the job
+            // will run, and the worst case is the status a boot restore already set. Failing the
+            // trigger here would turn a recoverable crash into an unstartable one.
+            log.warn("run {} could not be reopened before resuming: {}", currentRunId(), e.toString());
+            return currentRunId();
+        }
+    }
+
     private String currentRunId() {
         synchronized (State.STATE) {
             return State.STATE.run == null ? null : State.STATE.run.id;

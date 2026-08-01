@@ -26,6 +26,7 @@ import org.springframework.http.HttpStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import tech.mikhailov.ijt.State;
+import tech.mikhailov.ijt.Util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -134,6 +135,35 @@ class RunLauncherTest {
         // AND NO NEW RUN. run/start clears state.files, the decisions and the event log — the
         // candidate units that survived the crash are exactly what the resume is for.
         assertNull(State.STATE.run);
+    }
+
+    /// A resumed run is reopened before the first unit.
+    ///
+    /// THE CASE NO TEST COVERED. Every resume test here nulls the run in setUp, so the resume
+    /// branch was only ever exercised with nothing to reopen — which is why it could be a
+    /// no-op and stay green. A crash now leaves a TERMINAL status behind, and resuming under it
+    /// is worse than cosmetic: ServerBackend.failRun returns early unless the status is
+    /// `running`, so every failure for the rest of the resumed run would be swallowed.
+    @Test
+    void aResumedRunIsReopenedAsRunning() {
+        synchronized (State.STATE) {
+            State.STATE.run = State.freshRun(State.envConfig(k -> null), Map.of("repoUrl", "https://example.invalid/o/r"));
+            State.STATE.run.status = "interrupted";      // what the boot restore leaves
+            State.STATE.run.finishedAt = Util.nowSec();
+        }
+        Map<String, Object> body = Map.of("scopeLimit", 25);
+        JobParameters original = parameters.forNewRun(body, 1234L);
+        JobInstance instance = new JobInstance(4L, JOB);
+        JobExecution crashed = new JobExecution(instance, 11L, original);
+        crashed.setStatus(BatchStatus.FAILED);
+        when(explorer.getJobInstances(JOB, 0, 1)).thenReturn(List.of(instance));
+        when(explorer.getJobExecutions(instance)).thenReturn(List.of(crashed));
+
+        RunLauncher.Launched result = launcher.launch(body);
+
+        assertTrue(result.resumed());
+        assertEquals("running", State.STATE.run.status, "the resumed run still reports itself dead");
+        assertNull(State.STATE.run.finishedAt, "a run that is going again has not finished");
     }
 
     @Test

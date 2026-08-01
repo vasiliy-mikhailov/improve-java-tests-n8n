@@ -128,4 +128,11 @@ public interface Backend {
 
     /// `POST /api/run/finish`.
     Map<String, Object> finishRun();
+
+    /// `POST /api/run/finish` with a terminal status that is not `done`.
+    ///
+    /// Separate from {@link #finishRun()} because the caller is different in kind: finishRun is
+    /// the last step of a job that worked, this is a listener reporting that the job did not.
+    /// Same route — ending a run is one operation and should stay one.
+    Map<String, Object> abortRun(String status, String detail);
 }

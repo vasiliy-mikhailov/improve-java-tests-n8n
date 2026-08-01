@@ -34,12 +34,23 @@ public class Run {
     @Column(name = "repo_branch", length = 256)
     private String repoBranch;
 
-    /// `running` | `done` | `failed` — whatever `POST /api/run/finish` was given.
+    /// `running` | `done` | `failed` | `stopped` | `interrupted`.
     ///
-    /// Deliberately NOT set to `interrupted` on a restart: `State.load` moves the STAGE to
-    /// interrupted and leaves the status alone, and `POST /api/run/start` reads the stage to
-    /// decide whether a run is genuinely active. Writing `interrupted` here instead would make
-    /// a hung run look finished and lose the takeover path that recovered it.
+    /// TERMINAL IFF NO PROCESS IS EXECUTING THE RUN. That is the whole rule, and it is written
+    /// at the three points that can observe it: `POST /api/run/finish` when the job completes,
+    /// `RunOutcomeListener` when the job ends any other way, and the boot restore when the JVM
+    /// that owned the run is provably gone.
+    ///
+    /// This comment used to say the opposite — that `interrupted` is deliberately NOT written
+    /// here, because the STAGE carries it and `run/start` reads the stage to decide whether a
+    /// run is genuinely active. The stage never survived the process: the columns that would
+    /// have carried it had no writer, and the stage a restarted instance reports is synthesised
+    /// in memory from this field. So the field every consumer reads went on saying `running`
+    /// while nothing ran, and neither half of the supposed pair was true.
+    ///
+    /// The takeover path the old comment protected is intact: `run/start` still reads the stage,
+    /// and a terminal status makes its `active` check false through the FIRST clause instead of
+    /// the second. Nothing is lost by telling the truth twice.
     @Column(name = "status", length = 32)
     private String status;
 
@@ -125,25 +136,14 @@ public class Run {
     @Column(name = "pick_failures")
     private Integer pickFailures;
 
-    // ── the stage ─────────────────────────────────────────────────────────────
-    // Not in the design's table list, and here because state.json is gone and there is nowhere
-    // else for it: `POST /api/run/start` decides whether a live run may be taken over from the
-    // stage's name and how long it has been there, and boot recovery marks a run `interrupted`
-    // by moving its stage. Both need the stage to survive the process.
-    //
-    // `Stage.progress` — the last line the child process printed — is deliberately NOT
-    // persisted. It changes several times a second, it is a liveness signal rather than a
-    // record, and a stale one restored from disk would claim a dead subprocess is still talking.
-
-    @Column(name = "stage_name", length = 64)
-    private String stageName;
-
-    @Column(name = "stage_detail", length = 1024)
-    private String stageDetail;
-
-    /// Epoch seconds the current stage was entered — the `idle` window `run/start` measures.
-    @Column(name = "stage_since")
-    private long stageSince;
+    // ── the stage IS NOT HERE, and was not before either ──────────────────────
+    // Three columns stood here — stage_name, stage_detail, stage_since — with a comment
+    // explaining that the stage must survive the process. Nothing ever wrote them. The only
+    // live writer of this row (H2StatePersistence.toRun) never set them and the only live
+    // reader (fromRow) never read them, so they were NULL on every row in the deployment while
+    // the design was believed to depend on them. Deleted rather than wired: the stage a
+    // restarted instance needs is derivable from `status`, which is durable, and one durable
+    // fact beats two that disagree. With ddl-auto:update the columns simply linger unused.
 
     // ── run-scoped blobs ──────────────────────────────────────────────────────
     // Each of these resets with the run, and gets that for free by living on the run's row:
@@ -272,18 +272,6 @@ public class Run {
     public Integer getPickFailures() { return pickFailures; }
 
     public void setPickFailures(Integer pickFailures) { this.pickFailures = pickFailures; }
-
-    public String getStageName() { return stageName; }
-
-    public void setStageName(String stageName) { this.stageName = stageName; }
-
-    public String getStageDetail() { return stageDetail; }
-
-    public void setStageDetail(String stageDetail) { this.stageDetail = stageDetail; }
-
-    public long getStageSince() { return stageSince; }
-
-    public void setStageSince(long stageSince) { this.stageSince = stageSince; }
 
     public Map<String, Object> getRunner() { return runner; }
 
