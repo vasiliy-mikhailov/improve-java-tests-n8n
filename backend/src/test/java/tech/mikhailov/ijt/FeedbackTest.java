@@ -10,6 +10,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -148,6 +149,83 @@ class FeedbackTest {
         for (Map<String, Object> a : Feedback.join(repo)) {
             assertEquals(1, ((List<?>) a.get("feedback")).size());
         }
+    }
+
+    /// The author is written WITH the line, not attached to the response afterwards.
+    ///
+    /// It used to be `item.put("author", …)` in the route, applied to the map that had already
+    /// been appended to the file. The caller got their name back in the response and the stored
+    /// line had no author at all, so every comment in the corpus read as "someone" — including
+    /// four I had posted and believed were attributed. Found by being asked to prove that a
+    /// comment was really there.
+    @Test
+    void theAuthorIsStoredWithTheComment(@TempDir Path tmp) throws Exception {
+        Path repo = gitRepo(tmp);
+        Feedback.feedback(repo, REPO_URL, null, "no mocks", true, -1, "Claude");
+
+        Map<String, Object> stored = Feedback.lines(repo).stream()
+                .filter(l -> "feedback".equals(l.get("kind"))).findFirst().orElseThrow();
+        assertEquals("Claude", stored.get("author"), "the file, not the response: " + stored);
+    }
+
+    @Test
+    void anAnonymousCommentCarriesNoAuthorKeyAtAll(@TempDir Path tmp) throws Exception {
+        // absent, rather than the string "null" or an empty string that renders as a blank name
+        Path repo = gitRepo(tmp);
+        Feedback.feedback(repo, REPO_URL, null, "no mocks", true, null, "  ");
+        Map<String, Object> stored = Feedback.lines(repo).stream()
+                .filter(l -> "feedback".equals(l.get("kind"))).findFirst().orElseThrow();
+        assertFalse(stored.containsKey("author"), stored.toString());
+    }
+
+    @Test
+    void oneCommentOnAUnitIsOneCommentHoweverManyAttemptsItHas(@TempDir Path tmp) throws Exception {
+        // The join attaches a unit-targeted comment to EVERY attempt for that unit. With two
+        // attempts the dashboard showed the same sentence twice, which reads as two people
+        // saying it. The dedup is in app.js; this pins the shape the join returns so the two
+        // cannot drift apart.
+        Path repo = gitRepo(tmp);
+        Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
+        Feedback.attempt(repo, REPO_URL, ROUND + "b", UNIT, Map.of(), tests(), List.of());
+        Feedback.feedback(repo, REPO_URL, UNIT, "asserts on the message rather than the type", false, -1, "Claude");
+
+        List<Map<String, Object>> joined = Feedback.join(repo);
+        assertEquals(2, joined.size(), "two attempts");
+        // every attempt carries it — that is the join's contract
+        for (Map<String, Object> a : joined) assertEquals(1, ((List<?>) a.get("feedback")).size());
+        // and it is ONE comment, distinguishable by id, so a reader can collapse it
+        java.util.Set<Object> ids = new java.util.HashSet<>();
+        for (Map<String, Object> a : joined) {
+            for (Object fb : (List<?>) a.get("feedback")) ids.add(((Map<?, ?>) fb).get("id"));
+        }
+        assertEquals(1, ids.size(), "the same comment must carry the same id on every record");
+    }
+
+    /// Two comments in the same second are two comments.
+    ///
+    /// The id was `"fb-" + epochSECONDS`, so anything said about the same unit inside one second
+    /// carried the SAME id. Nothing noticed while ids were only decorative; the moment the
+    /// dashboard deduplicated by id — which it must, because the join hands it one comment once
+    /// per attempt — the second comment silently disappeared from the page while sitting in the
+    /// file. Two people reviewing a unit together is exactly when that happens.
+    @Test
+    void twoCommentsInTheSameSecondAreTwoComments(@TempDir Path tmp) throws Exception {
+        Path repo = gitRepo(tmp);
+        Map<String, Object> first = Feedback.feedback(repo, REPO_URL, UNIT, "asserts nothing", false, -1, "a");
+        Map<String, Object> second = Feedback.feedback(repo, REPO_URL, UNIT, "and it mocks the world", false, -1, "b");
+
+        assertNotEquals(first.get("id"), second.get("id"),
+                "same id, so a reader that collapses duplicates loses one: " + first.get("id"));
+    }
+
+    @Test
+    void twoAttemptsInOneRoundAndOneSecondAreTellableApart(@TempDir Path tmp) throws Exception {
+        // generation then repair, inside one round — a per-TEST critique targets an attempt id,
+        // and two attempts sharing one would attach the critique to the wrong test as well
+        Path repo = gitRepo(tmp);
+        String a = Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
+        String b = Feedback.attempt(repo, REPO_URL, ROUND, UNIT, Map.of(), tests(), List.of());
+        assertNotEquals(a, b, a);
     }
 
     @Test

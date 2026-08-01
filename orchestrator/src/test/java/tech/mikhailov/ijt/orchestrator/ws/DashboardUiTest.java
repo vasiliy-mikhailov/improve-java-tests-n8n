@@ -189,6 +189,66 @@ class DashboardUiTest {
         }
     }
 
+    /// One comment, said once, listed once.
+    ///
+    /// A unit-targeted comment attaches to EVERY attempt for that unit — that is the join's
+    /// contract, so the pipeline sees it whichever record it reads. The dashboard was rendering
+    /// the joined list verbatim, so a unit with two attempts showed the same sentence twice: it
+    /// reads as two people independently complaining, which is exactly the signal a person uses
+    /// to decide a critique is worth acting on.
+    ///
+    /// Found by being asked to prove a comment was really stored. It was, twice over.
+    @Test
+    void aCommentIsListedOnceHoweverManyAttemptsTheUnitHas() throws Exception {
+        Feedback.attempt(Repo.repoDir(), REPO_URL, "run-1|u|a1|r2", "src/main/java/org/json/XML.java::escape",
+                Map.of("methodSource", "public static String escape(String s) { return s; }"),
+                List.of(Map.of("path", "src/test/java/org/json/XMLEscapeMacMutTest.java",
+                        "content", "class XMLEscapeMacMutTest { }")),
+                List.of("no mocks"));
+
+        try (Page page = open()) {
+            page.locator("button.say").first().click();
+            page.waitForSelector("#fb[open]");
+
+            Locator said = page.locator("#fb-existing div");
+            assertEquals(1, said.count(),
+                    "the same comment is listed " + said.count() + " times: "
+                            + page.locator("#fb-existing").innerText());
+        }
+    }
+
+    /// The name a person types is the name that comes back.
+    ///
+    /// The route used to put the author on the RESPONSE map after the line had already been
+    /// appended, so the caller was handed back their own name while the stored line had no
+    /// author at all. Every comment in the corpus rendered as "someone" — including several I
+    /// had signed. This drives the whole path: type a name, save, reopen, read it back.
+    @Test
+    void theCommentComesBackAttributedToWhoeverSignedIt() {
+        try (Page page = open()) {
+            page.locator("button.say").first().click();
+            page.waitForSelector("#fb[open]");
+            page.locator("#fb-text").fill("asserts on the exception message rather than its type");
+            page.locator("#fb-author").fill("Claude");
+            page.locator("#fb-save").click();
+            page.waitForFunction("() => document.getElementById('fb-status').textContent.length > 0");
+
+            // The form is method="dialog": saving closes it, and the refresh it kicks off is a
+            // separate fetch. The history is rendered ONLY when the dialog opens, so reopening
+            // before that fetch lands shows the stale list and never updates — wait for the
+            // comment to be back from the API first, then reopen.
+            page.waitForFunction(
+                    "() => (FB_BY_TARGET['src/main/java/org/json/XML.java::escape'] || [])"
+                            + ".some(f => f.text.includes('exception message'))");
+            page.locator("button.say").first().click();
+            page.waitForSelector("#fb[open]");
+
+            String history = page.locator("#fb-existing").innerText();
+            assertTrue(history.contains("Claude"), "not attributed: " + history);
+            assertTrue(history.contains("exception message"), history);
+        }
+    }
+
     // ── the layout bug a screenshot caught and no test did ────────────────
 
     @Test

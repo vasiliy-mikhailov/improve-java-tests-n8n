@@ -463,9 +463,16 @@ async function pollFeedbackCounts() {
     // asking someone to repeat themselves
     FB_BY_TARGET = {};
     FB_RECORD = {};
+    const seenFb = new Set();
     for (const rec of (d.records || [])) {
       for (const fb of (rec.feedback || [])) {
+        // ONE comment is one comment. The join attaches a unit-targeted comment to EVERY record
+        // for that unit, so a unit with two attempts showed the same sentence twice — which
+        // reads as two people saying it, and makes a single complaint look like a chorus.
         const k = fb.target || rec.unit;
+        const id = (fb.id || fb.ts) + '|' + k;
+        if (seenFb.has(id)) continue;
+        seenFb.add(id);
         (FB_BY_TARGET[k] = FB_BY_TARGET[k] || []).push(fb);
       }
       // newest wins: a unit is retried, and the last thing written for it is the one in the PR

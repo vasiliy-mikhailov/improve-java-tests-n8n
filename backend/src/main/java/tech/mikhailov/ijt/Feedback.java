@@ -55,6 +55,19 @@ public final class Feedback {
 
     static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /// What makes two records written in the same second tellable apart.
+    ///
+    /// Ids used to be the epoch SECOND alone, which is coarser than the things being identified:
+    /// generation and repair land inside one round milliseconds apart, and two people reviewing a
+    /// unit together comment inside one second routinely. Identical ids are harmless right up to
+    /// the moment something collapses duplicates — the dashboard must, because {@link #join}
+    /// hands it one comment once per attempt — and then the second record vanishes from the page
+    /// while sitting in the file.
+    ///
+    /// A process-wide counter rather than milliseconds: it cannot repeat however fast the clock
+    /// is read, and it survives a clock that steps backwards.
+    private static final java.util.concurrent.atomic.AtomicLong SEQ = new java.util.concurrent.atomic.AtomicLong();
+
     public static Path fileIn(Path repoRoot) {
         return repoRoot.resolve(FILE_NAME);
     }
@@ -73,7 +86,7 @@ public final class Feedback {
                                  Map<String, Object> code, List<Map<String, Object>> tests,
                                  List<String> writeTestRule) {
         Map<String, Object> row = new LinkedHashMap<>();
-        String id = roundId + "#" + Util.nowSec();
+        String id = roundId + "#" + Util.nowSec() + "-" + SEQ.incrementAndGet();
         row.put("v", 1);
         row.put("kind", "attempt");
         row.put("id", id);
@@ -123,14 +136,24 @@ public final class Feedback {
     /// loop and the GEPA corpus.
     public static Map<String, Object> feedback(Path repoRoot, String repoUrl, String target,
                                                String text, boolean apply, Integer rating) {
+        return feedback(repoRoot, repoUrl, target, text, apply, rating, null);
+    }
+
+    /// @param author who said it, or null. Persisted WITH the line — it used to be attached to
+    ///               the response map after the line had already been appended, so every stored
+    ///               comment read as "someone" while the caller was told their name was recorded.
+    public static Map<String, Object> feedback(Path repoRoot, String repoUrl, String target,
+                                               String text, boolean apply, Integer rating,
+                                               String author) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("v", 1);
         row.put("kind", "feedback");
-        row.put("id", "fb-" + Util.nowSec());
+        row.put("id", "fb-" + Util.nowSec() + "-" + SEQ.incrementAndGet());
         row.put("ts", Util.nowSec());
         row.put("target", target == null || target.isEmpty() ? null : target);
         row.put("apply", apply && (target == null || target.isEmpty()));
         row.put("rating", rating);
+        if (author != null && !author.isBlank()) row.put("author", author);
         row.put("text", text == null ? "" : text);
         append(repoRoot, repoUrl, row);
         return row;

@@ -1881,8 +1881,8 @@ public final class Server {
         String target = State.jsTruthy(body.get("target")) ? str(body.get("target")) : str(body.get("file"));
         Map<String, Object> item = Feedback.feedback(repo, repoUrl,
                 target, text,
-                State.jsTruthy(body.get("apply")), intOrNull(body.get("rating")));
-        if (State.jsTruthy(body.get("author"))) item.put("author", str(body.get("author")));
+                State.jsTruthy(body.get("apply")), intOrNull(body.get("rating")),
+                str(body.get("author")));
         // NO State.event HERE, and this is not a style preference — it killed a run.
         //
         // This method runs on a WEB thread while the batch thread is writing events of its own.
