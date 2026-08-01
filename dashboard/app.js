@@ -450,6 +450,7 @@ let FB_COUNTS = {};
 // Kept in one poll because the three consumers — the badge, the guidance list and the
 // dialog's history — all read the same document.
 let FB_BY_TARGET = {};
+let FB_RECORD = {};
 
 async function pollFeedbackCounts() {
   try {
@@ -461,11 +462,15 @@ async function pollFeedbackCounts() {
     // per-unit comments, so the dialog can show what has already been said rather than
     // asking someone to repeat themselves
     FB_BY_TARGET = {};
+    FB_RECORD = {};
     for (const rec of (d.records || [])) {
       for (const fb of (rec.feedback || [])) {
         const k = fb.target || rec.unit;
         (FB_BY_TARGET[k] = FB_BY_TARGET[k] || []).push(fb);
       }
+      // newest wins: a unit is retried, and the last thing written for it is the one in the PR
+      const prev = FB_RECORD[rec.unit];
+      if (!prev || (rec.ts || 0) >= (prev.ts || 0)) FB_RECORD[rec.unit] = rec;
     }
   } catch (err) { /* the badge is not worth an error banner */ }
 }
@@ -494,6 +499,26 @@ document.addEventListener('click', (e) => {
   document.getElementById('fb-text').value = '';
   document.getElementById('fb-status').textContent = '';
   document.getElementById('fb-apply').checked = false;
+  // THE THING BEING JUDGED. Asking someone to comment on a test without showing them the test
+  // is asking them to remember it; the record has been in the API all along and nothing read it.
+  const pane = document.getElementById('fb-record');
+  const rec = FB_RECORD[fbFile];
+  if (!rec) {
+    pane.hidden = false;
+    pane.innerHTML = '<p class="none">No generated test recorded for this unit yet.</p>';
+  } else {
+    pane.hidden = false;
+    const o = rec.outcome || {};
+    const before = (o.before || {}).mac, after = (o.after || {}).mac;
+    const score = o.verdict
+      ? `${esc(o.verdict)}${before != null ? ` · MAC ${esc(before)} → ${esc(after)}` : ''}`
+      : 'not yet measured';
+    const src = (rec.code || {}).methodSource || '(source not captured)';
+    const tests = (rec.tests || []).map((t) => `<h4>${esc((t.path || '').split('/').pop())}</h4>`
+      + `<pre>${esc(t.content || '')}</pre>`).join('');
+    pane.innerHTML = `<div class="score">${score}</div>`
+      + `<h4>method under test</h4><pre>${esc(src)}</pre>` + tests;
+  }
   // what has already been said about this unit
   const box = document.getElementById('fb-existing');
   const said = FB_BY_TARGET[fbFile] || [];

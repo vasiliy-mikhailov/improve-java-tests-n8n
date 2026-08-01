@@ -73,10 +73,10 @@
 <dialog id="fb">
   <form method="dialog" id="fb-form">
     <h3 id="fb-title">Feedback</h3>
-    <p class="fb-hint">Stored in the repo's <code>ijt-feedback.jsonl</code> next to the prompt that
-      wrote these tests, the tests themselves and how they scored — that whole record is what a
-      prompt optimiser reflects on. Tick <em>apply</em> and it also goes into the next round's
-      prompt straight away.</p>
+    <p class="fb-hint">The method, the test the pipeline wrote for it, and what it scored — the whole
+      record, stored in <code>ijt-feedback.jsonl</code> at the repo root. Tick <em>apply</em> to
+      put your comment into the next round's prompt as well.</p>
+    <div id="fb-record" class="fb-record" hidden></div>
     <div id="fb-existing" class="fb-existing" hidden></div>
     <textarea id="fb-text" rows="4" placeholder="e.g. i don't like too many mocks in these tests"></textarea>
     <input id="fb-author" placeholder="your name (optional)">

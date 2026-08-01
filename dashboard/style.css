@@ -116,3 +116,14 @@ dialog#fb button.primary { background:#2563eb; border-color:#2563eb; color:#fff;
 .fb-existing div { padding:4px 0; border-bottom:1px solid #1c2636; }
 .fb-existing div:last-child { border-bottom:0; }
 .fb-existing .who { opacity:.55; }
+
+/* the thing being judged, shown next to the box you judge it in */
+.fb-record { max-height:280px; overflow:auto; margin:0 0 10px; border:1px solid #2b3648;
+  border-radius:6px; background:#0d1420; }
+.fb-record h4 { margin:0; padding:6px 10px; font-size:11px; font-weight:600; letter-spacing:.04em;
+  text-transform:uppercase; opacity:.55; border-bottom:1px solid #1c2636; position:sticky; top:0;
+  background:#0d1420; }
+.fb-record pre { margin:0; padding:8px 10px; font-size:11px; line-height:1.45; white-space:pre;
+  overflow-x:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+.fb-record .score { padding:6px 10px; font-size:11px; opacity:.75; border-bottom:1px solid #1c2636; }
+.fb-record .none { padding:8px 10px; font-size:12px; opacity:.55; }
